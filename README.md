@@ -3,7 +3,7 @@
 ต้นแบบระบบ **Optical Braille Recognition (OBR)** ที่ตรวจจับจุดสีบนอักษรเบรลล์
 แล้วแปลงเป็นข้อความ โดยใช้ **Python** และ **OpenCV**
 
-## 📐 แนวคิด
+##  แนวคิด
 
 อักษรเบรลล์มีจุดนูนที่กล้องจับได้ยาก → **แต้มสีบนจุดนูน** แล้วใช้ Color Segmentation ตรวจจับ
 
@@ -11,7 +11,7 @@
 ภาพเบรลล์ที่แต้มสี → HSV Color Mask → Dot Detection → Grid Alignment → Decode → ข้อความ
 ```
 
-## 🏗️ โครงสร้างไฟล์
+##  โครงสร้างไฟล์
 
 ```
 braille-reader/
@@ -25,7 +25,7 @@ braille-reader/
 └── output/              # ผลลัพธ์ (mask, annotated images)
 ```
 
-## ⚡ เริ่มต้นใช้งาน
+##  เริ่มต้นใช้งาน
 
 ### 1. ติดตั้ง dependencies
 
@@ -52,7 +52,7 @@ python main.py sample_images/test_world_red.png --color red
 python main.py sample_images/test_hello_blue.png --save
 ```
 
-## 🔧 Pipeline
+##  Pipeline
 
 | ขั้นตอน | ฟังก์ชัน | คำอธิบาย |
 |---------|---------|---------|
@@ -63,7 +63,7 @@ python main.py sample_images/test_hello_blue.png --save
 | 5. Grid Align | `_cluster_into_cells()` | จัดจุดเข้า Braille cell (2×3) |
 | 6. Decode | `decode_cells()` | Lookup table → ตัวอักษร |
 
-## 🎨 สีที่รองรับ
+##  สีที่รองรับ
 
 - 🔵 **Blue** (default) — contrast ดีที่สุดกับกระดาษขาว
 - 🔴 **Red**
@@ -71,7 +71,7 @@ python main.py sample_images/test_hello_blue.png --save
 
 ปรับค่า HSV range ได้ใน `config.py`
 
-## 📖 Braille Reference
+##  Braille Reference
 
 ```
 Braille Cell:
