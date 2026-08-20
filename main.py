@@ -134,6 +134,15 @@ def main():
         help='สีของจุดที่แต้ม (default: blue, รองรับ: blue, red, green, black)',
     )
     parser.add_argument(
+        '--lang', type=str, default='english',
+        choices=['english', 'thai'],
+        help='ภาษาที่ต้องการถอดรหัส (default: english, รองรับ: english, thai)',
+    )
+    parser.add_argument(
+        '--speak', action='store_true',
+        help='ออกเสียงข้อความที่อ่านได้ (Text-to-Speech)',
+    )
+    parser.add_argument(
         '--save', action='store_true',
         help='บันทึกภาพ debug (mask, annotated) ลง output/',
     )
@@ -152,6 +161,9 @@ def main():
     # อ่านภาพ
     print(f"  อ่านภาพ:  {args.image}")
     print(f"  สีจุด:     {args.color}")
+    print(f"  ภาษา:     {args.lang}")
+    if args.speak:
+        print(f"  เสียงพูด:  เปิดใช้งาน (TTS)")
     print()
 
     image = cv2.imread(args.image)
@@ -181,11 +193,21 @@ def main():
         sys.exit(0)
 
     # ถอดรหัส
-    decoded_text = decode_cells(cells)
-    verbose_results = decode_cells_verbose(cells)
+    decoded_text = decode_cells(cells, lang=args.lang)
+    verbose_results = decode_cells_verbose(cells, lang=args.lang)
 
     # แสดงผล
     print_results(cells, verbose_results, decoded_text)
+
+    # ออกเสียงพูด (TTS)
+    if args.speak and decoded_text:
+        print("  🔊 กำลังออกเสียง...")
+        from tts import speak
+        base = os.path.splitext(os.path.basename(args.image))[0]
+        audio_save_path = os.path.join('output', f'{base}_speech.mp3') if args.save else None
+        speak(decoded_text, lang=args.lang, save_file=audio_save_path)
+        if audio_save_path:
+            print(f"  [SAVED] บันทึกไฟล์เสียง: {audio_save_path}")
 
     # บันทึก / แสดงภาพ
     if args.save:

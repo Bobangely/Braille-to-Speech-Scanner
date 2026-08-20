@@ -247,9 +247,12 @@ class BrailleDetector:
         # 5. สร้าง cells จากทุกคู่ (row_group × col_group)
         cells = []
         for rg in cell_row_groups:
-            for cg in cell_col_groups:
+            for c_idx, cg in enumerate(cell_col_groups):
+                prev_col = cell_col_groups[c_idx - 1][-1] if c_idx > 0 else None
+                next_col = cell_col_groups[c_idx + 1][0] if c_idx + 1 < len(cell_col_groups) else None
+
                 cell_dots = self._assign_dots_to_cell(
-                    dots, rg, cg, dot_spacing
+                    dots, rg, cg, dot_spacing, prev_col=prev_col, next_col=next_col
                 )
                 if cell_dots:
                     cx = np.mean(cg)
@@ -380,9 +383,10 @@ class BrailleDetector:
             gaps.append(col_centers[i] - col_centers[i - 1])
 
         # หา threshold เพื่อแยก within-cell vs between-cell gaps
-        # within-cell gap ≈ dot_spacing, between-cell gap >> dot_spacing
-        # ใช้ 1.5 * dot_spacing เป็นเส้นแบ่ง
-        split_threshold = dot_spacing * 1.5
+        # within-cell gap ≈ 1.0 * dot_spacing (40px)
+        # between-cell gap ≥ 1.35 * dot_spacing (55px+)
+        # ใช้ 1.18 * dot_spacing เป็นเส้นแบ่ง
+        split_threshold = dot_spacing * 1.18
 
         # แบ่ง columns ตรง gaps ที่ > threshold
         groups = [[col_centers[0]]]
@@ -399,7 +403,7 @@ class BrailleDetector:
 
         return groups
 
-    def _assign_dots_to_cell(self, dots, row_group, col_group, dot_spacing):
+    def _assign_dots_to_cell(self, dots, row_group, col_group, dot_spacing, prev_col=None, next_col=None):
         """
         หาว่า dot ไหนตกอยู่ใน cell (row_group × col_group)
         แล้ว return set ของ dot numbers (1-6)
@@ -412,9 +416,10 @@ class BrailleDetector:
 
         ใช้ absolute lattice fitting:
         - สร้าง grid 3 แถว × 2 คอลัมน์ จาก row_group/col_group + dot_spacing
+        - ตัดสินใจว่า single column เป็นคอลัมน์ซ้ายหรือขวาจากระยะห่างรอบข้าง
         - จับ dot เข้า slot ที่ใกล้ที่สุดใน grid
         """
-        margin = dot_spacing * 0.6
+        margin = dot_spacing * 0.45
         rg = sorted(row_group)
         cg = sorted(col_group)
 
@@ -438,17 +443,33 @@ class BrailleDetector:
             ]
 
         # --- สร้าง expected column positions (2 คอลัมน์) ---
-        # ใช้ตำแหน่งซ้ายสุดของ col_group เป็นฐาน
-        col_left = cg[0]
         if len(cg) >= 2:
             # มี 2 คอลัมน์ → ใช้ค่าจริง
             expected_cols = [cg[0], cg[-1]]
         else:
-            # มีแค่ 1 คอลัมน์ → สร้างทั้ง 2 ตำแหน่ง
-            expected_cols = [
-                col_left,                   # left column (dot 1,2,3)
-                col_left + dot_spacing,     # right column (dot 4,5,6)
-            ]
+            # มีแค่ 1 คอลัมน์ → ตรวจสอบว่าเป็น Left column หรือ Right column
+            c = cg[0]
+            is_right_col = False
+
+            if next_col is not None:
+                gap_next = next_col - c
+                # ถ้า gap ไปหา cell ถัดไปแคบ (< 1.8 * dot_spacing) → นี่คือ right column
+                if gap_next < dot_spacing * 1.8:
+                    is_right_col = True
+                else:
+                    is_right_col = False
+            elif prev_col is not None:
+                gap_prev = c - prev_col
+                # ถ้า gap จาก cell ก่อนหน้ากว้าง (> 1.8 * dot_spacing) → นี่คือ right column
+                if gap_prev > dot_spacing * 1.8:
+                    is_right_col = True
+                else:
+                    is_right_col = False
+
+            if is_right_col:
+                expected_cols = [c - dot_spacing, c]
+            else:
+                expected_cols = [c, c + dot_spacing]
 
         # --- bounding box ครอบ expected grid ทั้งหมด ---
         y_min = expected_rows[0] - margin

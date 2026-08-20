@@ -8,8 +8,39 @@ Braille Reader - Test Image Generator
 import cv2
 import numpy as np
 import os
+import sys
+
+# แก้ปัญหา encoding บน Windows
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 from config import CHAR_TO_BRAILLE
+from config_thai import THAI_CHAR_TO_BRAILLE
+
+
+def text_to_braille_cells(text, lang='english'):
+    """
+    แปลงข้อความเป็น list ของ cell dot sets
+    """
+    cells = []
+    if lang.lower() in ('thai', 'th'):
+        for char in text:
+            if char == ' ':
+                cells.append(None)
+            elif char in THAI_CHAR_TO_BRAILLE:
+                pattern = THAI_CHAR_TO_BRAILLE[char]
+                if isinstance(pattern, tuple):
+                    # Multi-cell (e.g. prefix 6 + base)
+                    cells.extend(pattern)
+                else:
+                    cells.append(pattern)
+    else:
+        for char in text.lower():
+            if char == ' ':
+                cells.append(None)
+            elif char in CHAR_TO_BRAILLE:
+                cells.append(CHAR_TO_BRAILLE[char])
+    return cells
 
 
 def generate_braille_image(
@@ -21,72 +52,38 @@ def generate_braille_image(
     cell_gap=55,                    # ระยะห่างระหว่าง cell
     margin=60,
     add_noise=False,
+    lang='english',
 ):
     """
-    สร้างภาพ Braille จากข้อความ
-
-    Parameters
-    ----------
-    text : str
-        ข้อความที่ต้องการแปลง (a-z เท่านั้น)
-    dot_color_bgr : tuple
-        สีของจุด ในรูปแบบ BGR
-    bg_color_bgr : tuple
-        สีพื้นหลัง ในรูปแบบ BGR
-    dot_radius : int
-        รัศมีของจุด (pixels)
-    dot_spacing : int
-        ระยะห่างระหว่างจุดภายใน cell (pixels)
-    cell_gap : int
-        ระยะห่างระหว่าง cell (pixels)
-    margin : int
-        ขอบรอบภาพ (pixels)
-    add_noise : bool
-        เพิ่ม noise เพื่อจำลองภาพจริง
-
-    Returns
-    -------
-    image : np.ndarray
-        ภาพ BGR
+    สร้างภาพ Braille จากข้อความ (รองรับทั้ง English และ Thai)
     """
-    text = text.lower()
+    cells = text_to_braille_cells(text, lang=lang)
+    if not cells:
+        raise ValueError(f"ไม่พบตัวอักษรที่รองรับใน '{text}' (lang={lang})")
 
-    # กรองเอาเฉพาะอักษรที่มี mapping
-    valid_chars = [c for c in text if c in CHAR_TO_BRAILLE or c == ' ']
+    n_cells = len(cells)
+    cell_width = dot_spacing
+    cell_height = dot_spacing * 2
 
-    if not valid_chars:
-        raise ValueError(f"ไม่พบตัวอักษรที่รองรับใน '{text}'")
-
-    # คำนวณขนาดภาพ
-    n_chars = len(valid_chars)
-    cell_width = dot_spacing   # ความกว้างของ 1 cell (2 columns = dot_spacing)
-    cell_height = dot_spacing * 2  # ความสูงของ 1 cell (3 rows = 2*dot_spacing)
-
-    img_width = margin * 2 + n_chars * cell_width + (n_chars - 1) * cell_gap
+    img_width = margin * 2 + n_cells * cell_width + (n_cells - 1) * cell_gap
     img_height = margin * 2 + cell_height
 
     # สร้างภาพพื้นหลัง
     image = np.full((img_height, img_width, 3), bg_color_bgr, dtype=np.uint8)
 
-    # เพิ่ม texture เบาๆ เพื่อจำลองกระดาษ
     if add_noise:
         noise = np.random.normal(0, 3, image.shape).astype(np.int16)
         image = np.clip(image.astype(np.int16) + noise, 0, 255).astype(np.uint8)
 
-    # วาดจุดสำหรับแต่ละตัวอักษร
-    for i, char in enumerate(valid_chars):
-        if char == ' ':
+    # วาดจุดสำหรับแต่ละ cell
+    for i, dots in enumerate(cells):
+        if dots is None:
             continue
 
-        dots = CHAR_TO_BRAILLE.get(char, frozenset())
-
-        # จุดเริ่มต้นของ cell (มุมซ้ายบน)
         cell_x = margin + i * (cell_width + cell_gap)
         cell_y = margin
 
         for dot_num in dots:
-            # แปลง dot number เป็น (row, col)
-            # dots 1,2,3 = col 0 | dots 4,5,6 = col 1
             if dot_num <= 3:
                 col = 0
                 row = dot_num - 1
@@ -94,39 +91,27 @@ def generate_braille_image(
                 col = 1
                 row = dot_num - 4
 
-            # คำนวณตำแหน่ง pixel
             px = cell_x + col * dot_spacing
             py = cell_y + row * dot_spacing
 
             # วาดจุดกลม
             cv2.circle(image, (px, py), dot_radius, dot_color_bgr, -1)
-
-            # เพิ่มขอบเบาๆ เพื่อให้ดูเหมือนจุดนูน
             cv2.circle(
                 image, (px, py), dot_radius,
                 tuple(max(0, c - 40) for c in dot_color_bgr), 2
             )
-
-    # วาดข้อความ ground truth ด้านล่าง
-    text_str = ''.join(valid_chars)
-    cv2.putText(
-        image, f'Ground Truth: "{text_str}"',
-        (margin, img_height - 15),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-        (100, 100, 100), 1,
-    )
 
     return image
 
 
 def generate_test_suite(output_dir='sample_images'):
     """
-    สร้างชุดภาพทดสอบหลายรูปแบบ
+    สร้างชุดภาพทดสอบภาษาอังกฤษและภาษาไทย
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    test_cases = [
-        # (ชื่อไฟล์, ข้อความ, สี BGR, noise)
+    # ภาษาอังกฤษ
+    english_cases = [
         ('test_hello_blue.png', 'hello', (255, 120, 0), False),
         ('test_abc_blue.png', 'abc', (255, 120, 0), False),
         ('test_world_red.png', 'world', (0, 0, 220), False),
@@ -136,15 +121,37 @@ def generate_test_suite(output_dir='sample_images'):
         ('test_python.png', 'python', (255, 120, 0), False),
     ]
 
+    # ภาษาไทย
+    thai_cases = [
+        ('test_thai_ka.png', 'กา', (255, 120, 0), False),
+        ('test_thai_thai.png', 'ไทย', (255, 120, 0), False),
+        ('test_thai_khon.png', 'คน', (0, 0, 220), False),
+        ('test_thai_cat.png', 'แมว', (0, 180, 0), False),
+        ('test_thai_home.png', 'บ้าน', (255, 120, 0), False),
+        ('test_thai_consonants.png', 'กขคงจ', (255, 120, 0), False),
+    ]
+
     generated = []
 
-    for filename, text, color, noise in test_cases:
+    print("--- สร้างภาพทดสอบภาษาอังกฤษ ---")
+    for filename, text, color, noise in english_cases:
         filepath = os.path.join(output_dir, filename)
         try:
             img = generate_braille_image(
-                text,
-                dot_color_bgr=color,
-                add_noise=noise,
+                text, dot_color_bgr=color, add_noise=noise, lang='english'
+            )
+            cv2.imwrite(filepath, img)
+            print(f"  [OK] {filepath:<40} -> '{text}'")
+            generated.append(filepath)
+        except Exception as e:
+            print(f"  [ERR] {filepath:<40} -> Error: {e}")
+
+    print("\n--- สร้างภาพทดสอบภาษาไทย ---")
+    for filename, text, color, noise in thai_cases:
+        filepath = os.path.join(output_dir, filename)
+        try:
+            img = generate_braille_image(
+                text, dot_color_bgr=color, add_noise=noise, lang='thai'
             )
             cv2.imwrite(filepath, img)
             print(f"  [OK] {filepath:<40} -> '{text}'")
@@ -157,7 +164,7 @@ def generate_test_suite(output_dir='sample_images'):
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("  Braille Test Image Generator")
+    print("  Braille Test Image Generator (English & Thai)")
     print("=" * 60)
     print()
 
@@ -165,4 +172,6 @@ if __name__ == '__main__':
 
     print()
     print(f"สร้างภาพทดสอบสำเร็จ {len(files)} ไฟล์")
-    print("ใช้คำสั่ง: python main.py sample_images/test_hello_blue.png")
+    print("ทดสอบอังกฤษ:  python main.py sample_images/test_hello_blue.png")
+    print("ทดสอบไทย:     python main.py sample_images/test_thai_ka.png --lang thai")
+
