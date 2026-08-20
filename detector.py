@@ -522,12 +522,42 @@ class BrailleDetector:
         return cell_dots, grid_info
 
     # =================================================================
-    # Visualization (2x3 Grid Overlay & Cell Annotations)
+    # Visualization (2x3 Grid Overlay & Thai/English Text Banner)
     # =================================================================
 
-    def _annotate(self, image, dots, cells):
-        """วาด 2x3 Grid Overlay และข้อมูลการตรวจจับลงบนภาพสำหรับ Debug"""
-        annotated = image.copy()
+    def _get_font(self, size=20, bold=False):
+        """โหลด TrueType font ที่รองรับภาษาไทย"""
+        import os
+        from PIL import ImageFont
+
+        font_candidates = [
+            'C:/Windows/Fonts/leelawdb.ttf' if bold else 'C:/Windows/Fonts/leelawad.ttf',
+            'C:/Windows/Fonts/tahomabd.ttf' if bold else 'C:/Windows/Fonts/tahoma.ttf',
+            'C:/Windows/Fonts/arialbd.ttf' if bold else 'C:/Windows/Fonts/arial.ttf',
+            '/usr/share/fonts/truetype/thai/Loma-Bold.ttf' if bold else '/usr/share/fonts/truetype/thai/Loma.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf' if bold else '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+        ]
+        for p in font_candidates:
+            if os.path.exists(p):
+                try:
+                    return ImageFont.truetype(p, size)
+                except Exception:
+                    pass
+        return ImageFont.load_default()
+
+    def _annotate(self, image, dots, cells, decoded_text="", verbose_results=None, lang="english"):
+        """วาด 2x3 Grid Overlay พร้อมแบนเนอร์แสดงคำที่อ่านได้ลงบนภาพ"""
+        import cv2
+        import numpy as np
+        from PIL import Image, ImageDraw
+
+        h, w = image.shape[:2]
+        banner_h = 80  # ความสูงของแถบข้อความด้านล่าง
+
+        # สร้าง canvas เพิ่มพื้นที่ด้านล่างสำหรับแถบผลลัพธ์
+        canvas = np.zeros((h + banner_h, w, 3), dtype=np.uint8)
+        canvas[:h, :w] = image.copy()
+        canvas[h:, :] = (30, 23, 15)  # Dark slate navy background (BGR)
 
         # 1. วาดเส้น 2x3 Grid รอบแต่ละ Cell
         for idx, cell in enumerate(cells, 1):
@@ -543,49 +573,86 @@ class BrailleDetector:
             row_mid2 = int((rows[1] + rows[2]) / 2.0)
 
             # กรอบนอกของ Cell (สีฟ้า Cyan)
-            cv2.rectangle(annotated, (x_min, y_min), (x_max, y_max), (255, 200, 0), 2)
+            cv2.rectangle(canvas, (x_min, y_min), (x_max, y_max), (255, 200, 0), 2)
 
-            # เส้นแบ่งคอลัมน์แนวตั้ง (เส้นประหรือเส้นแบ่ง)
-            cv2.line(annotated, (col_mid, y_min), (col_mid, y_max), (200, 160, 0), 1)
+            # เส้นแบ่งคอลัมน์แนวตั้ง
+            cv2.line(canvas, (col_mid, y_min), (col_mid, y_max), (200, 160, 0), 1)
 
             # เส้นแบ่งแถวแนวนอน
-            cv2.line(annotated, (x_min, row_mid1), (x_max, row_mid1), (200, 160, 0), 1)
-            cv2.line(annotated, (x_min, row_mid2), (x_max, row_mid2), (200, 160, 0), 1)
+            cv2.line(canvas, (x_min, row_mid1), (x_max, row_mid1), (200, 160, 0), 1)
+            cv2.line(canvas, (x_min, row_mid2), (x_max, row_mid2), (200, 160, 0), 1)
 
-            # วาดสัญลักษณ์ช่องว่าง (Empty Slot Circles) สำหรับช่องที่ไม่มีจุด
+            # วาดสัญลักษณ์ช่องว่าง (Empty Slot Circles)
             for dot_id, (sx, sy) in grid['slots'].items():
                 if dot_id not in cell['dots']:
-                    cv2.circle(annotated, (int(sx), int(sy)), 5, (180, 180, 180), 1)
+                    cv2.circle(canvas, (int(sx), int(sy)), 5, (180, 180, 180), 1)
 
-            # วาด Cell Index Badge เหนือกรอบ
-            badge_text = f"C{idx}"
+            # วาดเส้นใต้ขอบ Cell
+            dots_str = ','.join(map(str, sorted(cell['dots'])))
+            y_pos = y_max + 18
+            label = f"[{dots_str}]"
             cv2.putText(
-                annotated, badge_text,
-                (x_min + 4, y_min - 6),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45,
-                (255, 150, 0), 1, cv2.LINE_AA
+                canvas, label,
+                (int(cell['center'][0]) - 16, int(y_pos)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                (0, 0, 220), 1, cv2.LINE_AA
             )
 
         # 2. วาดไฮไลท์รอบจุดสีที่ตรวจจับได้ (สีเขียว Bright Green)
         for dot in dots:
             cx, cy = dot['center']
             radius = int(np.sqrt(dot['area'] / np.pi))
-            cv2.circle(annotated, (int(cx), int(cy)), radius + 3, (0, 255, 0), 2)
-            cv2.circle(annotated, (int(cx), int(cy)), 2, (0, 0, 255), -1)
+            cv2.circle(canvas, (int(cx), int(cy)), radius + 3, (0, 255, 0), 2)
+            cv2.circle(canvas, (int(cx), int(cy)), 2, (0, 0, 255), -1)
 
-        # 3. วาดรหัสจุดและตัวอักษรใต้แต่ละ Cell
-        for cell in cells:
-            cx, cy = cell['center']
-            dots_str = ','.join(map(str, sorted(cell['dots'])))
-            grid = cell.get('grid')
-            y_pos = grid['bbox'][3] + 18 if grid else cy + 30
+        # 3. ใช้ PIL เพื่อวาดข้อความภาษาไทย/อังกฤษที่คมชัด
+        pil_img = Image.fromarray(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(pil_img)
 
-            label = f"[{dots_str}]"
-            cv2.putText(
-                annotated, label,
-                (int(cx) - 15, int(y_pos)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45,
-                (0, 0, 220), 1, cv2.LINE_AA
-            )
+        font_large = self._get_font(size=24, bold=True)
+        font_mid = self._get_font(size=18, bold=True)
+        font_small = self._get_font(size=14, bold=False)
 
-        return annotated
+        # วาดตัวอักษรของแต่ละเซลล์เหนือกล่อง Grid
+        if verbose_results:
+            for idx, item in enumerate(verbose_results, 1):
+                if idx - 1 < len(cells):
+                    cell = cells[idx - 1]
+                    grid = cell.get('grid')
+                    if grid:
+                        x_min, y_min = grid['bbox'][0], grid['bbox'][1]
+                        char_text = f"C{idx}: {item['char']}"
+                        draw.text((x_min + 2, y_min - 26), char_text, fill=(255, 180, 0), font=font_mid)
+        else:
+            for idx, cell in enumerate(cells, 1):
+                grid = cell.get('grid')
+                if grid:
+                    x_min, y_min = grid['bbox'][0], grid['bbox'][1]
+                    draw.text((x_min + 2, y_min - 22), f"C{idx}", fill=(255, 180, 0), font=font_small)
+
+        # 4. วาดแถบข้อความสรุปผลลัพธ์ด้านล่าง (Bottom Banner)
+        # เส้นแบ่งแถบด้านล่าง
+        draw.line([(0, h), (w, h)], fill=(70, 85, 105), width=2)
+
+        if decoded_text:
+            text_disp = f"ข้อความ: \"{decoded_text}\"" if lang == 'thai' else f"Text: \"{decoded_text}\""
+            braille_chars = [item.get('unicode', '·') for item in (verbose_results or [])]
+            braille_disp = ' '.join(braille_chars)
+
+            # หัวข้อผลลัพธ์ตัวใหญ่สีเหลืองทอง/ขาว
+            draw.text((20, h + 12), text_disp, fill=(255, 255, 100), font=font_large)
+
+            # คำบรรยายรายละเอียดภาษาและจำนวนเซลล์
+            lang_label = "ภาษาไทย (Thai)" if lang == 'thai' else "ภาษาอังกฤษ (English)"
+            sub_text = f"Braille: {braille_disp}   |   {len(cells)} Cells ({len(dots)} Dots)   |   {lang_label}"
+            draw.text((20, h + 48), sub_text, fill=(180, 200, 220), font=font_small)
+        else:
+            draw.text((20, h + 25), "Braille Detection Running...", fill=(180, 200, 220), font=font_mid)
+
+        # แปลงกลับเป็น OpenCV BGR
+        annotated_result = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+        return annotated_result
+
+    def annotate_with_text(self, image, dots, cells, decoded_text="", verbose_results=None, lang="english"):
+        """Public API สำหรับวาด annotation พร้อมข้อความผลลัพธ์"""
+        return self._annotate(image, dots, cells, decoded_text=decoded_text, verbose_results=verbose_results, lang=lang)

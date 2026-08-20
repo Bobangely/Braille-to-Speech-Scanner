@@ -196,6 +196,12 @@ def main():
     decoded_text = decode_cells(cells, lang=args.lang)
     verbose_results = decode_cells_verbose(cells, lang=args.lang)
 
+    # อัปเดตภาพ Annotated ให้มีแบนเนอร์แสดงคำที่อ่านได้
+    debug_info['annotated'] = detector.annotate_with_text(
+        image, debug_info['dots'], cells,
+        decoded_text=decoded_text, verbose_results=verbose_results, lang=args.lang
+    )
+
     # แสดงผล
     print_results(cells, verbose_results, decoded_text)
 
