@@ -251,7 +251,7 @@ class BrailleDetector:
                 prev_col = cell_col_groups[c_idx - 1][-1] if c_idx > 0 else None
                 next_col = cell_col_groups[c_idx + 1][0] if c_idx + 1 < len(cell_col_groups) else None
 
-                cell_dots = self._assign_dots_to_cell(
+                cell_dots, grid_info = self._assign_dots_to_cell(
                     dots, rg, cg, dot_spacing, prev_col=prev_col, next_col=next_col
                 )
                 if cell_dots:
@@ -262,6 +262,7 @@ class BrailleDetector:
                         'center': (int(cx), int(cy)),
                         'x': float(cx),
                         'y': float(cy),
+                        'grid': grid_info,
                     })
 
         # เรียงตาม text line (Y) ก่อน แล้วค่อย sort X ภายในแต่ละบรรทัด
@@ -477,6 +478,23 @@ class BrailleDetector:
         x_min = expected_cols[0] - margin
         x_max = expected_cols[-1] + margin
 
+        # พิกัดของทั้ง 6 ช่องใน Grid 2x3
+        slots = {
+            1: (expected_cols[0], expected_rows[0]),
+            2: (expected_cols[0], expected_rows[1]),
+            3: (expected_cols[0], expected_rows[2]),
+            4: (expected_cols[1], expected_rows[0]),
+            5: (expected_cols[1], expected_rows[1]),
+            6: (expected_cols[1], expected_rows[2]),
+        }
+
+        grid_info = {
+            'expected_cols': expected_cols,
+            'expected_rows': expected_rows,
+            'bbox': (int(x_min), int(y_min), int(x_max), int(y_max)),
+            'slots': slots,
+        }
+
         cell_dots = set()
 
         for dot in dots:
@@ -486,16 +504,13 @@ class BrailleDetector:
                 continue
 
             # --- column index (left=0, right=1) ---
-            # ใช้ midpoint ระหว่าง 2 expected columns เป็นเส้นแบ่ง
             col_mid = (expected_cols[0] + expected_cols[1]) / 2.0
             col_idx = 0 if cx < col_mid else 1
 
             # --- row index (0=top, 1=mid, 2=bottom) ---
-            # หา row ที่ใกล้ที่สุดใน expected grid (absolute positions)
             row_dists = [abs(cy - er) for er in expected_rows]
             row_idx = int(np.argmin(row_dists))
 
-            # ตรวจสอบว่า dot ไม่ห่างจาก expected position มากเกินไป
             if row_dists[row_idx] > dot_spacing * 0.7:
                 continue
 
@@ -504,35 +519,73 @@ class BrailleDetector:
             if 1 <= dot_num <= 6:
                 cell_dots.add(dot_num)
 
-        return cell_dots
+        return cell_dots, grid_info
 
     # =================================================================
-    # Visualization
+    # Visualization (2x3 Grid Overlay & Cell Annotations)
     # =================================================================
 
     def _annotate(self, image, dots, cells):
-        """วาด annotation ลงบนภาพสำหรับ debug"""
-        # วาดวงกลมรอบจุดที่ตรวจพบ
+        """วาด 2x3 Grid Overlay และข้อมูลการตรวจจับลงบนภาพสำหรับ Debug"""
+        annotated = image.copy()
+
+        # 1. วาดเส้น 2x3 Grid รอบแต่ละ Cell
+        for idx, cell in enumerate(cells, 1):
+            grid = cell.get('grid')
+            if not grid:
+                continue
+
+            x_min, y_min, x_max, y_max = grid['bbox']
+            cols = grid['expected_cols']
+            rows = grid['expected_rows']
+            col_mid = int((cols[0] + cols[1]) / 2.0)
+            row_mid1 = int((rows[0] + rows[1]) / 2.0)
+            row_mid2 = int((rows[1] + rows[2]) / 2.0)
+
+            # กรอบนอกของ Cell (สีฟ้า Cyan)
+            cv2.rectangle(annotated, (x_min, y_min), (x_max, y_max), (255, 200, 0), 2)
+
+            # เส้นแบ่งคอลัมน์แนวตั้ง (เส้นประหรือเส้นแบ่ง)
+            cv2.line(annotated, (col_mid, y_min), (col_mid, y_max), (200, 160, 0), 1)
+
+            # เส้นแบ่งแถวแนวนอน
+            cv2.line(annotated, (x_min, row_mid1), (x_max, row_mid1), (200, 160, 0), 1)
+            cv2.line(annotated, (x_min, row_mid2), (x_max, row_mid2), (200, 160, 0), 1)
+
+            # วาดสัญลักษณ์ช่องว่าง (Empty Slot Circles) สำหรับช่องที่ไม่มีจุด
+            for dot_id, (sx, sy) in grid['slots'].items():
+                if dot_id not in cell['dots']:
+                    cv2.circle(annotated, (int(sx), int(sy)), 5, (180, 180, 180), 1)
+
+            # วาด Cell Index Badge เหนือกรอบ
+            badge_text = f"C{idx}"
+            cv2.putText(
+                annotated, badge_text,
+                (x_min + 4, y_min - 6),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                (255, 150, 0), 1, cv2.LINE_AA
+            )
+
+        # 2. วาดไฮไลท์รอบจุดสีที่ตรวจจับได้ (สีเขียว Bright Green)
         for dot in dots:
             cx, cy = dot['center']
             radius = int(np.sqrt(dot['area'] / np.pi))
-            cv2.circle(image, (cx, cy), radius + 4, (0, 255, 0), 2)
-            cv2.circle(image, (cx, cy), 2, (0, 0, 255), -1)
+            cv2.circle(annotated, (int(cx), int(cy)), radius + 3, (0, 255, 0), 2)
+            cv2.circle(annotated, (int(cx), int(cy)), 2, (0, 0, 255), -1)
 
-        # วาด label ของแต่ละ cell
-        from config import BRAILLE_TO_CHAR
-
+        # 3. วาดรหัสจุดและตัวอักษรใต้แต่ละ Cell
         for cell in cells:
             cx, cy = cell['center']
-            char = BRAILLE_TO_CHAR.get(cell['dots'], '?')
             dots_str = ','.join(map(str, sorted(cell['dots'])))
+            grid = cell.get('grid')
+            y_pos = grid['bbox'][3] + 18 if grid else cy + 30
 
-            label = f"{char} [{dots_str}]"
+            label = f"[{dots_str}]"
             cv2.putText(
-                image, label,
-                (cx - 20, cy - 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                (0, 0, 255), 2,
+                annotated, label,
+                (int(cx) - 15, int(y_pos)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                (0, 0, 220), 1, cv2.LINE_AA
             )
 
-        return image
+        return annotated
