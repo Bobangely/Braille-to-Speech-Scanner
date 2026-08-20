@@ -1,11 +1,11 @@
-# 🔍 Braille-to-Speech Scanner (Color-Assisted OBR)
+# Braille-to-Speech Scanner (Color-Assisted OBR)
 
 ระบบอ่านและออกเสียงอักษรเบรลล์ภาษาไทยและภาษาอังกฤษ (Optical Braille Recognition & Text-to-Speech)  
 โดยใช้เทคนิคการแต้มสีบนจุดนูนร่วมกับ Computer Vision (**OpenCV + Python**) พร้อมรองรับการรันบน Edge AI Board (**Dragon Q6A**)
 
 ---
 
-## 🌟 ฟีเจอร์เด่น (Key Features)
+## ฟีเจอร์เด่น (Key Features)
 
 - 🇹🇭 **รองรับอักษรเบรลล์ภาษาไทย (Thai Braille Grade 1)**
   - พยัญชนะไทยครบ 44 ตัว (ก-ฮ) ทั้งแบบ 1 เซลล์ และ 2 เซลล์ (Prefix 6)
@@ -13,19 +13,19 @@
   - วรรณยุกต์ครบ 4 รูป (ไม้เอก, ไม้โท, ไม้ตรี, ไม้จัตวา)
 - 🇬🇧 **รองรับอักษรเบรลล์ภาษาอังกฤษ (English Braille Grade 1)**
   - ตัวอักษร a-z, Capital Indicators (จุด 6), Number Indicators (#)
-- 🔊 **ระบบสังเคราะห์เสียงพูด (Text-to-Speech: TTS)**
+-  **ระบบสังเคราะห์เสียงพูด (Text-to-Speech: TTS)**
   - ออกเสียงได้ทั้งภาษาไทยและภาษาอังกฤษ
   - รองรับทั้ง Offline Mode (pyttsx3 / SAPI5 / espeak) และ Online Natural Voice (gTTS)
-- 🔲 **ระบบ Virtual 2x3 Grid Template Overlay**
+-  **ระบบ Virtual 2x3 Grid Template Overlay**
   - ตีกรอบล้อมรอบเซลล์และแบ่ง 6 ช่อง พร้อมแสดงผลลัพธ์คำที่อ่านได้ลงบนภาพอย่างสวยงาม
-- 🎨 **รองรับหลากหลายสีของจุดแต้ม**
+-  **รองรับหลากหลายสีของจุดแต้ม**
   - 🔵 Blue, 🔴 Red, 🟢 Green, ⚫ Black
-- 📊 **ระบบทดสอบความแม่นยำอัตโนมัติ (Automated Benchmark)**
+-  **ระบบทดสอบความแม่นยำอัตโนมัติ (Automated Benchmark)**
   - ทดสอบความถูกต้อง 100% ทั้งข้อความภาษาไทยและอังกฤษ
 
 ---
 
-## 🏗️ โครงสร้างไฟล์ในโปรเจกต์
+##  โครงสร้างไฟล์ในโปรเจกต์
 
 ```
 braille-reader/
@@ -69,7 +69,7 @@ uv run python main.py sample_images/test_thai_home.png --lang thai --color blue 
 # 🇬🇧 อ่านอักษรเบรลล์ภาษาอังกฤษ พร้อมออกเสียงพูด
 uv run python main.py sample_images/test_hello_blue.png --lang english --color blue --speak
 
-# 💾 บันทึกภาพ Debug และไฟล์เสียงลง output/ (ไม่แสดงหน้าต่าง GUI)
+#  บันทึกภาพ Debug และไฟล์เสียงลง output/ (ไม่แสดงหน้าต่าง GUI)
 uv run python main.py sample_images/test_thai_ka.png --lang thai --speak --save --no-display
 
 # ⚫ อ่านภาพพิมพ์จุดสีดำ
@@ -84,7 +84,7 @@ uv run python test_accuracy.py
 
 ---
 
-## 🔬 สถาปัตยกรรมระบบ (Pipeline Architecture)
+##  สถาปัตยกรรมระบบ (Pipeline Architecture)
 
 ```mermaid
 graph TD
@@ -100,7 +100,7 @@ graph TD
 
 ---
 
-## 🎯 แผนการพัฒนาถัดไป (Roadmap for Dragon Q6A Edge AI)
+##  แผนการพัฒนาถัดไป (Roadmap for Dragon Q6A Edge AI)
 
 1. **Hardware Integration:** ต่อกล้อง USB / MIPI เข้ากับบอร์ด Dragon Q6A
 2. **Real-time Camera Stream:** พัฒนาโหมดสแกนแบบ Real-time FPS สูง
