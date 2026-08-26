@@ -1,11 +1,11 @@
-# 🔍 Braille-to-Speech Scanner (Color-Assisted OBR)
+#  Braille-to-Speech Scanner (Color-Assisted OBR)
 
 ระบบอ่านและออกเสียงอักษรเบรลล์ภาษาไทยและภาษาอังกฤษแบบสด (Optical Braille Recognition & Text-to-Speech)  
 โดยใช้เทคนิคการแต้มสีบนจุดนูนร่วมกับ Computer Vision (**OpenCV + Python**) รองรับกล้อง **4K Ultra HD & Full HD** พร้อมระบบ **Digital Zoom** และรันได้ทั้งบน PC / Windows และ Edge AI Board (**Dragon Q6A**)
 
 ---
 
-## 🌟 ฟีเจอร์เด่น (Key Features)
+##  ฟีเจอร์เด่น (Key Features)
 
 - 🇹🇭 **มาตรฐานอักษรเบรลล์ไทยสากล 100% (Thai Braille Grade 1)**
   - พยัญชนะไทยครบ 44 ตัว (ก-ฮ) ทั้งแบบ 1 เซลล์ และ 2 เซลล์ (Prefix 6, 36, 356)
@@ -14,26 +14,26 @@
   - วรรณยุกต์ครบ 4 รูป (ไม้เอก, ไม้โท, ไม้ตรี, ไม้จัตวา)
 - 🇬🇧 **รองรับอักษรเบรลล์ภาษาอังกฤษ (English Braille Grade 1)**
   - ตัวอักษร a-z, Capital Indicators (จุด 6), Number Indicators (#)
-- 📷 **รองรับความละเอียดกล้องระดับสูง (4K UHD & Full HD 1080p)**
+-  **รองรับความละเอียดกล้องระดับสูง (4K UHD & Full HD 1080p)**
   - สลับความละเอียดสดขณะเปิดกล้องได้ทันที (กด `V` หรือ `F`)
   - ใช้ MJPG FourCC Codec เพื่อปลดล็อกแบนด์วิธ USB ให้เฟรมเรตลื่นไหล
-- 🔍 **ระบบ Digital Zoom In / Zoom Out (1.0x – 4.0x)**
+-  **ระบบ Digital Zoom In / Zoom Out (1.0x – 4.0x)**
   - ขยายจุดเบรลล์ขนาดเล็กให้ตรวจจับได้ง่ายและแม่นยำ พร้อม Mini Viewfinder มุมขวาบน
   - ซูมได้ทั้งผ่านคีย์บอร์ด (`Z`/`X`/`R`) และล้อหมุนเมาส์ (Mouse Wheel Zoom)
-- 🎚️ **ระบบ Multi-Level Sharpness Filter (5 ระดับ)**
+-  **ระบบ Multi-Level Sharpness Filter (5 ระดับ)**
   - ปรับเร่งความคมชัดของขอบจุดเบรลล์ได้ทันที (กด `E` เพื่อวนเลือกระดับ OFF -> LOW -> MED -> HIGH -> ULTRA)
-- 🔊 **ระบบสังเคราะห์เสียงพูด Real-Time (Text-to-Speech: TTS)**
+-  **ระบบสังเคราะห์เสียงพูด Real-Time (Text-to-Speech: TTS)**
   - ออกเสียงได้ทั้งภาษาไทยและภาษาอังกฤษ มีระบบ Frame Stabilization & Auto-TTS Debounce ป้องกันเสียงอ่านซ้ำซ้อน
   - รองรับทั้ง Offline Mode (pyttsx3 / SAPI5) และ Online Natural Voice (gTTS)
-- 🔲 **ระบบ Virtual 2x3 Grid Template Overlay**
+-  **ระบบ Virtual 2x3 Grid Template Overlay**
   - ตีกรอบล้อมรอบเซลล์และแบ่ง 6 ช่อง พร้อมแสดงผลลัพธ์คำที่อ่านได้ลงบนภาพอย่างสวยงาม
-- 🎨 **รองรับหลากหลายสีของจุดแต้ม**
+-  **รองรับหลากหลายสีของจุดแต้ม**
   - 🔵 Blue, 🔴 Red, 🟢 Green, ⚫ Black
-- 📊 **ชุดทดสอบความแม่นยำอัตโนมัติ 100% (39/39 Tests Passed)**
+-  **ชุดทดสอบความแม่นยำอัตโนมัติ 100% (39/39 Tests Passed)**
 
 ---
 
-## 🏗️ โครงสร้างไฟล์ในโปรเจกต์
+##  โครงสร้างไฟล์ในโปรเจกต์
 
 ```
 braille-reader/
@@ -102,19 +102,19 @@ python camera_reader.py --lang english --color blue --res fhd
 ### 3. คำสั่งทดสอบกล้อง & ความแม่นยำ
 
 ```bash
-# 📷 ทดสอบและเช็คความละเอียดสูงสุดของกล้อง
+#  ทดสอบและเช็คความละเอียดสูงสุดของกล้อง
 python test_camera.py
 
-# 🖼️ สร้างชุดภาพทดสอบ 39 ภาพ (ทั้งคำเดี่ยว สระ วรรณยุกต์ และประโยค)
+#  สร้างชุดภาพทดสอบ 39 ภาพ (ทั้งคำเดี่ยว สระ วรรณยุกต์ และประโยค)
 python generate_test.py
 
-# 📊 รันแบบทดสอบความแม่นยำอัตโนมัติ (100% Passing Benchmark)
+#  รันแบบทดสอบความแม่นยำอัตโนมัติ (100% Passing Benchmark)
 python test_accuracy.py
 ```
 
 ---
 
-## 🔬 สถาปัตยกรรมระบบ (Pipeline Architecture)
+## สถาปัตยกรรมระบบ (Pipeline Architecture)
 
 ```mermaid
 graph TD
@@ -130,7 +130,7 @@ graph TD
 
 ---
 
-## 🎯 แผนการพัฒนาถัดไป (Roadmap for Dragon Q6A Edge AI)
+## แผนการพัฒนาถัดไป (Roadmap for Dragon Q6A Edge AI)
 
 1. **Hardware Integration:** ต่อกล้อง USB / MIPI เข้ากับบอร์ด Dragon Q6A
 2. **Real-time Camera Stream:** พัฒนาโหมดสแกนแบบ Real-time FPS สูง
