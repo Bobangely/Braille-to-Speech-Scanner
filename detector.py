@@ -247,16 +247,22 @@ class BrailleDetector:
         # 5. สร้าง cells จากทุกคู่ (row_group × col_group)
         cells = []
         for rg in cell_row_groups:
+            prev_cell_grid = None
             for c_idx, cg in enumerate(cell_col_groups):
                 prev_col = cell_col_groups[c_idx - 1][-1] if c_idx > 0 else None
                 next_col = cell_col_groups[c_idx + 1][0] if c_idx + 1 < len(cell_col_groups) else None
 
                 cell_dots, grid_info = self._assign_dots_to_cell(
-                    dots, rg, cg, dot_spacing, prev_col=prev_col, next_col=next_col
+                    dots, rg, cg, dot_spacing,
+                    prev_col=prev_col, next_col=next_col,
+                    prev_grid=prev_cell_grid
                 )
                 if cell_dots:
-                    cx = np.mean(cg)
-                    cy = np.mean(rg)
+                    # ใช้กึ่งกลางเรขาคณิตของ 2x3 Grid เป็น center ของ cell
+                    cols = grid_info['expected_cols']
+                    rows = grid_info['expected_rows']
+                    cx = (cols[0] + cols[1]) / 2.0
+                    cy = (rows[0] + rows[-1]) / 2.0
                     cells.append({
                         'dots': frozenset(cell_dots),
                         'center': (int(cx), int(cy)),
@@ -264,6 +270,7 @@ class BrailleDetector:
                         'y': float(cy),
                         'grid': grid_info,
                     })
+                    prev_cell_grid = grid_info
 
         # เรียงตาม text line (Y) ก่อน แล้วค่อย sort X ภายในแต่ละบรรทัด
         # จัดกลุ่ม cells ที่อยู่บรรทัดเดียวกัน (Y ใกล้กัน)
@@ -404,7 +411,7 @@ class BrailleDetector:
 
         return groups
 
-    def _assign_dots_to_cell(self, dots, row_group, col_group, dot_spacing, prev_col=None, next_col=None):
+    def _assign_dots_to_cell(self, dots, row_group, col_group, dot_spacing, prev_col=None, next_col=None, prev_grid=None):
         """
         หาว่า dot ไหนตกอยู่ใน cell (row_group × col_group)
         แล้ว return set ของ dot numbers (1-6)
@@ -451,18 +458,31 @@ class BrailleDetector:
             # มีแค่ 1 คอลัมน์ → ตรวจสอบว่าเป็น Left column หรือ Right column
             c = cg[0]
             is_right_col = False
+            cell_gap = dot_spacing * 1.375
+            pitch = dot_spacing + cell_gap  # ระยะห่างระหว่างเซลล์ ≈ 2.375 * dot_spacing
 
-            if next_col is not None:
-                gap_next = next_col - c
-                # ถ้า gap ไปหา cell ถัดไปแคบ (< 1.8 * dot_spacing) → นี่คือ right column
-                if gap_next < dot_spacing * 1.8:
+            if prev_grid is not None:
+                prev_right = prev_grid['expected_cols'][1]
+                dist = c - prev_right
+                offset = dist - cell_gap
+                # คำนวณ signed remainder ในช่วง [-pitch/2, pitch/2]
+                rem = (offset + pitch / 2.0) % pitch - (pitch / 2.0)
+                if abs(rem - dot_spacing) < abs(rem):
                     is_right_col = True
                 else:
                     is_right_col = False
             elif prev_col is not None:
-                gap_prev = c - prev_col
-                # ถ้า gap จาก cell ก่อนหน้ากว้าง (> 1.8 * dot_spacing) → นี่คือ right column
-                if gap_prev > dot_spacing * 1.8:
+                dist = c - prev_col
+                offset = dist - cell_gap
+                rem = (offset + pitch / 2.0) % pitch - (pitch / 2.0)
+                if abs(rem - dot_spacing) < abs(rem):
+                    is_right_col = True
+                else:
+                    is_right_col = False
+            elif next_col is not None:
+                dist = next_col - c
+                rem = (dist + pitch / 2.0) % pitch - (pitch / 2.0)
+                if abs(rem - cell_gap) < abs(rem):
                     is_right_col = True
                 else:
                     is_right_col = False

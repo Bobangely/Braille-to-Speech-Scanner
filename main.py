@@ -125,8 +125,12 @@ def main():
         description='Braille Reader — ตรวจจับจุดสีบนอักษรเบรลล์',
     )
     parser.add_argument(
-        'image', type=str,
-        help='Path ของภาพที่ต้องการอ่าน',
+        'image', type=str, nargs='?', default=None,
+        help='Path ของภาพที่ต้องการอ่าน (เว้นว่างไว้หากต้องการเปิดกล้อง Webcam)',
+    )
+    parser.add_argument(
+        '--camera', type=int, nargs='?', const=0, default=None,
+        help='เปิดโหมดสแกน Real-Time จากกล้อง Webcam ID (default: 0)',
     )
     parser.add_argument(
         '--color', type=str, default='blue',
@@ -134,9 +138,9 @@ def main():
         help='สีของจุดที่แต้ม (default: blue, รองรับ: blue, red, green, black)',
     )
     parser.add_argument(
-        '--lang', type=str, default='english',
+        '--lang', type=str, default='thai',
         choices=['english', 'thai'],
-        help='ภาษาที่ต้องการถอดรหัส (default: english, รองรับ: english, thai)',
+        help='ภาษาที่ต้องการถอดรหัส (default: thai, รองรับ: english, thai)',
     )
     parser.add_argument(
         '--speak', action='store_true',
@@ -152,6 +156,19 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # ถ้าเลือก --camera หรือไม่ได้ระบุ path รูปภาพ ให้เปิดโหมดกล้อง Webcam
+    if args.camera is not None or args.image is None:
+        from camera_reader import RealTimeBrailleScanner
+        cam_id = args.camera if args.camera is not None else 0
+        scanner = RealTimeBrailleScanner(
+            camera_id=cam_id,
+            color=args.color,
+            lang=args.lang,
+            auto_speak=True if args.speak or args.camera is not None else True,
+        )
+        scanner.run()
+        return
 
     # ตรวจสอบไฟล์
     if not os.path.exists(args.image):

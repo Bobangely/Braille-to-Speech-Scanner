@@ -104,11 +104,29 @@ def generate_braille_image(
     return image
 
 
-def generate_test_suite(output_dir='sample_images'):
+from detector import BrailleDetector
+from decoder import decode_cells, decode_cells_verbose
+
+
+def bgr_to_color_name(bgr):
+    """แปลง BGR tuple เป็นชื่อสีสำหรับ detector"""
+    if bgr == (255, 120, 0):
+        return 'blue'
+    elif bgr == (0, 0, 220):
+        return 'red'
+    elif bgr == (0, 180, 0):
+        return 'green'
+    return 'blue'
+
+
+def generate_test_suite(output_dir='sample_images', annotated_dir='output', save_annotated=True):
     """
     สร้างชุดภาพทดสอบภาษาอังกฤษและภาษาไทย
+    พร้อมสร้างภาพ Annotated (มี Grid 2x3 และแถบข้อความคำแปล) บันทึกลง output/
     """
     os.makedirs(output_dir, exist_ok=True)
+    if save_annotated:
+        os.makedirs(annotated_dir, exist_ok=True)
 
     # ภาษาอังกฤษ
     english_cases = [
@@ -121,57 +139,112 @@ def generate_test_suite(output_dir='sample_images'):
         ('test_python.png', 'python', (255, 120, 0), False),
     ]
 
-    # ภาษาไทย
+    # ภาษาไทย — ชุดทดสอบครอบคลุม
     thai_cases = [
+        # --- 1. คำเดี่ยว พื้นฐาน ---
         ('test_thai_ka.png', 'กา', (255, 120, 0), False),
         ('test_thai_thai.png', 'ไทย', (255, 120, 0), False),
         ('test_thai_khon.png', 'คน', (0, 0, 220), False),
         ('test_thai_cat.png', 'แมว', (0, 180, 0), False),
         ('test_thai_home.png', 'บ้าน', (255, 120, 0), False),
         ('test_thai_consonants.png', 'กขคงจ', (255, 120, 0), False),
+
+        # --- 2. สระเดี่ยว (Short & Long Vowels) ---
+        ('test_thai_v_a.png', 'กะ', (255, 120, 0), False),           # สระอะ
+        ('test_thai_v_aa.png', 'กา', (255, 120, 0), False),          # สระอา
+        ('test_thai_v_i.png', 'กิ', (255, 120, 0), False),           # สระอิ
+        ('test_thai_v_ii.png', 'กี', (255, 120, 0), False),          # สระอี
+        ('test_thai_v_ue.png', 'กึ', (255, 120, 0), False),          # สระอึ
+        ('test_thai_v_uee.png', 'กื', (255, 120, 0), False),         # สระอือ
+        ('test_thai_v_u.png', 'กุ', (255, 120, 0), False),           # สระอุ
+        ('test_thai_v_uu.png', 'กู', (255, 120, 0), False),          # สระอู
+
+        # --- 3. สระนำ (Leading Vowels) ---
+        ('test_thai_v_e.png', 'เก', (255, 120, 0), False),           # สระเอ
+        ('test_thai_v_ae.png', 'แก', (255, 120, 0), False),          # สระแอ
+        ('test_thai_v_o.png', 'โก', (0, 0, 220), False),             # สระโอ
+        ('test_thai_v_ai.png', 'ไก', (255, 120, 0), False),          # สระไอ
+
+        # --- 4. วรรณยุกต์ (Tone Marks) ---
+        ('test_thai_t_ek.png', 'ก่า', (255, 120, 0), False),         # ไม้เอก
+        ('test_thai_t_tho.png', 'ก้า', (255, 120, 0), False),        # ไม้โท
+        ('test_thai_t_tri.png', 'ก๊า', (0, 180, 0), False),          # ไม้ตรี
+        ('test_thai_t_chat.png', 'ก๋า', (255, 120, 0), False),       # ไม้จัตวา
+
+        # --- 5. สระผสม (Compound Vowels) ---
+        ('test_thai_cv_ao.png', 'เกา', (255, 120, 0), False),        # เ◌า
+        ('test_thai_cv_uea.png', 'เกือ', (255, 120, 0), False),      # เ◌ือ
+        ('test_thai_cv_am.png', 'กำ', (0, 0, 220), False),           # สระอำ
+
+        # --- 6. ประโยค (Sentences) ---
+        ('test_thai_sent_khon_rak_hma.png', 'คน รัก หมา', (255, 120, 0), False),
+        ('test_thai_sent_pai_kin_khao.png', 'ไป กิน ข้าว', (0, 0, 220), False),
+        ('test_thai_sent_wan_nee_dee.png', 'วัน นี้ ดี', (0, 180, 0), False),
+        ('test_thai_sent_chan_rak_ther.png', 'ฉัน รัก เธอ', (255, 120, 0), False),
+        ('test_thai_sent_kin_khao_kan.png', 'กิน ข้าว กัน', (255, 120, 0), False),
+        ('test_thai_sent_nam_jai_dee.png', 'น้ำ ใจ ดี', (255, 120, 0), False),
+        ('test_thai_sent_maa_kin_khao.png', 'มา กิน ข้าว', (0, 180, 0), False),
     ]
 
     generated = []
 
+    def _process_cases(cases, lang):
+        for filename, text, color, noise in cases:
+            filepath = os.path.join(output_dir, filename)
+            base_name = os.path.splitext(filename)[0]
+            try:
+                # 1. สร้างภาพอักษรเบรลล์ดิบ (Raw dot image)
+                img = generate_braille_image(
+                    text, dot_color_bgr=color, add_noise=noise, lang=lang
+                )
+                cv2.imwrite(filepath, img)
+
+                # 2. สร้างภาพ Annotated พร้อม Grid และแบนเนอร์แสดงข้อความ
+                anno_info = ""
+                if save_annotated:
+                    color_name = bgr_to_color_name(color)
+                    detector = BrailleDetector(dot_color=color_name)
+                    cells, debug_info = detector.detect(img)
+                    decoded_text = decode_cells(cells, lang=lang)
+                    verbose_results = decode_cells_verbose(cells, lang=lang)
+
+                    annotated_img = detector.annotate_with_text(
+                        img, debug_info['dots'], cells,
+                        decoded_text=decoded_text,
+                        verbose_results=verbose_results,
+                        lang=lang
+                    )
+                    anno_path = os.path.join(annotated_dir, f"{base_name}_annotated.png")
+                    cv2.imwrite(anno_path, annotated_img)
+                    anno_info = f" -> Grid: {anno_path}"
+
+                print(f"  [OK] {filepath:<40} -> '{text}'{anno_info}")
+                generated.append(filepath)
+            except Exception as e:
+                print(f"  [ERR] {filepath:<40} -> Error: {e}")
+
     print("--- สร้างภาพทดสอบภาษาอังกฤษ ---")
-    for filename, text, color, noise in english_cases:
-        filepath = os.path.join(output_dir, filename)
-        try:
-            img = generate_braille_image(
-                text, dot_color_bgr=color, add_noise=noise, lang='english'
-            )
-            cv2.imwrite(filepath, img)
-            print(f"  [OK] {filepath:<40} -> '{text}'")
-            generated.append(filepath)
-        except Exception as e:
-            print(f"  [ERR] {filepath:<40} -> Error: {e}")
+    _process_cases(english_cases, lang='english')
 
     print("\n--- สร้างภาพทดสอบภาษาไทย ---")
-    for filename, text, color, noise in thai_cases:
-        filepath = os.path.join(output_dir, filename)
-        try:
-            img = generate_braille_image(
-                text, dot_color_bgr=color, add_noise=noise, lang='thai'
-            )
-            cv2.imwrite(filepath, img)
-            print(f"  [OK] {filepath:<40} -> '{text}'")
-            generated.append(filepath)
-        except Exception as e:
-            print(f"  [ERR] {filepath:<40} -> Error: {e}")
+    _process_cases(thai_cases, lang='thai')
 
     return generated
 
 
 if __name__ == '__main__':
-    print("=" * 60)
-    print("  Braille Test Image Generator (English & Thai)")
-    print("=" * 60)
+    print("=" * 70)
+    print("  Braille Test Image Generator (with 2x3 Grid & Word Banner)")
+    print("=" * 70)
     print()
 
     files = generate_test_suite()
 
     print()
     print(f"สร้างภาพทดสอบสำเร็จ {len(files)} ไฟล์")
+    print("ภาพดิบ (Input):     sample_images/")
+    print("ภาพมี Grid + คำ:   output/*_annotated.png")
+    print()
     print("ทดสอบอังกฤษ:  python main.py sample_images/test_hello_blue.png")
     print("ทดสอบไทย:     python main.py sample_images/test_thai_ka.png --lang thai")
 

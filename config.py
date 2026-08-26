@@ -80,9 +80,9 @@ class DetectionConfig:
     BLACK_INTENSITY_MAX = 80
 
     # ----- Blob Detection -----
-    MIN_DOT_AREA = 20         # พื้นที่ pixel ขั้นต่ำของจุด
+    MIN_DOT_AREA = 8          # พื้นที่ pixel ขั้นต่ำของจุด (รองรับภาพขนาดเล็ก/ครอป และตัด noise)
     MAX_DOT_AREA = 8000       # พื้นที่ pixel สูงสุดของจุด
-    MIN_CIRCULARITY = 0.4     # ค่า circularity ขั้นต่ำ (1.0 = วงกลมสมบูรณ์)
+    MIN_CIRCULARITY = 0.45    # ค่า circularity ขั้นต่ำ (1.0 = วงกลมสมบูรณ์)
 
     # ----- Morphological Operations -----
     MORPH_KERNEL_SIZE = 3     # ขนาด kernel สำหรับ morphology

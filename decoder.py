@@ -2,6 +2,7 @@
 Braille Reader - Decoder
 =========================
 แปลง detected Braille cells (dot positions) เป็นตัวอักษร (English & Thai)
+ใช้ Context-Aware State Machine สำหรับภาษาไทย เพื่อแยกพยัญชนะ/สระ/วรรณยุกต์อย่างแม่นยำ
 """
 
 from config import BRAILLE_TO_CHAR
@@ -9,8 +10,23 @@ from config_thai import (
     THAI_CONSONANTS,
     THAI_BRAILLE_TO_CHAR,
     THAI_CONSONANTS_PREFIX6,
+    THAI_CONSONANTS_PREFIX36,
+    THAI_CONSONANTS_PREFIX356,
+    THAI_VOWELS,
     THAI_TONE_MARKS,
+    THAI_SPECIAL_MARKS,
     THAI_DIGIT_MAP,
+    CONSONANT_KEYS,
+    VOWEL_KEYS,
+    TONE_KEYS,
+    SPECIAL_KEYS,
+    LEADING_VOWELS,
+    COMPOUND_VOWELS,
+    COMBINING_VOWELS,
+    PREFIX_6,
+    PREFIX_36,
+    PREFIX_356,
+    NUMBER_INDICATOR,
 )
 
 
@@ -68,9 +84,8 @@ def decode_cells_english(cells):
                     result.append(' ')
                 number_mode = False
             else:
-                # คำนวณระยะห่างแนวนอน
                 dx = cell.get('x', 0) - prev_cell.get('x', 0)
-                if dx > 180 and result and not result[-1].endswith(' '):
+                if dx > 135 and result and not result[-1].endswith(' '):
                     result.append(' ')
                     number_mode = False
 
@@ -107,43 +122,87 @@ def decode_cells_english(cells):
     return ''.join(result).strip()
 
 
+# =============================================================================
+# Thai Braille Decoder — Context-Aware State Machine
+# =============================================================================
+
+def _check_space(cells, i, result, number_mode):
+    """
+    ตรวจสอบว่าต้องแทรก space ระหว่าง cell ก่อนหน้ากับ cell ปัจจุบันไหม
+    Returns: number_mode (อาจ reset เป็น False เมื่อเจอ space)
+    """
+    if i > 0:
+        prev_cell = cells[i - 1]
+        prev_y = prev_cell.get('y', 0)
+        curr_y = cells[i].get('y', 0)
+
+        if abs(curr_y - prev_y) > 30:
+            if result and not result[-1].endswith(' '):
+                result.append(' ')
+            return False  # reset number mode on new line
+        else:
+            dx = cells[i].get('x', 0) - prev_cell.get('x', 0)
+            if dx > 135 and result and not result[-1].endswith(' '):
+                result.append(' ')
+                return False  # reset number mode on space
+    return number_mode
+
+
+def _get_last_consonant(result):
+    """
+    ดึงพยัญชนะตัวสุดท้ายใน result (ถ้ามี) สำหรับการจัดเรียงสระนำ/สระผสม
+    Returns: (index, consonant_char) หรือ (None, None)
+    """
+    if not result:
+        return None, None
+
+    # ค้นหาย้อนกลับจากท้าย result หา consonant ตัวล่าสุด
+    all_consonants = set(THAI_CONSONANTS.values())
+    all_consonants.update(THAI_CONSONANTS_PREFIX6.values())
+    all_consonants.update(THAI_CONSONANTS_PREFIX36.values())
+    all_consonants.update(THAI_CONSONANTS_PREFIX356.values())
+
+    for idx in range(len(result) - 1, -1, -1):
+        ch = result[idx]
+        if ch in all_consonants:
+            return idx, ch
+        # ถ้าเจอ space หรือตัวอื่นที่ไม่ใช่ vowel/tone → หยุดค้นหา
+        if ch == ' ':
+            break
+    return None, None
+
+
 def decode_cells_thai(cells):
     """
     แปลง Braille cells เป็นภาษาไทย (Thai Braille Grade 1)
-    รองรับ:
-    - พยัญชนะ 1 เซลล์ (ก, ข, ค, ...)
-    - พยัญชนะ 2 เซลล์ ที่มีจุด 6 นำหน้า (ฃ, ฆ, ฌ, ฎ, ฏ, ฐ, ฑ, ฒ, ณ, ถ, ธ, ผ, ฝ, ภ, ศ, ษ, ฬ)
-    - สระหน้า, สระหลัง, สระบน, สระล่าง (เ, แ, โ, ไ, ใ, ะ, า, ิ, ี, ึ, ื, ุ, ู, ำ, ั, ็, ์, ๆ, ฯ)
-    - วรรณยุกต์ (่, ้, ๊, ๋)
-    - ตัวเลขไทย/อารบิก (เมื่อมีเครื่องหมาย # จุด 3,4,5,6 นำหน้า)
+    ตามมาตรฐานอักษรเบรลล์ไทยสากล (Genevieve Caulfield / มูลนิธิช่วยคนตาบอดแห่งประเทศไทย)
+
+    ใช้ Context-Aware State Machine:
+    - State 'CONSONANT': คาดว่า cell ถัดไปเป็นพยัญชนะต้น
+    - State 'VOWEL_TONE': เพิ่งเจอพยัญชนะ คาดว่าจะเป็นสระ/วรรณยุกต์
     """
     i = 0
     n = len(cells)
     result = []
     number_mode = False
 
+    # State: 'CONSONANT' = กำลังรอพยัญชนะต้น, 'VOWEL_TONE' = รอสระ/วรรณยุกต์
+    state = 'CONSONANT'
+
     while i < n:
         cell = cells[i]
         dots = cell['dots']
 
-        # เช็คระยะห่างเพื่อแทรก space
-        if i > 0:
-            prev_cell = cells[i - 1]
-            prev_y = prev_cell.get('y', 0)
-            curr_y = cell.get('y', 0)
+        # --- ตรวจ space ---
+        number_mode = _check_space(cells, i, result, number_mode)
+        # ถ้า result ลงท้ายด้วย space → reset state เป็น CONSONANT (ต้นคำใหม่)
+        if result and result[-1] == ' ':
+            state = 'CONSONANT'
 
-            if abs(curr_y - prev_y) > 30:
-                if result and not result[-1].endswith(' '):
-                    result.append(' ')
-                number_mode = False
-            else:
-                dx = cell.get('x', 0) - prev_cell.get('x', 0)
-                if dx > 180 and result and not result[-1].endswith(' '):
-                    result.append(' ')
-                    number_mode = False
-
+        # ==============================================================
         # 1. Number indicator (จุด 3,4,5,6)
-        if dots == frozenset({3, 4, 5, 6}):
+        # ==============================================================
+        if dots == NUMBER_INDICATOR:
             number_mode = True
             i += 1
             continue
@@ -156,39 +215,192 @@ def decode_cells_thai(cells):
             else:
                 number_mode = False
 
-        # 2. จุด 6 (อาจเป็นจุดนำพยัญชนะ 2 เซลล์ หรือ ไม้โท)
-        if dots == frozenset({6}):
-            # ตรวจสอบ cell ถัดไปว่าคู่กับพยัญชนะ prefix 6 หรือไม่
+        # ==============================================================
+        # 2. สระ 'ใ' (2 cells: dots 1,5,6 + dot 2)
+        # ==============================================================
+        if dots == frozenset({1, 5, 6}) and i + 1 < n and cells[i + 1]['dots'] == frozenset({2}):
+            # สระ ใ เป็นสระนำ — ต้อง reorder ไปหน้าพยัญชนะ
+            cons_idx, cons_ch = _get_last_consonant(result)
+            if cons_idx is not None:
+                result.insert(cons_idx, 'ใ')
+            else:
+                result.append('ใ')
+            state = 'VOWEL_TONE'  # อาจตามด้วยวรรณยุกต์
+            i += 2
+            continue
+
+        # ==============================================================
+        # 3. Prefix consonants (2-cell consonants)
+        # ==============================================================
+        # Prefix 6
+        if dots == PREFIX_6:
             if i + 1 < n and cells[i + 1]['dots'] in THAI_CONSONANTS_PREFIX6:
                 next_dots = cells[i + 1]['dots']
-                ch = THAI_CONSONANTS_PREFIX6[next_dots]
-                result.append(ch)
-                i += 2  # ข้ามทั้ง 2 เซลล์
+                result.append(THAI_CONSONANTS_PREFIX6[next_dots])
+                state = 'VOWEL_TONE'
+                i += 2
+                continue
+            # ถ้าไม่มี match → ถือเป็น stand-alone (ในภาษาอังกฤษ = capital indicator, ไม่ใช้ในไทย)
+            # fallthrough
+
+        # Prefix 36
+        if dots == PREFIX_36:
+            if i + 1 < n and cells[i + 1]['dots'] in THAI_CONSONANTS_PREFIX36:
+                next_dots = cells[i + 1]['dots']
+                result.append(THAI_CONSONANTS_PREFIX36[next_dots])
+                state = 'VOWEL_TONE'
+                i += 2
+                continue
+
+        # Prefix 356
+        if dots == PREFIX_356:
+            if i + 1 < n and cells[i + 1]['dots'] in THAI_CONSONANTS_PREFIX356:
+                next_dots = cells[i + 1]['dots']
+                result.append(THAI_CONSONANTS_PREFIX356[next_dots])
+                state = 'VOWEL_TONE'
+                i += 2
                 continue
             else:
-                # ไม่ใช่จุดนำพยัญชนะ -> เป็นไม้โท '้'
-                result.append('้')
+                # Standalone 356 = การันต์ (์)
+                result.append('์')
                 i += 1
                 continue
 
-        # 3. วรรณยุกต์อื่นๆ (ไม้เอก, ไม้ตรี, ไม้จัตวา)
-        if dots in THAI_TONE_MARKS and dots != frozenset({6}):
+        # ==============================================================
+        # 4. Context-Aware Resolution
+        # ==============================================================
+
+        # 4a. วรรณยุกต์ (Tone marks) — เสมอมาหลังพยัญชนะ/สระ
+        if dots in TONE_KEYS:
             result.append(THAI_TONE_MARKS[dots])
+            # state ยังเป็น VOWEL_TONE (อาจมี tone+special ต่อ)
             i += 1
             continue
 
-        # 4. พยัญชนะ / สระ (1 เซลล์)
+        # 4b. เครื่องหมายพิเศษ (การันต์, ไม้ยมก, ไม้ไต่คู้)
+        if dots in SPECIAL_KEYS:
+            result.append(THAI_SPECIAL_MARKS[dots])
+            i += 1
+            continue
+
+        # 4c. สระ — ถ้า state เป็น VOWEL_TONE หรือ dots อยู่ใน VOWEL_KEYS
+        if dots in VOWEL_KEYS and state == 'VOWEL_TONE':
+            raw_char = THAI_VOWELS[dots]
+            _apply_vowel(result, raw_char)
+            # state ยังเป็น VOWEL_TONE (อาจมีวรรณยุกต์ตาม)
+            i += 1
+            continue
+
+        # 4d. พยัญชนะ — ถ้า state เป็น CONSONANT หรือ dots อยู่ใน CONSONANT_KEYS
+        if dots in CONSONANT_KEYS:
+            result.append(THAI_CONSONANTS[dots])
+            state = 'VOWEL_TONE'
+            i += 1
+            continue
+
+        # 4e. ถ้า state เป็น CONSONANT แต่ dots อยู่ใน VOWEL_KEYS (สระลอย เช่น ต้นคำ)
+        if dots in VOWEL_KEYS:
+            raw_char = THAI_VOWELS[dots]
+            _apply_vowel(result, raw_char)
+            state = 'VOWEL_TONE'
+            i += 1
+            continue
+
+        # ==============================================================
+        # 5. Fallback — ลองหาใน combined dict
+        # ==============================================================
         if dots in THAI_BRAILLE_TO_CHAR:
-            result.append(THAI_BRAILLE_TO_CHAR[dots])
+            raw_char = THAI_BRAILLE_TO_CHAR[dots]
+            result.append(raw_char)
             i += 1
             continue
 
         # 6. Unknown dot pattern
         dot_list = sorted(dots)
         result.append(f'[{",".join(map(str, dot_list))}]')
+        state = 'CONSONANT'
         i += 1
 
     return ''.join(result).strip()
+
+
+def _apply_vowel(result, raw_char):
+    """
+    จัดการสระ: สระนำ (reorder), สระผสม (decompose), สระ combining (append)
+
+    Parameters
+    ----------
+    result : list of str
+        ผลลัพธ์สะสม (mutable, แก้ไขโดยตรง)
+    raw_char : str
+        สระที่ได้จาก lookup (อาจเป็นสระนำ, สระผสม, หรือสระ combining)
+    """
+    # --- สระนำ (Leading Vowels): เ แ โ ไ ---
+    if raw_char in LEADING_VOWELS:
+        cons_idx, cons_ch = _get_last_consonant(result)
+        if cons_idx is not None:
+            result.insert(cons_idx, raw_char)
+        else:
+            # ไม่มีพยัญชนะก่อนหน้า → ใส่ 'อ' เป็น placeholder
+            result.append(raw_char)
+        return
+
+    # --- สระผสม (Compound Vowels) ---
+    if raw_char == 'เ◌า':
+        cons_idx, cons_ch = _get_last_consonant(result)
+        if cons_idx is not None:
+            result.insert(cons_idx, 'เ')
+            result.append('า')
+        else:
+            result.append('เอา')
+        return
+
+    if raw_char == 'เ◌ีย':
+        cons_idx, cons_ch = _get_last_consonant(result)
+        if cons_idx is not None:
+            result.insert(cons_idx, 'เ')
+            result.append('ีย')
+        else:
+            result.append('เอีย')
+        return
+
+    if raw_char == 'เ◌ือ':
+        cons_idx, cons_ch = _get_last_consonant(result)
+        if cons_idx is not None:
+            result.insert(cons_idx, 'เ')
+            result.append('ือ')
+        else:
+            result.append('เอือ')
+        return
+
+    if raw_char == 'เ◌อ':
+        cons_idx, cons_ch = _get_last_consonant(result)
+        if cons_idx is not None:
+            result.insert(cons_idx, 'เ')
+            result.append('อ')
+        else:
+            result.append('เออ')
+        return
+
+    if raw_char == 'เ◌ิ◌':
+        cons_idx, cons_ch = _get_last_consonant(result)
+        if cons_idx is not None:
+            result.insert(cons_idx, 'เ')
+            result.append('ิ')
+        else:
+            result.append('เอิ')
+        return
+
+    if raw_char == '◌ัว':
+        cons_idx, cons_ch = _get_last_consonant(result)
+        if cons_idx is not None:
+            result.append('ัว')
+        else:
+            result.append('อัว')
+        return
+
+    # --- สระ combining ปกติ (ะ ั า ิ ี ึ ื ุ ู ำ) ---
+    result.append(raw_char)
 
 
 def dots_to_braille_unicode(dots):
