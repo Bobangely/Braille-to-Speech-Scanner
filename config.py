@@ -62,11 +62,11 @@ class DetectionConfig:
     """ค่า config สำหรับ dot detection pipeline"""
 
     # ----- HSV Color Ranges -----
-    # สีน้ำเงิน (แนะนำเป็นสีหลัก เพราะ contrast ดีกับกระดาษขาว)
+    # สีน้ำเงิน 
     BLUE_HSV_LOWER = (90, 80, 50)
     BLUE_HSV_UPPER = (135, 255, 255)
 
-    # สีแดง (ต้องใช้ 2 range เพราะ Hue wrap around ที่ 0/180)
+    # สีแดง 
     RED_HSV_LOWER_1 = (0, 80, 50)
     RED_HSV_UPPER_1 = (15, 255, 255)
     RED_HSV_LOWER_2 = (165, 80, 50)
@@ -76,7 +76,7 @@ class DetectionConfig:
     GREEN_HSV_LOWER = (35, 80, 50)
     GREEN_HSV_UPPER = (85, 255, 255)
 
-    # สีดำ (สำหรับแผนภาพหรือภาพพิมพ์ทั่วไป)
+    # สีดำ 
     BLACK_INTENSITY_MAX = 80
 
     # ----- Blob Detection -----

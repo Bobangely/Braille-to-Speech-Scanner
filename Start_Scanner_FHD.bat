@@ -25,15 +25,17 @@ echo.
 echo  Starting scanner in Full HD 1080p mode...
 echo.
 
-REM Try .venv first, then uv run, then system python
+REM หากยังไม่มี .venv ให้เรียกตัวติดตั้งอัตโนมัติ
+if not exist ".venv\Scripts\python.exe" (
+    echo  ⚠️ ไม่พบ Virtual Environment (.venv)
+    echo  กำลังติดตั้ง Dependencies ที่จำเป็นให้อัตโนมัติ...
+    echo.
+    call install_dependencies.bat
+)
+
 if exist ".venv\Scripts\python.exe" (
     .venv\Scripts\python.exe camera_reader.py --camera 0 --res fhd --sharp 2 --color blue --lang thai
 ) else (
-    where uv >nul 2>&1
-    if %errorlevel%==0 (
-        uv run camera_reader.py --camera 0 --res fhd --sharp 2 --color blue --lang thai
-    ) else (
-        python camera_reader.py --camera 0 --res fhd --sharp 2 --color blue --lang thai
-    )
+    python camera_reader.py --camera 0 --res fhd --sharp 2 --color blue --lang thai
 )
 pause
