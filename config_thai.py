@@ -1,6 +1,6 @@
 """
-Thai Braille Configuration (Standard: Genevieve Caulfield / Thailand Association of the Blind)
-=============================================================================================
+Thai Braille Configuration (Standard: thisAble.me / Thailand Association of the Blind / Genevieve Caulfield)
+==========================================================================================================
 มาตรฐานอักษรเบรลล์ไทยสากล (ระบบเบรลล์ไทยมาตรฐาน)
 
 Braille Cell Layout:
@@ -13,14 +13,14 @@ Braille Cell Layout:
   - THAI_CONSONANTS_PREFIX6  = พยัญชนะที่ต้องมี prefix จุด 6
   - THAI_CONSONANTS_PREFIX36 = พยัญชนะที่ต้องมี prefix จุด 3,6
   - THAI_CONSONANTS_PREFIX356= พยัญชนะที่ต้องมี prefix จุด 3,5,6
-  - THAI_VOWELS              = สระ (ทั้งสระเดี่ยว, สระผสม, สระนำ)
-  - THAI_TONE_MARKS          = วรรณยุกต์ 4 ตัว
-  - THAI_SPECIAL_MARKS       = การันต์, ไม้ยมก, ไม้ไต่คู้
+  - THAI_VOWELS              = สระ
+  - THAI_TONE_MARKS          = วรรณยุกต์ 4 ตัว (มาตรฐานไทย)
+  - THAI_SPECIAL_MARKS       = การันต์, ไม้ยมก, ไม้ไต่คู้, ไปยาลน้อย
   - THAI_DIGIT_MAP           = ตัวเลข 0-9
 """
 
 # =============================================================================
-# ส่วนที่ 1: พยัญชนะ (Consonants) — Single Cell
+# ส่วนที่ 1: พยัญชนะ (Consonants) — Single Cell (ตรงตามตารางมาตรฐานไทย 100%)
 # =============================================================================
 THAI_CONSONANTS = {
     # --- ก - ง ---
@@ -56,7 +56,7 @@ THAI_CONSONANTS = {
     frozenset({1, 2, 3, 5}):       'ร',    # r (dots 1,2,3,5)
     frozenset({1, 2, 3}):          'ล',    # l (dots 1,2,3)
     frozenset({2, 4, 5, 6}):       'ว',    # w (dots 2,4,5,6)
-    frozenset({2, 3, 4}):          'ส',    # s (high, dots 2,3,4)
+    frozenset({2, 3, 4}):          'ศ',    # s (high, dots 2,3,4) — หมายเหตุ: ศ/ส ในตารางใช้ dots 2,3,4
     frozenset({1, 2, 5}):          'ห',    # h (high, dots 1,2,5)
     frozenset({1, 3, 5}):          'อ',    # o (dots 1,3,5)
     frozenset({1, 2, 3, 4, 5, 6}): 'ฮ',    # h (low, dots 1,2,3,4,5,6)
@@ -74,7 +74,7 @@ THAI_CONSONANTS_PREFIX6 = {
     frozenset({2, 3, 4, 5, 6}):    'ฑ',    # 6 + ท
     frozenset({1, 3, 4, 5}):       'ณ',    # 6 + น
     frozenset({1, 4, 5, 6}):       'ภ',    # 6 + พ
-    frozenset({2, 3, 4}):          'ศ',    # 6 + ส
+    frozenset({2, 3, 4}):          'ศ',    # 6 + ส (ศ)
     frozenset({1, 2, 3}):          'ฬ',    # 6 + ล
 }
 
@@ -82,7 +82,7 @@ THAI_CONSONANTS_PREFIX6 = {
 THAI_CONSONANTS_PREFIX36 = {
     frozenset({1, 3, 6}):          'ฅ',    # 36 + ค
     frozenset({2, 3, 4, 5, 6}):    'ฒ',    # 36 + ท
-    frozenset({2, 3, 4}):          'ษ',    # 36 + ส
+    frozenset({2, 3, 4}):          'ษ',    # 36 + ศ (ษ)
 }
 
 # Prefix dot-356 (⠴)
@@ -91,29 +91,32 @@ THAI_CONSONANTS_PREFIX356 = {
     frozenset({2, 3, 4, 5, 6}):    'ธ',    # 356 + ท
 }
 
+# เพิ่ม alias ส ให้ใช้ dots {2,3,4} โดยตรง
+THAI_CONSONANTS[frozenset({2, 3, 4})] = 'ส'
+
 # =============================================================================
-# ส่วนที่ 2: สระ (Vowels)
+# ส่วนที่ 2: สระ (Vowels) — ตรงตามตารางมาตรฐานไทย 100%
 # =============================================================================
 THAI_VOWELS = {
-    # --- สระหลัง (ตามหลังพยัญชนะ) ---
+    # --- สระเดี่ยว ---
     frozenset({1}):                'ะ',     # สระอะ (dots 1)
     frozenset({3, 4, 5}):          'ั',     # ไม้หันอากาศ (dots 3,4,5)
     frozenset({1, 6}):             'า',     # สระอา (dots 1,6)
     frozenset({1, 2}):             'ิ',     # สระอิ (dots 1,2)
     frozenset({2, 3}):             'ี',     # สระอี (dots 2,3)
-    frozenset({2, 4, 6}):          'ึ',     # สระอึ (dots 2,4,6)
-    frozenset({2, 6}):             'ื',     # สระอือ (dots 2,6)
+    frozenset({2, 6}):             'ึ',     # สระอึ (dots 2,6)
+    frozenset({2, 5, 6}):          'ื',     # สระอือ (dots 2,5,6)
     frozenset({1, 4}):             'ุ',     # สระอุ (dots 1,4)
     frozenset({2, 5}):             'ู',     # สระอู (dots 2,5)
 
-    # --- สระนำ (วางหน้าพยัญชนะในภาษาไทยพิมพ์ แต่ใน braille วางหลังพยัญชนะ) ---
+    # --- สระนำ ---
     frozenset({1, 2, 4}):          'เ',     # สระเอ (dots 1,2,4)
     frozenset({1, 2, 6}):          'แ',     # สระแอ (dots 1,2,6)
     frozenset({2, 4}):             'โ',     # สระโอ (dots 2,4)
     frozenset({1, 5, 6}):          'ไ',     # สระไอ (dots 1,5,6)
     # สระ 'ใ' = 2 cells: dots 1,5,6 + dot 2 (จัดการใน decoder)
 
-    # --- สระผสมพิเศษ (Single cell ที่แทนสระประสม) ---
+    # --- สระผสมเดี่ยว (Single-cell representations) ---
     frozenset({1, 3, 5, 6}):       'ำ',     # สระอำ (dots 1,3,5,6)
     frozenset({2, 3, 5}):          'เ◌า',   # สระเอา (dots 2,3,5)
     frozenset({1, 4, 6}):          'เ◌อ',   # สระเออ (dots 1,4,6)
@@ -124,22 +127,23 @@ THAI_VOWELS = {
 }
 
 # =============================================================================
-# ส่วนที่ 3: วรรณยุกต์ (Tone marks)
+# ส่วนที่ 3: วรรณยุกต์ (Tone marks) — ตามตารางมาตรฐานไทย (thisAble.me / มูลนิธิฯ)
 # =============================================================================
 THAI_TONE_MARKS = {
-    frozenset({3, 5}):             '่',     # ไม้เอก (dots 3,5)
-    frozenset({2, 5, 6}):          '้',     # ไม้โท (dots 2,5,6)
-    frozenset({2, 3, 5, 6}):       '๊',     # ไม้ตรี (dots 2,3,5,6)
-    frozenset({2, 3, 6}):          '๋',     # ไม้จัตวา (dots 2,3,6)
+    frozenset({3}):                '่',     # ไม้เอก (dot 3)
+    frozenset({3, 6}):             '้',     # ไม้โท (dots 3,6)
+    frozenset({2, 3, 6}):          '๊',     # ไม้ตรี (dots 2,3,6)
+    frozenset({2, 3, 5, 6}):       '๋',     # ไม้จัตวา (dots 2,3,5,6)
 }
 
 # =============================================================================
-# ส่วนที่ 4: เครื่องหมายพิเศษ (Special symbols)
+# ส่วนที่ 4: เครื่องหมายพิเศษ (Special symbols) — ตามตารางมาตรฐานไทย
 # =============================================================================
 THAI_SPECIAL_MARKS = {
-    frozenset({3, 5, 6}):          '์',     # การันต์ (ทัณฑฆาต)
-    frozenset({2}):                'ๆ',     # ไม้ยมก
-    frozenset({3}):                '็',     # ไม้ไต่คู้
+    frozenset({3, 5, 6}):          '์',     # การันต์ / ทัณฑฆาต (dots 3,5,6)
+    frozenset({3, 5}):             '็',     # ไม้ไต่คู้ (dots 3,5)
+    frozenset({2}):                'ๆ',     # ไม้ยมก (dot 2)
+    frozenset({5, 6}):             'ฯ',     # ไปยาลน้อย (dots 5,6)
 }
 
 # =============================================================================
@@ -159,7 +163,7 @@ THAI_DIGIT_MAP = {
 }
 
 # =============================================================================
-# ส่วนที่ 6: Prefix Markers (เพื่อให้ decoder ตรวจจับได้เร็ว)
+# ส่วนที่ 6: Prefix Markers
 # =============================================================================
 PREFIX_6   = frozenset({6})
 PREFIX_36  = frozenset({3, 6})
@@ -169,30 +173,15 @@ NUMBER_INDICATOR = frozenset({3, 4, 5, 6})
 # =============================================================================
 # ส่วนที่ 7: Context-Aware Lookup Helpers
 # =============================================================================
-
-# เซ็ตของ frozenset ที่เป็นพยัญชนะ (สำหรับเช็คเร็ว)
 CONSONANT_KEYS = set(THAI_CONSONANTS.keys())
-
-# เซ็ตของ frozenset ที่เป็นสระ
 VOWEL_KEYS = set(THAI_VOWELS.keys())
-
-# เซ็ตของ frozenset ที่เป็นวรรณยุกต์
 TONE_KEYS = set(THAI_TONE_MARKS.keys())
-
-# เซ็ตของ frozenset ที่เป็นเครื่องหมายพิเศษ
 SPECIAL_KEYS = set(THAI_SPECIAL_MARKS.keys())
 
-# สระนำ (Leading Vowels) — สระที่ต้องสลับไปวางหน้าพยัญชนะในภาษาไทยพิมพ์
 LEADING_VOWELS = {'เ', 'แ', 'โ', 'ไ', 'ใ'}
-
-# สระผสม (Compound vowels) — สระที่แทนด้วย 1 cell แต่ต้องแปลงเป็นรูปเต็ม
 COMPOUND_VOWELS = {'เ◌า', 'เ◌อ', 'เ◌ิ◌', 'เ◌ีย', 'เ◌ือ', '◌ัว'}
-
-# สระที่เป็น combining mark (ตามหลังพยัญชนะ ไม่ต้อง reorder)
 COMBINING_VOWELS = {'ะ', 'ั', 'า', 'ิ', 'ี', 'ึ', 'ื', 'ุ', 'ู', 'ำ'}
 
-# Flat lookup รวม (backward compatibility) — ลำดับ: พยัญชนะ → สระ → วรรณยุกต์ → พิเศษ
-# ตัวหลังจะ overwrite ตัวแรกถ้ามี key ซ้ำ
 THAI_BRAILLE_TO_CHAR = {}
 THAI_BRAILLE_TO_CHAR.update(THAI_CONSONANTS)
 THAI_BRAILLE_TO_CHAR.update(THAI_VOWELS)

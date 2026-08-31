@@ -61,11 +61,23 @@ def generate_braille_image(
     if not cells:
         raise ValueError(f"ไม่พบตัวอักษรที่รองรับใน '{text}' (lang={lang})")
 
-    n_cells = len(cells)
-    cell_width = dot_spacing
-    cell_height = dot_spacing * 2
+    # Word gap ต้องใหญ่กว่า detector space_threshold (dot_spacing * 6.5)
+    word_gap = int(dot_spacing * 7.0)
+    cell_pitch = cell_gap + dot_spacing  # within-word cell pitch
 
-    img_width = margin * 2 + n_cells * cell_width + (n_cells - 1) * cell_gap
+    # คำนวณ X offset ของแต่ละ cell (None = word space → เพิ่ม word_gap)
+    cell_x_positions = []
+    x_cursor = margin
+    for i, dots in enumerate(cells):
+        if dots is None:
+            # space: เพิ่ม gap พิเศษ (ไม่วาดจุด)
+            x_cursor += word_gap
+        else:
+            cell_x_positions.append((x_cursor, dots))
+            x_cursor += cell_pitch
+
+    cell_height = dot_spacing * 2
+    img_width = x_cursor + margin
     img_height = margin * 2 + cell_height
 
     # สร้างภาพพื้นหลัง
@@ -76,11 +88,7 @@ def generate_braille_image(
         image = np.clip(image.astype(np.int16) + noise, 0, 255).astype(np.uint8)
 
     # วาดจุดสำหรับแต่ละ cell
-    for i, dots in enumerate(cells):
-        if dots is None:
-            continue
-
-        cell_x = margin + i * (cell_width + cell_gap)
+    for cell_x, dots in cell_x_positions:
         cell_y = margin
 
         for dot_num in dots:

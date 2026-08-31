@@ -165,7 +165,7 @@ def main():
             camera_id=cam_id,
             color=args.color,
             lang=args.lang,
-            auto_speak=True if args.speak or args.camera is not None else True,
+            auto_speak=True,  # camera mode always enables auto-speak
         )
         scanner.run()
         return

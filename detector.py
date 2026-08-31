@@ -130,6 +130,9 @@ class BrailleDetector:
             _, mask = cv2.threshold(
                 gray, self.config.BLACK_INTENSITY_MAX, 255, cv2.THRESH_BINARY_INV
             )
+        else:
+            # Bug 5 fix: สีที่ไม่รู้จัก → return empty mask แทน crash
+            mask = np.zeros(image.shape[:2], dtype=np.uint8)
 
         return mask
 
@@ -302,22 +305,33 @@ class BrailleDetector:
     def _estimate_dot_spacing(self, centers):
         """
         หาระยะห่างภายใน cell (within-cell spacing) จาก
-        nearest-neighbor distances — ใช้ percentile ต่ำ
-        เพราะ NN distance ที่สั้นที่สุดจะเป็นระยะภายใน cell
+        nearest-neighbor distances — Perf 3: O(n log n) via KDTree
         """
         n = len(centers)
         if n < 2:
             return 0
 
-        nn_dists = []
-        for i in range(n):
-            min_d = float('inf')
-            for j in range(n):
-                if i != j:
-                    d = np.linalg.norm(centers[i] - centers[j])
-                    if d < min_d:
-                        min_d = d
-            nn_dists.append(min_d)
+        try:
+            from scipy.spatial import cKDTree
+            tree = cKDTree(centers)
+            # query k=2: ตัวเอง (dist=0) + nearest neighbor
+            dists, _ = tree.query(centers, k=2)
+            nn_dists = dists[:, 1]  # column 1 = nearest neighbor distance
+        except ImportError:
+            # Fallback: sort-based approximation (still faster than O(n²) brute force)
+            # Project onto X and Y separately, sort, then find nearest gap
+            nn_dists = np.full(n, float('inf'))
+            for axis in range(2):
+                order = np.argsort(centers[:, axis])
+                sorted_vals = centers[order]
+                for k in range(n - 1):
+                    d = np.linalg.norm(sorted_vals[k + 1] - sorted_vals[k])
+                    orig_i = order[k]
+                    orig_j = order[k + 1]
+                    if d < nn_dists[orig_i]:
+                        nn_dists[orig_i] = d
+                    if d < nn_dists[orig_j]:
+                        nn_dists[orig_j] = d
 
         # ใช้ 25th percentile แทน median → จับเฉพาะ within-cell spacing
         return float(np.percentile(nn_dists, 25))
@@ -545,10 +559,17 @@ class BrailleDetector:
     # Visualization (2x3 Grid Overlay & Thai/English Text Banner)
     # =================================================================
 
+    # Perf 4: Font cache — avoid repeated disk I/O per frame
+    _font_cache = {}
+
     def _get_font(self, size=20, bold=False):
-        """โหลด TrueType font ที่รองรับภาษาไทย"""
+        """โหลด TrueType font ที่รองรับภาษาไทย (cached)"""
         import os
         from PIL import ImageFont
+
+        cache_key = (size, bold)
+        if cache_key in self._font_cache:
+            return self._font_cache[cache_key]
 
         font_candidates = [
             'C:/Windows/Fonts/leelawdb.ttf' if bold else 'C:/Windows/Fonts/leelawad.ttf',
@@ -557,13 +578,19 @@ class BrailleDetector:
             '/usr/share/fonts/truetype/thai/Loma-Bold.ttf' if bold else '/usr/share/fonts/truetype/thai/Loma.ttf',
             '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf' if bold else '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
         ]
+        font = None
         for p in font_candidates:
             if os.path.exists(p):
                 try:
-                    return ImageFont.truetype(p, size)
+                    font = ImageFont.truetype(p, size)
+                    break
                 except Exception:
                     pass
-        return ImageFont.load_default()
+        if font is None:
+            font = ImageFont.load_default()
+
+        self._font_cache[cache_key] = font
+        return font
 
     def _annotate(self, image, dots, cells, decoded_text="", verbose_results=None, lang="english"):
         """วาด 2x3 Grid Overlay พร้อมแบนเนอร์แสดงคำที่อ่านได้ลงบนภาพ"""
