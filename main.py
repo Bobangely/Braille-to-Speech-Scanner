@@ -91,30 +91,65 @@ def save_debug_images(debug_info, output_dir, base_name):
 
 
 def display_images(image, debug_info):
-    """แสดงภาพใน window (ถ้ามี GUI)"""
+    """แสดงภาพใน window ให้คมชัด ขนาดใหญ่ สัดส่วนคงเดิมไม่บิดเบี้ยว สามารถย่อขยายหน้าต่างได้อิสระ"""
     try:
-        # Resize ถ้าภาพใหญ่เกินไป
-        max_width = 800
-        h, w = image.shape[:2]
-        if w > max_width:
-            scale = max_width / w
-            image = cv2.resize(image, None, fx=scale, fy=scale)
-            debug_info['mask'] = cv2.resize(
-                debug_info['mask'], None, fx=scale, fy=scale
-            )
-            debug_info['annotated'] = cv2.resize(
-                debug_info['annotated'], None, fx=scale, fy=scale
-            )
+        orig = image.copy()
+        mask = debug_info['mask'].copy()
+        anno = debug_info['annotated'].copy()
 
-        cv2.imshow('Original', image)
-        cv2.imshow('Color Mask', debug_info['mask'])
-        cv2.imshow('Detected Braille', debug_info['annotated'])
+        # --- ฟังก์ชันช่วย: resize ภาพให้พอดีกับ target width โดยรักษาสัดส่วนเดิม ---
+        def fit_width(img, target_w, interp=cv2.INTER_LANCZOS4):
+            h, w = img.shape[:2]
+            if w == 0:
+                return img
+            ratio = target_w / float(w)
+            new_h = int(h * ratio)
+            return cv2.resize(img, (target_w, new_h), interpolation=interp)
 
-        print("  กด key ใดก็ได้เพื่อปิดหน้าต่าง...")
+        # --- ขนาดหน้าต่างที่ต้องการ (px) ---
+        anno_w = 1200   # หน้าต่าง annotated ขนาดกว้างเต็มจอ
+        small_w = 580   # หน้าต่าง original / mask ขนาดครึ่งจอ
+
+        # Scale ภาพให้พอดีกับหน้าต่าง (รักษาอัตราส่วนเดิมอย่างเคร่งครัด)
+        anno_scaled = fit_width(anno, anno_w)
+        orig_scaled = fit_width(orig, small_w, cv2.INTER_NEAREST)
+        mask_scaled = fit_width(mask, small_w, cv2.INTER_NEAREST)
+
+        # --- กำหนดชื่อหน้าต่าง ---
+        win_anno = 'Detected Braille'
+        win_orig = 'Original'
+        win_mask = 'Color Mask'
+
+        # สร้างหน้าต่างแบบ WINDOW_AUTOSIZE เพื่อให้ขนาด = ขนาดภาพจริงพอดี (ไม่ยืด/บีบ)
+        # ผู้ใช้ยังสามารถคลิก maximize ได้ แต่ default จะเป็นขนาดภาพจริง
+        cv2.namedWindow(win_anno, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
+        cv2.namedWindow(win_orig, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
+        cv2.namedWindow(win_mask, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
+
+        # ตั้งขนาดหน้าต่างให้ตรงกับขนาดภาพที่ scale แล้ว (ไม่บิดเบี้ยว)
+        anno_h = anno_scaled.shape[0]
+        orig_h = orig_scaled.shape[0]
+        mask_h = mask_scaled.shape[0]
+
+        cv2.resizeWindow(win_anno, anno_w, anno_h)
+        cv2.resizeWindow(win_orig, small_w, orig_h)
+        cv2.resizeWindow(win_mask, small_w, mask_h)
+
+        # จัดตำแหน่งหน้าต่างให้อยู่เป็นระเบียบบนหน้าจอ
+        cv2.moveWindow(win_anno, 50, 30)
+        cv2.moveWindow(win_orig, 50, anno_h + 70)
+        cv2.moveWindow(win_mask, 50 + small_w + 20, anno_h + 70)
+
+        cv2.imshow(win_anno, anno_scaled)
+        cv2.imshow(win_orig, orig_scaled)
+        cv2.imshow(win_mask, mask_scaled)
+
+        print("  💡 สามารถคลิกลากขอบหน้าต่างเพื่อขยาย/ย่อได้อิสระ (สัดส่วนจะคงเดิม)")
+        print("  ⌨️  กดปุ่มใดก็ได้บนหน้าต่างภาพเพื่อปิด...")
         cv2.waitKey(0)
         cv2.destroyAllWindows()
-    except Exception:
-        print("  (ไม่สามารถแสดงหน้าต่างได้ — ใช้ --save เพื่อบันทึกภาพ)")
+    except Exception as e:
+        print(f"  (ไม่สามารถแสดงหน้าต่างได้: {e} — ใช้ --save เพื่อบันทึกภาพ)")
 
 
 def main():
@@ -137,11 +172,21 @@ def main():
         choices=['blue', 'red', 'green', 'black'],
         help='สีของจุดที่แต้ม (default: blue, รองรับ: blue, red, green, black)',
     )
+    # Shortcut flags สำหรับสี
+    parser.add_argument('--blue', dest='color_blue', action='store_true', help='ทางลัดเลือกจุดสีน้ำเงิน')
+    parser.add_argument('--red', dest='color_red', action='store_true', help='ทางลัดเลือกจุดสีแดง')
+    parser.add_argument('--green', dest='color_green', action='store_true', help='ทางลัดเลือกจุดสีเขียว')
+    parser.add_argument('--black', dest='color_black', action='store_true', help='ทางลัดเลือกจุดสีดำ')
+
     parser.add_argument(
         '--lang', type=str, default='thai',
         choices=['english', 'thai'],
         help='ภาษาที่ต้องการถอดรหัส (default: thai, รองรับ: english, thai)',
     )
+    # Shortcut flags สำหรับภาษา
+    parser.add_argument('--thai', dest='lang_thai', action='store_true', help='ทางลัดเลือกภาษาไทย')
+    parser.add_argument('--english', dest='lang_eng', action='store_true', help='ทางลัดเลือกภาษาอังกฤษ')
+
     parser.add_argument(
         '--speak', action='store_true',
         help='ออกเสียงข้อความที่อ่านได้ (Text-to-Speech)',
@@ -156,6 +201,21 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # ตรวจสอบ Shortcut flags
+    if args.color_black:
+        args.color = 'black'
+    elif args.color_red:
+        args.color = 'red'
+    elif args.color_green:
+        args.color = 'green'
+    elif args.color_blue:
+        args.color = 'blue'
+
+    if args.lang_thai:
+        args.lang = 'thai'
+    elif args.lang_eng:
+        args.lang = 'english'
 
     # ถ้าเลือก --camera หรือไม่ได้ระบุ path รูปภาพ ให้เปิดโหมดกล้อง Webcam
     if args.camera is not None or args.image is None:

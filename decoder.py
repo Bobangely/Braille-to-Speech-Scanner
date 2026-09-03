@@ -152,9 +152,7 @@ def decode_cells_english(cells):
     return ''.join(result).strip()
 
 
-# =============================================================================
 # Thai Braille Decoder — Context-Aware State Machine
-# =============================================================================
 
 def _check_space(cells, i, result, number_mode):
     """

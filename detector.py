@@ -1,7 +1,7 @@
 """
 Braille Reader - Dot Detector
 ===============================
-ตรวจจับจุดสีบนภาพอักษรเบรลล์ด้วย OpenCV
+ตรวจจับจุดสีบนภาพอักษรเบรลล์ OpenCV
 
 Pipeline:
     1. Preprocess (blur, resize)
@@ -43,21 +43,6 @@ class BrailleDetector:
     # =================================================================
 
     def detect(self, image):
-        """
-        ตรวจจับอักษรเบรลล์จากภาพ
-
-        Parameters
-        ----------
-        image : np.ndarray
-            ภาพ BGR จาก cv2.imread()
-
-        Returns
-        -------
-        cells : list of dict
-            แต่ละ cell มี: 'dots' (frozenset), 'center' (x,y), 'x' (float)
-        debug_info : dict
-            ข้อมูล debug: mask, dot_centers, annotated_image
-        """
         # 1. Preprocess
         processed = self._preprocess(image)
 
@@ -84,17 +69,14 @@ class BrailleDetector:
 
         return cells, debug_info
 
-    # =================================================================
-    # Step 1 — Preprocessing
-    # =================================================================
+    
+    # 1 — Preprocessing
 
     def _preprocess(self, image):
         """Gaussian blur เพื่อลด noise"""
         return cv2.GaussianBlur(image, (5, 5), 0)
 
-    # =================================================================
-    # Step 2 — Color Segmentation
-    # =================================================================
+    # 2 — Color Segmentation
 
     def _color_segment(self, image):
         """สร้าง binary mask จากสีที่กำหนด (ใน HSV space)"""
@@ -125,20 +107,39 @@ class BrailleDetector:
             mask = cv2.inRange(hsv, lower, upper)
 
         elif self.dot_color == 'black':
-            # จุดสีดำ / กราฟิกเอกสาร (Grayscale thresholding)
+            # จุดสีดำ / กราฟิกเอกสาร — ใช้เทคนิคหลายระดับเพื่อรองรับพื้นหลังหลากหลาย
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            _, mask = cv2.threshold(
+
+            # 1. CLAHE (Contrast Limited Adaptive Histogram Equalization)
+            #    เพื่อเพิ่มคอนทราสต์เฉพาะจุด ช่วยให้จุดดำโดดเด่นจากพื้นม่วง/เทา/ครีม
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            gray_eq = clahe.apply(gray)
+
+            # 2. Otsu's Thresholding — หาค่า threshold อัตโนมัติจาก histogram
+            #    ดีกว่าค่า fixed เพราะปรับตามพื้นหลังจริงของแต่ละภาพ
+            _, mask_otsu = cv2.threshold(
+                gray_eq, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU
+            )
+
+            # 3. Fixed threshold fallback (สำหรับภาพที่ Otsu ไม่ดี)
+            _, mask_fixed = cv2.threshold(
                 gray, self.config.BLACK_INTENSITY_MAX, 255, cv2.THRESH_BINARY_INV
             )
+
+            # 4. รวม mask ทั้งสอง — ใช้ intersection (AND) เพื่อลด false positive
+            #    จุดที่ "ดำจริงๆ" จะผ่านทั้ง 2 threshold
+            mask = cv2.bitwise_and(mask_otsu, mask_fixed)
+
+            # 5. หากผลลัพธ์น้อยเกินไป (Otsu aggressive เกินไป) ให้ใช้ Otsu อย่างเดียว
+            if cv2.countNonZero(mask) < cv2.countNonZero(mask_otsu) * 0.3:
+                mask = mask_otsu
         else:
             # Bug 5 fix: สีที่ไม่รู้จัก → return empty mask แทน crash
             mask = np.zeros(image.shape[:2], dtype=np.uint8)
 
         return mask
 
-    # =================================================================
     # Step 3 — Morphological Cleanup
-    # =================================================================
 
     def _morph_clean(self, mask):
         """ปิดรูเล็ก + ลบ noise ด้วย morphology"""
@@ -152,9 +153,7 @@ class BrailleDetector:
 
         return mask
 
-    # =================================================================
     # Step 4 — Dot Detection
-    # =================================================================
 
     def _find_dots(self, mask):
         """
