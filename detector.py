@@ -204,96 +204,253 @@ class BrailleDetector:
         return dots
 
     # =================================================================
-    # Step 5 — Grid Alignment & Cell Clustering
+    # Step 5 — Grid Alignment & Cell Clustering (Line-Adaptive Robust Clustering)
     # =================================================================
+
+    def _estimate_line_tilt(self, centers, dot_spacing):
+        """
+        ประมาณค่ามุมเอียงของบรรทัดอักษรเบรลล์ (ในหน่วย radian) จากคู่จุดข้างเคียงในกริด
+        จุดที่อยู่ติดกันในระยะ [0.7 * d .. 1.45 * d] จะอยู่ในแนวเดียวกัน (แนวนอนหรือแนวตั้ง)
+        """
+        n = len(centers)
+        if n < 4 or dot_spacing <= 0:
+            return 0.0
+
+        angles = []
+        for i in range(n):
+            for j in range(i + 1, n):
+                dx = centers[j, 0] - centers[i, 0]
+                dy = centers[j, 1] - centers[i, 1]
+                d = np.hypot(dx, dy)
+                if 0.7 * dot_spacing <= d <= 1.45 * dot_spacing:
+                    if abs(dx) >= abs(dy):
+                        # Horizontal neighbor pair
+                        a = np.arctan2(dy, dx)
+                        if a > np.pi / 2:
+                            a -= np.pi
+                        elif a < -np.pi / 2:
+                            a += np.pi
+                        angles.append(a)
+                    else:
+                        # Vertical neighbor pair
+                        a = np.arctan2(-dx, dy)
+                        if a > np.pi / 2:
+                            a -= np.pi
+                        elif a < -np.pi / 2:
+                            a += np.pi
+                        angles.append(a)
+
+        if not angles:
+            return 0.0
+        return float(np.median(angles))
 
     def _cluster_into_cells(self, dots):
         """
-        จัดจุดที่ตรวจพบเข้าเป็น Braille cells
+        จัดจุดที่ตรวจพบเข้าเป็น Braille cells ด้วย Line-Adaptive Robust Clustering
+        รองรับประโยคยาว อักษรเบรลล์ขนาดเล็ก และชดเชยการเอียงของกล้อง (Deskew)
 
-        Algorithm (ปรับปรุงใหม่ — Gap-Based Splitting):
-        1. หา dot_spacing จาก nearest-neighbor distances
-        2. Cluster พิกัด Y → rows (จุดที่อยู่แนวเดียวกัน)
-        3. Cluster พิกัด X → columns
-        4. แยก columns เป็น cell groups ด้วย gap analysis
-           (gap ระหว่าง cells > gap ภายใน cell)
-        5. Group rows เป็น cell rows (กลุ่มละ ≤3)
-        6. สำหรับแต่ละ (row_group, col_group) หา dots ที่ตกอยู่ภายใน
+        Algorithm:
+        1. หา within-cell spacing (d) จาก nearest-neighbor distances
+        2. ประมาณมุมเอียงของบรรทัด (theta) จากคู่จุดข้างเคียง แล้วหมุนพิกัดเข้าสู่แนวระนาบ
+        3. แบ่งกลุ่มจุดตามแกน Y ออกเป็นบรรทัดการอ่าน (Reading Lines)
+        4. สำหรับแต่ละบรรทัด:
+           - กำหนด baseline rows (row 0, 1, 2) ประจำบรรทัด (ป้องกันเซลล์ 1-2 จุดถูกเลื่อนแถวผิด)
+           - เรียงจุดตามแกน X และแยกเซลล์ด้วย Gap threshold > 1.25 * d
+           - จัดจุดเข้า Slot 1-6 ในกริด 2x3
+        5. แปลงพิกัดกรอบ (Bounding Box) และ Slots กลับสู่มุมกล้องเดิมสำหรับแสดงผล
         """
+        if not dots:
+            return []
+
         centers = np.array([d['center'] for d in dots], dtype=np.float64)
+        n_dots = len(centers)
+        if n_dots == 0:
+            return []
 
         # 1. ประมาณ within-cell dot spacing
         dot_spacing = self._estimate_dot_spacing(centers)
-        if dot_spacing == 0:
+        if dot_spacing <= 0:
             return []
 
-        tol = dot_spacing * self.config.CLUSTER_TOLERANCE
+        # 2. ประมาณมุมเอียงและหมุนพิกัดเข้าสู่แนวระนาบ (Deskew)
+        tilt_angle = self._estimate_line_tilt(centers, dot_spacing)
+        cx_mean = float(np.mean(centers[:, 0]))
+        cy_mean = float(np.mean(centers[:, 1]))
+        cos_a = np.cos(-tilt_angle)
+        sin_a = np.sin(-tilt_angle)
 
-        # 2. Cluster Y → rows, X → columns
-        _row_labels, row_centers = self._cluster_1d(centers[:, 1], tol)
-        _col_labels, col_centers = self._cluster_1d(centers[:, 0], tol)
+        dx = centers[:, 0] - cx_mean
+        dy = centers[:, 1] - cy_mean
+        rot_x = dx * cos_a - dy * sin_a + cx_mean
+        rot_y = dx * sin_a + dy * cos_a + cy_mean
 
-        row_centers_sorted = sorted(row_centers)
-        col_centers_sorted = sorted(col_centers)
+        # 3. จัดกลุ่มบรรทัดการอ่าน (Reading Lines) ตามแกน Y
+        # ความสูงเซลล์ ~ 2 * dot_spacing, ระยะห่างระหว่างบรรทัด >= 2.2 * dot_spacing
+        order_y = np.argsort(rot_y)
+        line_gap_thresh = dot_spacing * 2.2
 
-        # 3. Group rows → cell rows (≤3 แถวที่ติดกัน)
-        cell_row_groups = self._group_rows_into_cells(
-            row_centers_sorted, dot_spacing
-        )
+        reading_lines = []
+        curr_line = [order_y[0]]
+        for idx in order_y[1:]:
+            if rot_y[idx] - rot_y[curr_line[-1]] > line_gap_thresh:
+                reading_lines.append(curr_line)
+                curr_line = [idx]
+            else:
+                curr_line.append(idx)
+        reading_lines.append(curr_line)
 
-        # 4. แยก columns เป็น cell groups ด้วย gap analysis
-        cell_col_groups = self._split_columns_into_cells(
-            col_centers_sorted, dot_spacing
-        )
+        # เรียงบรรทัดจากบนลงล่าง
+        reading_lines.sort(key=lambda line: np.median(rot_y[line]))
 
-        # 5. สร้าง cells จากทุกคู่ (row_group × col_group)
         cells = []
-        for rg in cell_row_groups:
-            prev_cell_grid = None
-            for c_idx, cg in enumerate(cell_col_groups):
-                prev_col = cell_col_groups[c_idx - 1][-1] if c_idx > 0 else None
-                next_col = cell_col_groups[c_idx + 1][0] if c_idx + 1 < len(cell_col_groups) else None
+        cos_b = np.cos(tilt_angle)
+        sin_b = np.sin(tilt_angle)
 
-                cell_dots, grid_info = self._assign_dots_to_cell(
-                    dots, rg, cg, dot_spacing,
-                    prev_col=prev_col, next_col=next_col,
-                    prev_grid=prev_cell_grid
-                )
-                if cell_dots:
-                    # ใช้กึ่งกลางเรขาคณิตของ 2x3 Grid เป็น center ของ cell
-                    cols = grid_info['expected_cols']
-                    rows = grid_info['expected_rows']
-                    cx = (cols[0] + cols[1]) / 2.0
-                    cy = (rows[0] + rows[-1]) / 2.0
-                    cells.append({
-                        'dots': frozenset(cell_dots),
-                        'center': (int(cx), int(cy)),
-                        'x': float(cx),
-                        'y': float(cy),
-                        'grid': grid_info,
-                    })
-                    prev_cell_grid = grid_info
+        # 4. ประมวลผลแต่ละบรรทัดการอ่าน
+        for line_indices in reading_lines:
+            line_indices = np.array(line_indices)
+            l_rot_x = rot_x[line_indices]
+            l_rot_y = rot_y[line_indices]
 
-        # เรียงตาม text line (Y) ก่อน แล้วค่อย sort X ภายในแต่ละบรรทัด
-        # จัดกลุ่ม cells ที่อยู่บรรทัดเดียวกัน (Y ใกล้กัน)
-        if cells:
-            cells_sorted = []
-            line_tol = dot_spacing * 1.5
-            cells_by_y = sorted(cells, key=lambda c: c['y'])
-            current_line = [cells_by_y[0]]
+            # 4a. กำหนดตำแหน่งแถว 0, 1, 2 อ้างอิงของบรรทัดนี้
+            y_min = float(np.min(l_rot_y))
+            y_max = float(np.max(l_rot_y))
+            y_span = y_max - y_min
 
-            for c in cells_by_y[1:]:
-                if abs(c['y'] - current_line[0]['y']) <= line_tol:
-                    current_line.append(c)
+            if y_span >= dot_spacing * 1.4:
+                # มีจุดครอบคลุมทั้งแถวบนและแถวล่าง
+                top_mask = l_rot_y < y_min + dot_spacing * 0.55
+                bot_mask = l_rot_y > y_max - dot_spacing * 0.55
+                mid_mask = (~top_mask) & (~bot_mask)
+
+                r_top = float(np.median(l_rot_y[top_mask])) if np.any(top_mask) else (y_max - 2 * dot_spacing)
+                r_bot = float(np.median(l_rot_y[bot_mask])) if np.any(bot_mask) else (y_min + 2 * dot_spacing)
+                r_mid = float(np.median(l_rot_y[mid_mask])) if np.any(mid_mask) else ((r_top + r_bot) / 2.0)
+                expected_rows = [r_top, r_mid, r_bot]
+            elif y_span >= dot_spacing * 0.6:
+                # มี 2 แถว
+                r0 = y_min
+                r1 = y_max
+                if (r1 - r0) > dot_spacing * 1.5:
+                    expected_rows = [r0, (r0 + r1) / 2.0, r1]
                 else:
-                    # เรียง cells ในบรรทัดนี้จากซ้ายไปขวา
-                    current_line.sort(key=lambda c: c['x'])
-                    cells_sorted.extend(current_line)
-                    current_line = [c]
+                    expected_rows = [r0, r1, r1 + dot_spacing]
+            else:
+                # มีเพียง 1 แถว
+                r_mid = float(np.median(l_rot_y))
+                expected_rows = [r_mid - dot_spacing, r_mid, r_mid + dot_spacing]
 
-            current_line.sort(key=lambda c: c['x'])
-            cells_sorted.extend(current_line)
-            cells = cells_sorted
+            # 4b. แบ่งกลุ่มจุดตามแกน X เป็นเซลล์ (Split เมื่อ gap > 1.25 * dot_spacing)
+            order_x = np.argsort(l_rot_x)
+            cell_split_thresh = dot_spacing * 1.25
+
+            cell_clusters = []
+            curr_cluster = [order_x[0]]
+            for i in range(1, len(order_x)):
+                idx_curr = order_x[i]
+                idx_prev = curr_cluster[-1]
+                if l_rot_x[idx_curr] - l_rot_x[idx_prev] > cell_split_thresh:
+                    cell_clusters.append(curr_cluster)
+                    curr_cluster = [idx_curr]
+                else:
+                    curr_cluster.append(idx_curr)
+            cell_clusters.append(curr_cluster)
+
+            # 4c. กำหนดคอลัมน์ซ้าย-ขวา และจัดจุดเข้า 2x3 Grid
+            prev_cell_right = None
+            for cluster in cell_clusters:
+                cluster_dot_indices = line_indices[cluster]
+                c_xs = rot_x[cluster_dot_indices]
+                c_ys = rot_y[cluster_dot_indices]
+
+                # กำหนดคอลัมน์ (มี 2 คอลัมน์ หรือ 1 คอลัมน์)
+                if np.ptp(c_xs) > dot_spacing * 0.55:
+                    c_mid = (np.min(c_xs) + np.max(c_xs)) / 2.0
+                    col_0 = float(np.mean(c_xs[c_xs < c_mid]))
+                    col_1 = float(np.mean(c_xs[c_xs >= c_mid]))
+                else:
+                    c_val = float(np.mean(c_xs))
+                    cell_gap = dot_spacing * 1.375
+                    pitch = dot_spacing + cell_gap
+                    is_right = False
+                    if prev_cell_right is not None:
+                        dist = c_val - prev_cell_right
+                        offset = dist - cell_gap
+                        rem = (offset + pitch / 2.0) % pitch - (pitch / 2.0)
+                        if abs(rem - dot_spacing) < abs(rem):
+                            is_right = True
+                    if is_right:
+                        col_0 = c_val - dot_spacing
+                        col_1 = c_val
+                    else:
+                        col_0 = c_val
+                        col_1 = c_val + dot_spacing
+
+                prev_cell_right = col_1
+                expected_cols = [col_0, col_1]
+
+                # กำหนดจุด 1-6
+                cell_dots = set()
+                for d_idx in cluster_dot_indices:
+                    px = rot_x[d_idx]
+                    py = rot_y[d_idx]
+
+                    # Row index (0=top, 1=mid, 2=bot)
+                    r_dists = [abs(py - r) for r in expected_rows]
+                    r_idx = int(np.argmin(r_dists))
+
+                    # Col index (0=left, 1=right)
+                    c_idx = 0 if abs(px - col_0) < abs(px - col_1) else 1
+
+                    dot_num = c_idx * 3 + (r_idx + 1)
+                    cell_dots.add(dot_num)
+
+                # คำนวณพิกัด Slots ในภาพต้นฉบับ (Back-rotate)
+                rot_slots = {
+                    1: (col_0, expected_rows[0]),
+                    2: (col_0, expected_rows[1]),
+                    3: (col_0, expected_rows[2]),
+                    4: (col_1, expected_rows[0]),
+                    5: (col_1, expected_rows[1]),
+                    6: (col_1, expected_rows[2]),
+                }
+
+                slots = {}
+                for k, (sx, sy) in rot_slots.items():
+                    sdx = sx - cx_mean
+                    sdy = sy - cy_mean
+                    orig_sx = sdx * cos_b - sdy * sin_b + cx_mean
+                    orig_sy = sdx * sin_b + sdy * cos_b + cy_mean
+                    slots[k] = (orig_sx, orig_sy)
+
+                # Center ในภาพต้นฉบับ
+                cen_rx = (col_0 + col_1) / 2.0
+                cen_ry = (expected_rows[0] + expected_rows[2]) / 2.0
+                cdx = cen_rx - cx_mean
+                cdy = cen_ry - cy_mean
+                orig_cx = cdx * cos_b - cdy * sin_b + cx_mean
+                orig_cy = cdx * sin_b + cdy * cos_b + cy_mean
+
+                margin = dot_spacing * 0.45
+                x_min = min(s[0] for s in slots.values()) - margin
+                x_max = max(s[0] for s in slots.values()) + margin
+                y_min_b = min(s[1] for s in slots.values()) - margin
+                y_max_b = max(s[1] for s in slots.values()) + margin
+
+                grid_info = {
+                    'expected_cols': expected_cols,
+                    'expected_rows': expected_rows,
+                    'bbox': (int(x_min), int(y_min_b), int(x_max), int(y_max_b)),
+                    'slots': slots,
+                }
+
+                cells.append({
+                    'dots': frozenset(cell_dots),
+                    'center': (int(orig_cx), int(orig_cy)),
+                    'x': float(orig_cx),
+                    'y': float(orig_cy),
+                    'grid': grid_info,
+                })
 
         return cells
 
@@ -612,11 +769,18 @@ class BrailleDetector:
                 continue
 
             x_min, y_min, x_max, y_max = grid['bbox']
-            cols = grid['expected_cols']
-            rows = grid['expected_rows']
-            col_mid = int((cols[0] + cols[1]) / 2.0)
-            row_mid1 = int((rows[0] + rows[1]) / 2.0)
-            row_mid2 = int((rows[1] + rows[2]) / 2.0)
+            slots = grid.get('slots', {})
+
+            if slots and 1 in slots and 4 in slots and 2 in slots and 3 in slots:
+                col_mid = int((slots[1][0] + slots[4][0]) / 2.0)
+                row_mid1 = int((slots[1][1] + slots[2][1]) / 2.0)
+                row_mid2 = int((slots[2][1] + slots[3][1]) / 2.0)
+            else:
+                cols = grid.get('expected_cols', [x_min, x_max])
+                rows = grid.get('expected_rows', [y_min, (y_min + y_max) / 2.0, y_max])
+                col_mid = int((cols[0] + cols[1]) / 2.0)
+                row_mid1 = int((rows[0] + rows[1]) / 2.0)
+                row_mid2 = int((rows[1] + rows[2]) / 2.0)
 
             # กรอบนอกของ Cell (สีฟ้า Cyan)
             cv2.rectangle(canvas, (x_min, y_min), (x_max, y_max), (255, 200, 0), 2)

@@ -1,12 +1,12 @@
 #  Braille-to-Speech Scanner (Color-Assisted OBR)
 
 ระบบอ่านและออกเสียงอักษรเบรลล์ภาษาไทยและภาษาอังกฤษแบบสด (Optical Braille Recognition & Text-to-Speech)  
-โดยใช้เทคนิคการแต้มสีบนจุดนูนร่วมกับ Computer Vision (**OpenCV + Python**) รองรับกล้อง **4K Ultra HD & Full HD** พร้อมระบบ **Digital Zoom** และรันได้ทั้งบน PC / Windows และ Edge AI Board (**Dragon Q6A**)
-
----
-
-##  ฟีเจอร์เด่น (Key Features)
-
+โดยใช้เทคนิคการแต้มสีบนจุดนูนร่วมกับ Computer Vision (**OpenCV + P- 🧠 **ระบบตรวจจับอัจฉริยะแบบผสมผสาน (Hybrid CV + YOLO Deep Learning)**
+  - ผสานพลัง AI **YOLOv8** ในการค้นหา Candidate Dots ทุกสภาพแสง/เงา/สี ร่วมกับ **OpenCV Sub-pixel Moments Refinement** ในการปรับจุดกึ่งกลางและตรวจสอบความกลม
+  - สลับโหมดการทำงานได้แบบสดๆ ขณะเปิดกล้องผ่านปุ่ม **`[Y]`**:
+    - **HYBRID (CV+YOLO)**: แนะนำสำหรับการใช้งานจริง (แม่นยำและทนทานสูงสุด)
+    - **YOLO ONLY**: ใช้ AI ตรวจจับจุดล้วนๆ
+    - **OPENCV ONLY**: ใช้ Color Masking และ Morphology ดั้งเดิม
 - 🇹🇭 **มาตรฐานอักษรเบรลล์ไทยสากล 100% (Thai Braille Grade 1)**
   - พยัญชนะไทยครบ 44 ตัว (ก-ฮ) ทั้งแบบ 1 เซลล์ และ 2 เซลล์ (Prefix 6, 36, 356)
   - สระครบทุกรูปแบบ (สระหน้า เ- แ- โ- ไ- ใ-, สระหลัง -ะ -า -ำ, สระบน/ล่าง -ิ -ี -ึ -ื -ุ -ู, ไม้หันอากาศ, ไม้ไต่คู้, การันต์)
@@ -14,21 +14,55 @@
   - วรรณยุกต์ครบ 4 รูป (ไม้เอก, ไม้โท, ไม้ตรี, ไม้จัตวา)
 - 🇬🇧 **รองรับอักษรเบรลล์ภาษาอังกฤษ (English Braille Grade 1)**
   - ตัวอักษร a-z, Capital Indicators (จุด 6), Number Indicators (#)
--  **รองรับความละเอียดกล้องระดับสูง (4K UHD & Full HD 1080p)**
+- 📹 **รองรับความละเอียดกล้องระดับสูง (4K UHD & Full HD 1080p)**
   - สลับความละเอียดสดขณะเปิดกล้องได้ทันที (กด `V` หรือ `F`)
   - ใช้ MJPG FourCC Codec เพื่อปลดล็อกแบนด์วิธ USB ให้เฟรมเรตลื่นไหล
--  **ระบบ Digital Zoom In / Zoom Out (1.0x – 4.0x)**
+- 🔍 **ระบบ Digital Zoom In / Zoom Out (1.0x – 4.0x)**
   - ขยายจุดเบรลล์ขนาดเล็กให้ตรวจจับได้ง่ายและแม่นยำ พร้อม Mini Viewfinder มุมขวาบน
   - ซูมได้ทั้งผ่านคีย์บอร์ด (`Z`/`X`/`R`) และล้อหมุนเมาส์ (Mouse Wheel Zoom)
--  **ระบบ Multi-Level Sharpness Filter (5 ระดับ)**
+- ✨ **ระบบ Multi-Level Sharpness Filter (5 ระดับ)**
   - ปรับเร่งความคมชัดของขอบจุดเบรลล์ได้ทันที (กด `E` เพื่อวนเลือกระดับ OFF -> LOW -> MED -> HIGH -> ULTRA)
--  **ระบบสังเคราะห์เสียงพูด Real-Time (Text-to-Speech: TTS)**
+- 🔊 **ระบบสังเคราะห์เสียงพูด Real-Time (Text-to-Speech: TTS)**
   - ออกเสียงได้ทั้งภาษาไทยและภาษาอังกฤษ มีระบบ Frame Stabilization & Auto-TTS Debounce ป้องกันเสียงอ่านซ้ำซ้อน
+  - รองรับทั้ง Offline Mode (pyttsx3 / SAPI5) และ Online Natural Voice (gTTS)
+- 🎯 **ระบบ Virtual 2x3 Grid Template Overlay**
+  - ตีกรอบล้อมรอบเซลล์และแบ่ง 6 ช่อง พร้อมแสดงผลลัพธ์คำที่อ่านได้ลงบนภาพอย่างสวยงาม
+- 🎨 **รองรับหลากหลายสีของจุดแต้ม**
+  - 🔵 Blue, 🔴 Red, 🟢 Green, ⚫ Black (และตรวจจับได้อัตโนมัติในโหมด YOLO/Hybrid)
+- 🧪 **ชุดทดสอบความแม่นยำอัตโนมัติ 100% (39/39 Tests Passed)**
+
+---
+
+## 📁 โครงสร้างไฟล์ในโปรเจกต์
+
+```
+braille-reader/
+├── Start_Scanner_YOLO.bat# ดับเบิ้ลคลิกเปิดกล้องในโหมด Real-Time Hybrid CV+YOLO
+├── Start_Scanner_FHD.bat # เปิดกล้องในโหมด Full HD 1080p
+├── Start_Scanner_4K.bat  # เปิดกล้องในโหมด 4K Ultra HD (3840x2160)
+├── Start_Scanner.bat     # เปิดกล้องโหมดเริ่มต้น
+├── Test_YOLO.bat         # เมนูทดสอบตรวจจับภาพด้วย Hybrid YOLOv8
+├── Test_Camera.bat       # ทดสอบและตรวจเช็คความละเอียดสูงสุดของกล้อง
+├── camera_reader.py      # Real-Time Scanner (Hybrid CV+YOLO, 4K/FHD, Zoom, Sharpness, TTS)
+├── yolo_detector.py      # Core Hybrid Detector (YOLOv8 + OpenCV Sub-pixel Refinement)
+├── detector.py           # Core OpenCV Detector (HSV Segment, 2x3 Lattice Grid Fitting)
+├── decoder.py            # Context-Aware Syllable Decoder (EN & TH)
+├── train_yolo.py         # สคริปต์เทรนโมเดล YOLOv8 สำหรับจุดเบรลล์
+├── auto_annotate_samples.py # สร้างชุดข้อมูล YOLO จากภาพตัวอย่าง + Camera Augmentations
+├── config.py             # English Braille Mapping + Detection HSV Parameters
+├── config_thai.py        # Thai Braille Standard Mapping
+├── tts.py                # Text-to-Speech Controller (Offline & Online)
+├── test_accuracy.py      # รัน Benchmark ประเมินความแม่นยำอัตโนมัติ
+├── models/
+│   └── braille_yolo.pt   # ไฟล์โมเดล YOLOv8 ที่ผ่านการเทรนสมบูรณ์
+├── sample_images/        # ชุดภาพทดสอบดิบ (Input)
+└── output/               # ภาพ Debug / Annotated พร้อม Grid และ Snapshot
+```��านซ้ำซ้อน
   - รองรับทั้ง Offline Mode (pyttsx3 / SAPI5) และ Online Natural Voice (gTTS)
 -  **ระบบ Virtual 2x3 Grid Template Overlay**
   - ตีกรอบล้อมรอบเซลล์และแบ่ง 6 ช่อง พร้อมแสดงผลลัพธ์คำที่อ่านได้ลงบนภาพอย่างสวยงาม
 -  **รองรับหลากหลายสีของจุดแต้ม**
-  - 🔵 Blue, 🔴 Red, 🟢 Green, ⚫ Black
+  -  Blue,  Red,  Green,  Black
 -  **ชุดทดสอบความแม่นยำอัตโนมัติ 100% (39/39 Tests Passed)**
 
 ---
@@ -57,7 +91,7 @@ braille-reader/
 
 ---
 
-## ⚡ วิธีการติดตั้งและใช้งาน
+##  วิธีการติดตั้งและใช้งาน
 
 ### 1. ติดตั้ง Dependencies
 
@@ -65,7 +99,7 @@ braille-reader/
 pip install -r requirements.txt
 ```
 
-### 2. วิธีเปิดใช้งาน Scanner 📹
+### 2. วิธีเปิดใช้งาน Scanner 
 
 #### วิธีที่ง่ายที่สุด (บน Windows):
 - **ดับเบิ้ลคลิก** `Start_Scanner.bat` หรือ `Start_Scanner_4K.bat` หรือ `Start_Scanner_FHD.bat`
@@ -81,7 +115,7 @@ python camera_reader.py --lang english --color blue --res fhd
 
 ---
 
-### 🎮 คีย์ลัดและควบคุมขณะเปิดกล้อง (Live Stream Hotkeys):
+###  คีย์ลัดและควบคุมขณะเปิดกล้อง (Live Stream Hotkeys):
 
 | ปุ่ม / อุปกรณ์ | การทำงาน |
 |---|---|

@@ -54,6 +54,7 @@ if sys.stdout.encoding != 'utf-8':
         pass
 
 from detector import BrailleDetector
+from yolo_detector import YOLOBrailleDetector
 from decoder import decode_cells, decode_cells_verbose
 from tts import speak, TextToSpeech
 from config import DetectionConfig
@@ -86,8 +87,216 @@ SHARPNESS_LEVELS = [
 ]
 
 
+class ThreadedCameraCapture:
+    """
+    คลาสสำหรับเปิดกล้องและดึงเฟรมใน Background Thread (Decoupled Capture)
+    - ป้องกันปัญหา Buffer Lag ของ OpenCV ทำให้ได้ภาพสดใหม่อยู่เสมอ (Zero latency)
+    - รองรับ FourCC MJPG และความเร็ว 60fps
+    """
+    def __init__(self, camera_id=0, target_width=1920, target_height=1080, target_fps=60):
+        self.camera_id = camera_id
+        self.target_width = target_width
+        self.target_height = target_height
+        self.target_fps = target_fps
+
+        self.cap = None
+        self.actual_width = target_width
+        self.actual_height = target_height
+        self.actual_fps = target_fps
+
+        self.frame = None
+        self.ret = False
+        self.lock = threading.Lock()
+        self.running = False
+        self.thread = None
+
+        self._init_camera()
+
+    def _init_camera(self):
+        backend = cv2.CAP_DSHOW if sys.platform.startswith('win') else cv2.CAP_ANY
+        self.cap = cv2.VideoCapture(self.camera_id, backend)
+        if not self.cap.isOpened():
+            self.cap = cv2.VideoCapture(self.camera_id)
+
+        if not self.cap.isOpened():
+            print(f"[ERR] ไม่สามารถเปิดกล้อง Webcam ID: {self.camera_id} ได้")
+            return False
+
+        # 1. ตั้งค่า FourCC เป็น MJPG เพื่อปลดล็อก Bandwidth ความเร็วสูงสำหรับ 4K / 1080p / 60fps
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        # 2. ตั้งค่าความละเอียด
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.target_width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.target_height)
+        # 3. ขอ 60fps จากฮาร์ดแวร์กล้อง
+        self.cap.set(cv2.CAP_PROP_FPS, self.target_fps)
+
+        self.actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.actual_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
+
+        # อ่านเฟรมแรกเพื่อทดสอบ
+        ret, frame = self.cap.read()
+        if ret and frame is not None:
+            self.frame = frame
+            self.ret = True
+
+        return True
+
+    def start(self):
+        if self.cap is None or not self.cap.isOpened():
+            return False
+        self.running = True
+        self.thread = threading.Thread(target=self._capture_loop, name="CameraGrabberThread", daemon=True)
+        self.thread.start()
+        return True
+
+    def _capture_loop(self):
+        while self.running:
+            if self.cap is None or not self.cap.isOpened():
+                break
+            ret, frame = self.cap.read()
+            if ret and frame is not None:
+                with self.lock:
+                    self.frame = frame
+                    self.ret = True
+            else:
+                time.sleep(0.005)
+
+    def read_latest(self):
+        """ดึงเฟรมล่าสุดจากกล้องแบบ Non-blocking (0ms delay)"""
+        with self.lock:
+            if self.frame is None:
+                return False, None
+            return self.ret, self.frame.copy()
+
+    def set_resolution(self, width, height, fps=60):
+        """ปรับเปลี่ยนความละเอียดของกล้องแบบสด"""
+        with self.lock:
+            self.target_width = width
+            self.target_height = height
+            self.target_fps = fps
+            if self.cap and self.cap.isOpened():
+                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                self.cap.set(cv2.CAP_PROP_FPS, fps)
+                time.sleep(0.05)
+                self.actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                self.actual_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                self.actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
+        return self.actual_width, self.actual_height
+
+    def is_opened(self):
+        return self.cap is not None and self.cap.isOpened()
+
+    def release(self):
+        self.running = False
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
+        with self.lock:
+            if self.cap:
+                self.cap.release()
+                self.cap = None
+
+
+class AsyncBrailleWorker:
+    """
+    Worker Thread แยกอิสระสำหรับ AI Detection & Decoder
+    - นำเฟรมล่าสุดจากกล้องไปประมวลผล (YOLO Hybrid / OpenCV)
+    - ไม่บล็อก Video Stream ทำให้หน้าจอกล้องรันที่ 60 FPS นิ่งสนิท
+    - รายงาน ai_fps ควบคู่ไปกับ display_fps
+    """
+    def __init__(self, detector, default_lang='thai'):
+        self.detector = detector
+        self.lang = default_lang
+
+        # Shared input
+        self._new_frame_event = threading.Event()
+        self._input_lock = threading.Lock()
+        self._pending_frame = None
+
+        # Shared output
+        self._output_lock = threading.Lock()
+        self.cells = []
+        self.dots = []
+        self.decoded_text = ""
+        self.verbose_results = []
+        self.ai_fps = 0.0
+
+        self.running = False
+        self.thread = None
+
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._worker_loop, name="AIInferenceWorker", daemon=True)
+        self.thread.start()
+
+    def submit_frame(self, frame, lang=None):
+        """ส่งเฟรมใหม่ให้ AI ประมวลผล (Non-blocking)"""
+        if lang:
+            self.lang = lang
+        with self._input_lock:
+            self._pending_frame = frame
+        self._new_frame_event.set()
+
+    def get_latest_results(self):
+        """ดึงผลลัพธ์การตรวจจับล่าสุดออกมาวาดบนหน้าจอ 60 FPS"""
+        with self._output_lock:
+            return {
+                'cells': list(self.cells),
+                'dots': list(self.dots),
+                'decoded_text': self.decoded_text,
+                'verbose_results': list(self.verbose_results),
+                'ai_fps': self.ai_fps,
+            }
+
+    def _worker_loop(self):
+        while self.running:
+            if not self._new_frame_event.wait(timeout=0.1):
+                continue
+            self._new_frame_event.clear()
+
+            with self._input_lock:
+                if self._pending_frame is None:
+                    continue
+                frame_to_process = self._pending_frame
+                self._pending_frame = None
+
+            t_start = time.time()
+            try:
+                # 1. ตรวจจับด้วย YOLO / OpenCV Detector
+                cells, debug_info = self.detector.detect(frame_to_process)
+                dots = debug_info.get('dots', [])
+
+                # 2. ถอดรหัสอักษรเบรลล์
+                decoded_text = ""
+                verbose_results = []
+                if cells:
+                    decoded_text = decode_cells(cells, lang=self.lang)
+                    verbose_results = decode_cells_verbose(cells, lang=self.lang)
+
+                t_end = time.time()
+                dt = max(1e-5, t_end - t_start)
+                inst_fps = 1.0 / dt
+                self.ai_fps = 0.85 * self.ai_fps + 0.15 * inst_fps if self.ai_fps > 0 else inst_fps
+
+                with self._output_lock:
+                    self.cells = cells
+                    self.dots = dots
+                    self.decoded_text = decoded_text
+                    self.verbose_results = verbose_results
+
+            except Exception:
+                pass
+
+    def stop(self):
+        self.running = False
+        self._new_frame_event.set()
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
+
+
 class RealTimeBrailleScanner:
-    """ตัวควบคุมการสแกนอักษรเบรลล์จากกล้องแบบ Real-time พร้อมระบบ 4K/FHD, Zoom & Multi-level Sharpness"""
+    """ตัวควบคุมการสแกนอักษรเบรลล์จากกล้องแบบ Real-time พร้อมระบบ Multi-threaded 60 FPS, 4K/FHD, Zoom & Sharpening"""
 
     def __init__(
         self,
@@ -102,6 +311,8 @@ class RealTimeBrailleScanner:
         height=None,
         initial_zoom=1.0,
         sharpness_level=2,
+        detector_mode='hybrid',
+        yolo_conf=0.35,
     ):
         self.camera_id = camera_id
         self.color = color.lower()
@@ -109,6 +320,8 @@ class RealTimeBrailleScanner:
         self.auto_speak = auto_speak
         self.stability_threshold = stability_threshold
         self.cooldown_seconds = cooldown_seconds
+        self.detector_mode = detector_mode.lower()
+        self.yolo_conf = yolo_conf
 
         # กำหนดระดับความคมชัดเริ่มต้น (0 ถึง 4)
         self.sharpness_idx = max(0, min(len(SHARPNESS_LEVELS) - 1, int(sharpness_level)))
@@ -145,14 +358,35 @@ class RealTimeBrailleScanner:
         self.history = deque(maxlen=stability_threshold)
         self.last_spoken_text = ""
         self.last_spoken_time = 0.0
+        self.last_seen_text = ""
         self.is_speaking = False
         self.supported_colors = ['blue', 'red', 'green', 'black']
-        self.detector = BrailleDetector(dot_color=self.color)
-        self.tts = TextToSpeech()
 
-        # FPS calculation
-        self.fps = 0.0
+        # ตัวตรวจจับแบบ Hybrid (YOLO + OpenCV)
+        initial_mode = 'opencv' if self.detector_mode in ('cv', 'opencv') else self.detector_mode
+        self.detector = YOLOBrailleDetector(
+            confidence=self.yolo_conf,
+            mode=initial_mode,
+            fallback_color=self.color,
+        )
+        # self.tts = TextToSpeech()  # [COMMENTED OUT] ปิดระบบออกเสียงชั่วคราวเพื่อความสะดวกในการทดสอบ
+        self.tts = None
+
+        # Threaded components
+        self.camera = None
+        self.ai_worker = None
+
+        # Dual FPS calculation (Display 60Hz vs AI Inference)
+        self.display_fps = 0.0
+        self.ai_fps = 0.0
         self._prev_frame_time = time.time()
+
+    def cycle_detector_mode(self):
+        """สลับโหมดการตรวจจับ: HYBRID (CV+YOLO) <-> YOLO ONLY <-> OPENCV ONLY"""
+        new_mode = self.detector.cycle_mode()
+        self.detector_mode = 'cv' if new_mode == 'opencv' else new_mode
+        self.history.clear()
+        print(f"  ⚡ สลับโหมดการตรวจจับเป็น: {new_mode.upper()}")
 
     def cycle_sharpness(self):
         """สลับระดับความคมชัด: OFF -> LOW -> MED -> HIGH -> ULTRA"""
@@ -161,17 +395,19 @@ class RealTimeBrailleScanner:
         self.history.clear()
         print(f"  ✨ ปรับระดับความคมชัด (Sharpness): Level {lvl_num} [{lvl_name}]")
 
-    def cycle_resolution(self, cap):
+    def cycle_resolution(self):
         """สลับความละเอียดแบบสดระหว่าง 4K UHD <-> Full HD 1080p <-> HD 720p"""
         self.curr_res_idx = (self.curr_res_idx + 1) % len(self.available_resolutions)
         name, target_w, target_h = self.available_resolutions[self.curr_res_idx]
 
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, target_w)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, target_h)
-        time.sleep(0.05)
+        if self.camera:
+            actual_w, actual_h = self.camera.set_resolution(target_w, target_h, fps=60)
+            self.actual_width = actual_w
+            self.actual_height = actual_h
+        else:
+            self.actual_width = target_w
+            self.actual_height = target_h
 
-        self.actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.res_name = name
         self.history.clear()
         print(f"  📹 สลับความละเอียดกล้องเป็น: {name} ({self.actual_width}x{self.actual_height})")
@@ -233,14 +469,21 @@ class RealTimeBrailleScanner:
         return zoomed, (x1, y1, x2, y2)
 
     def _apply_sharpening(self, frame):
-        """เพิ่มความคมชัดของภาพตามระดับที่เลือก (Unsharp Masking Filter)"""
+        """เพิ่มความคมชัดของภาพตามระดับที่เลือก (Fast Unsharp Masking 60fps Ready)"""
         _, _, strength = SHARPNESS_LEVELS[self.sharpness_idx]
         if strength <= 0.01:
             return frame
 
-        # Unsharp masking: Image + strength * (Image - Blurred)
-        gaussian = cv2.GaussianBlur(frame, (0, 0), sigmaX=2.0)
-        sharpened = cv2.addWeighted(frame, 1.0 + strength, gaussian, -strength, 0)
+        h, w = frame.shape[:2]
+        # เพื่อรักษาความเร็ว 60 FPS บน 1080p/4K ย่อขนาดเพื่อสร้าง Gaussian Blur
+        if w >= 1280:
+            small = cv2.resize(frame, (w // 2, h // 2), interpolation=cv2.INTER_LINEAR)
+            blur_small = cv2.GaussianBlur(small, (0, 0), sigmaX=1.5)
+            blur = cv2.resize(blur_small, (w, h), interpolation=cv2.INTER_LINEAR)
+        else:
+            blur = cv2.GaussianBlur(frame, (0, 0), sigmaX=2.0)
+
+        sharpened = cv2.addWeighted(frame, 1.0 + strength, blur, -strength, 0)
         return sharpened
 
     def _draw_mini_viewfinder(self, image, orig_frame, crop_box):
@@ -281,18 +524,21 @@ class RealTimeBrailleScanner:
         image[vy:vy + vh, vx:vx + vw] = mini
 
     def _speak_async(self, text, lang):
-        """ออกเสียงใน Background Thread เพื่อไม่ให้ภาพกระตุก"""
-        if self.is_speaking or not text.strip():
-            return
-
-        def _worker():
-            self.is_speaking = True
-            try:
-                self.tts.speak(text, lang=lang)
-            finally:
-                self.is_speaking = False
-
-        threading.Thread(target=_worker, daemon=True).start()
+        """ออกเสียงใน Background Thread (ปิดการทำงานชั่วคราวตามคำขอ)"""
+        # [COMMENTED OUT] ปิดระบบออกเสียงชั่วคราวเพื่อความสะดวกในการทดสอบอ่าน
+        return
+        # if self.is_speaking or not text.strip():
+        #     return
+        #
+        # def _worker():
+        #     self.is_speaking = True
+        #     try:
+        #         if self.tts:
+        #             self.tts.speak(text, lang=lang)
+        #     finally:
+        #         self.is_speaking = False
+        #
+        # threading.Thread(target=_worker, daemon=True).start()
 
     def _draw_top_hud(self, image, current_text, is_locked):
         """วาดแถบเมนูควบคุมและสถานะด้านบน (Top HUD)"""
@@ -314,7 +560,18 @@ class RealTimeBrailleScanner:
         }
         color_text = color_badges.get(self.color, self.color.upper())
         lang_text = "THAI [L]" if self.lang == 'thai' else "ENG [L]"
-        auto_text = "AUTO [A]" if self.auto_speak else "MANUAL [A]"
+        auto_text = "AUDIO: OFF (TESTING)"
+
+        # Detector Mode badge
+        if self.detector.mode == 'hybrid':
+            mode_badge = "HYBRID [Y]"
+            mode_color = (0, 255, 130)  # Bright Emerald Green
+        elif self.detector.mode == 'yolo':
+            mode_badge = "YOLO [Y]"
+            mode_color = (0, 215, 255)  # Cyan/Gold
+        else:
+            mode_badge = "OPENCV [Y]"
+            mode_color = (255, 140, 255)  # Magenta/Pink
 
         # Resolution badge
         if self.actual_width >= 3840:
@@ -336,7 +593,7 @@ class RealTimeBrailleScanner:
             sharp_text = f"SHARP: LV.{lvl_num} ({lvl_name.split()[0]}) [E]"
             sharp_color = (255, 140, 255)  # Magenta/Pink
 
-        fps_text = f"FPS: {self.fps:.1f}"
+        fps_text = f"FPS: {self.display_fps:.1f} | AI: {self.ai_fps:.1f}"
 
         # Zoom badge
         if self.zoom_level > 1.001:
@@ -358,17 +615,18 @@ class RealTimeBrailleScanner:
             status_color = (180, 180, 180)  # Gray
 
         # วาดข้อความ HUD
-        cv2.putText(image, fps_text, (10, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (200, 200, 200), 1, cv2.LINE_AA)
-        cv2.putText(image, f"| {res_badge}", (90, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.48, res_color, 1, cv2.LINE_AA)
-        cv2.putText(image, f"| {sharp_text}", (330, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.48, sharp_color, 1, cv2.LINE_AA)
-        cv2.putText(image, f"| {zoom_text}", (530, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.48, zoom_color, 1 if self.zoom_level <= 1.001 else 2, cv2.LINE_AA)
-        cv2.putText(image, f"| {color_text}", (705, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 200, 80), 1, cv2.LINE_AA)
-        cv2.putText(image, f"| {lang_text}", (830, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (100, 220, 255), 1, cv2.LINE_AA)
-        cv2.putText(image, f"| {status_text}", (940, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.48, status_color, 2, cv2.LINE_AA)
+        cv2.putText(image, fps_text, (10, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1, cv2.LINE_AA)
+        cv2.putText(image, f"| {mode_badge}", (150, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, mode_color, 2, cv2.LINE_AA)
+        cv2.putText(image, f"| {res_badge}", (280, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, res_color, 1, cv2.LINE_AA)
+        cv2.putText(image, f"| {sharp_text}", (490, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, sharp_color, 1, cv2.LINE_AA)
+        cv2.putText(image, f"| {zoom_text}", (660, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, zoom_color, 1 if self.zoom_level <= 1.001 else 2, cv2.LINE_AA)
+        cv2.putText(image, f"| {color_text}", (815, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 200, 80), 1, cv2.LINE_AA)
+        cv2.putText(image, f"| {lang_text}", (925, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 220, 255), 1, cv2.LINE_AA)
+        cv2.putText(image, f"| {status_text}", (1025, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, status_color, 2, cv2.LINE_AA)
 
         # วาดคำแนะนำปุ่มกดด้านล่างขวา
-        tip = "[V/F] Res | [E] Sharp | [Z/X] Zoom | [SPACE] Speak | [P] Save | [Q] Quit"
-        cv2.putText(image, tip, (w - 490, hud_h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 180, 180), 1, cv2.LINE_AA)
+        tip = "[Y] Mode | [V/F] Res | [E] Sharp | [Z/X] Zoom | [SPACE] Speak | [P] Save | [Q] Quit"
+        cv2.putText(image, tip, (w - 535, hud_h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 180, 180), 1, cv2.LINE_AA)
 
     def _on_mouse(self, event, x, y, flags, param):
         """Event handler สำหรับการควบคุม Zoom และ Pan ด้วยเมาส์"""
@@ -388,10 +646,10 @@ class RealTimeBrailleScanner:
             self.history.clear()
 
     def run(self):
-        """เริ่มการทำงานกล้องและลูปประมวลผล"""
+        """เริ่มการทำงานกล้องและลูปประมวลผล Multi-threaded 60 FPS"""
         lvl_num, lvl_name, _ = SHARPNESS_LEVELS[self.sharpness_idx]
         print("=" * 70)
-        print("   Braille-to-Speech Real-Time Scanner (4K UHD & Full HD Ready)")
+        print("   Braille-to-Speech Real-Time Scanner (Multi-Threaded 60 FPS)")
         print("=" * 70)
         print(f"  เปิดกล้อง ID:        Camera Index {self.camera_id}")
         print(f"  ความละเอียดเป้าหมาย:  {self.target_width}x{self.target_height} ({self.res_name})")
@@ -402,6 +660,7 @@ class RealTimeBrailleScanner:
         print(f"  ระบบ Auto-Speak:    {'เปิดใช้งาน' if self.auto_speak else 'ปิดใช้งาน'}")
         print()
         print("  คีย์ลัดและควบคุม:")
+        print("    [Y] / [M]       - สลับโหมดการตรวจจับ (HYBRID / YOLO / OPENCV)")
         print("    [V] / [F]       - สลับความละเอียด (4K UHD <-> Full HD 1080p <-> HD 720p)")
         print("    [E]             - ปรับระดับความคมชัด (OFF -> LOW -> MED -> HIGH -> ULTRA)")
         print("    [Z] / [+]       - ซูมเข้า (Zoom In)")
@@ -417,96 +676,96 @@ class RealTimeBrailleScanner:
         print("=" * 70)
         print()
 
-        # เปิดกล้องด้วย DirectShow (บน Windows) เพื่อให้รองรับ FourCC และความละเอียดสูง 4K
-        backend = cv2.CAP_DSHOW if sys.platform.startswith('win') else cv2.CAP_ANY
-        cap = cv2.VideoCapture(self.camera_id, backend)
-        if not cap.isOpened():
-            cap = cv2.VideoCapture(self.camera_id)
+        # 1. เริ่มต้น Threaded Camera Grabber
+        self.camera = ThreadedCameraCapture(
+            camera_id=self.camera_id,
+            target_width=self.target_width,
+            target_height=self.target_height,
+            target_fps=60,
+        )
 
-        if not cap.isOpened():
+        if not self.camera.is_opened():
             print(f"[ERR] ไม่สามารถเปิดกล้อง Webcam ID: {self.camera_id} ได้")
             print("  ลองตรวจสอบการเชื่อมต่อกล้อง หรือเปลี่ยน index เช่น --camera 1")
             return
 
-        # 1. ตั้งค่า FourCC เป็น MJPG เพื่อปลดล็อก Bandwidth ความเร็วสูงสำหรับ 4K / 1080p
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        self.actual_width = self.camera.actual_width
+        self.actual_height = self.camera.actual_height
+        actual_fps = self.camera.actual_fps
 
-        # 2. ตั้งค่าความละเอียดที่ต้องการ
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.target_width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.target_height)
-
-        # 3. ตรวจสอบความละเอียดจริงที่กล้องเปิดได้
-        self.actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        print(f"  📷 กล้องเปิดสำเร็จ! ความละเอียดจริงที่ใช้งาน: {self.actual_width}x{self.actual_height}")
+        print(f"  📷 กล้องเปิดสำเร็จ! ความละเอียดจริง: {self.actual_width}x{self.actual_height} @ {actual_fps:.0f}fps")
         if self.actual_width >= 3840:
             print("  🌟 ทำงานในโหมด 4K Ultra HD คมชัดระดับสูงสุด!")
         elif self.actual_width >= 1920:
             print("  ✨ ทำงานในโหมด Full HD 1080p คมชัดสูง!")
+        if actual_fps >= 55:
+            print("  🚀 รองรับ 60fps สำหรับความลื่นไหลสูงสุด!")
 
-        window_name = "Braille Real-Time Scanner [4K / FHD / Zoom / Sharpness]"
+        # 2. เริ่มต้น AI Inference Worker Thread
+        self.ai_worker = AsyncBrailleWorker(self.detector, default_lang=self.lang)
+        self.ai_worker.start()
+        self.camera.start()
+
+        window_name = "Braille Real-Time Scanner [Multi-threaded 60 FPS | 4K/FHD/Zoom]"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        # ปรับขนาดหน้าต่างแสดงผลเริ่มต้นให้พอดีจอ
         disp_w = min(1600, self.actual_width)
         disp_h = int(disp_w * (self.actual_height / max(1, self.actual_width)))
         cv2.resizeWindow(window_name, disp_w, disp_h)
         cv2.setMouseCallback(window_name, self._on_mouse)
 
+        frame_fail_count = 0
+        self._prev_frame_time = time.time()
+
         try:
             while True:
-                ret, frame = cap.read()
+                ret, frame = self.camera.read_latest()
                 if not ret or frame is None:
-                    print("[WARN] ไม่สามารถอ่านเฟรมจากกล้องได้")
-                    time.sleep(0.05)
+                    frame_fail_count += 1
+                    if frame_fail_count >= 300:  # ~1.5s
+                        print("[ERR] กล้องไม่ตอบสนอง — กำลังปิดโปรแกรม...")
+                        break
+                    time.sleep(0.005)
                     continue
+                frame_fail_count = 0
 
                 # อัปเดตขนาดจริงของเฟรม
                 self.actual_height, self.actual_width = frame.shape[:2]
 
-                # คำนวณ FPS
+                # คำนวณ Display FPS
                 now = time.time()
-                self.fps = 0.9 * self.fps + 0.1 * (1.0 / max(now - self._prev_frame_time, 1e-5))
+                self.display_fps = 0.9 * self.display_fps + 0.1 * (1.0 / max(now - self._prev_frame_time, 1e-5))
                 self._prev_frame_time = now
 
-                # 1. ใช้งาน Sharpening Filter ตามระดับที่เลือก
-                enhanced_frame = self._apply_sharpening(frame)
+                # 1. ใช้งาน Digital Zoom (ถ้า zoom_level > 1.0)
+                zoomed_frame, crop_box = self._apply_zoom(frame)
 
-                # 2. ใช้งาน Digital Zoom (ถ้า zoom_level > 1.0)
-                zoomed_frame, crop_box = self._apply_zoom(enhanced_frame)
+                # 2. ใช้งาน Sharpening Filter บนภาพที่ซูมแล้ว
+                enhanced_frame = self._apply_sharpening(zoomed_frame)
 
-                # 3. ตรวจจับอักษรเบรลล์จากภาพความละเอียดสูง
-                cells, debug_info = self.detector.detect(zoomed_frame)
-                dots = debug_info['dots']
+                # 3. ส่งภาพให้ AI Worker ประมวลผลแบบคู่ขนาน (Non-blocking)
+                self.ai_worker.submit_frame(enhanced_frame, lang=self.lang)
 
-                # 4. ถอดรหัสข้อความ
-                decoded_text = ""
-                verbose_results = []
-                if cells:
-                    decoded_text = decode_cells(cells, lang=self.lang)
-                    verbose_results = decode_cells_verbose(cells, lang=self.lang)
+                # 4. ดึงผลลัพธ์การตรวจจับล่าสุดจาก AI Worker
+                ai_res = self.ai_worker.get_latest_results()
+                cells = ai_res['cells']
+                dots = ai_res['dots']
+                decoded_text = ai_res['decoded_text']
+                verbose_results = ai_res['verbose_results']
+                self.ai_fps = ai_res['ai_fps']
 
                 # 5. ตรวจสอบความนิ่งของคำ (Stability Buffer)
-                self.history.append(decoded_text)
-                is_locked = False
+                if decoded_text != self.last_seen_text:
+                    self.last_seen_text = decoded_text
+                    self.history.append(decoded_text)
 
+                is_locked = False
                 if len(self.history) == self.stability_threshold:
                     if all(t == decoded_text for t in self.history) and decoded_text.strip():
                         is_locked = True
 
-                        # Auto-TTS Trigger
-                        time_since_last_speak = now - self.last_spoken_time
-                        is_new_text = (decoded_text != self.last_spoken_text)
-                        is_cooldown_expired = (time_since_last_speak >= self.cooldown_seconds)
-
-                        if self.auto_speak and (is_new_text or is_cooldown_expired):
-                            self.last_spoken_text = decoded_text
-                            self.last_spoken_time = now
-                            print(f"  🔊 [AUTO-TTS] \"{decoded_text}\" (lang={self.lang})")
-                            self._speak_async(decoded_text, self.lang)
-
                 # 6. วาด 2x3 Grid Overlay และแบนเนอร์แสดงผลลัพธ์
                 annotated = self.detector.annotate_with_text(
-                    zoomed_frame, dots, cells,
+                    enhanced_frame, dots, cells,
                     decoded_text=decoded_text,
                     verbose_results=verbose_results,
                     lang=self.lang
@@ -515,10 +774,10 @@ class RealTimeBrailleScanner:
                 # 7. วาด Mini Viewfinder มุมขวาบน (กรณีซูมอยู่)
                 self._draw_mini_viewfinder(annotated, frame, crop_box)
 
-                # 8. วาด Top HUD Bar
+                # 8. วาด Top HUD Bar แสดงสถานะ Display FPS & AI FPS
                 self._draw_top_hud(annotated, decoded_text, is_locked)
 
-                # 9. แสดงผลลัพธ์บนหน้าต่าง
+                # 9. แสดงผลลัพธ์บนหน้าต่าง (ลื่นไหล 60 FPS)
                 cv2.imshow(window_name, annotated)
 
                 # 10. จัดการคีย์บอร์ด
@@ -529,9 +788,13 @@ class RealTimeBrailleScanner:
                     print("  ปิดโปรแกรม...")
                     break
 
+                # [Y] หรือ [M] -> สลับโหมด Detector (HYBRID <-> YOLO <-> OPENCV)
+                elif key in (ord('y'), ord('Y'), ord('m'), ord('M')):
+                    self.cycle_detector_mode()
+
                 # [V] หรือ [F] -> สลับความละเอียด (4K <-> FHD <-> HD)
                 elif key in (ord('v'), ord('V'), ord('f'), ord('F')):
-                    self.cycle_resolution(cap)
+                    self.cycle_resolution()
 
                 # [E] -> ปรับระดับความคมชัด (Multi-level Sharpening)
                 elif key in (ord('e'), ord('E')):
@@ -549,19 +812,11 @@ class RealTimeBrailleScanner:
                 elif key in (ord('r'), ord('R'), ord('0')):
                     self.reset_zoom()
 
-                # [SPACE] หรือ [S] -> ออกเสียงทันที
-                elif key in (ord(' '), ord('s'), ord('S')):
-                    if decoded_text.strip():
-                        print(f"  🔊 [MANUAL-TTS] \"{decoded_text}\"")
-                        self.last_spoken_text = decoded_text
-                        self.last_spoken_time = time.time()
-                        self._speak_async(decoded_text, self.lang)
-
                 # [C] -> สลับสีจุดแต้ม
                 elif key in (ord('c'), ord('C')):
                     curr_idx = self.supported_colors.index(self.color)
                     self.color = self.supported_colors[(curr_idx + 1) % len(self.supported_colors)]
-                    self.detector = BrailleDetector(dot_color=self.color)
+                    self.detector.set_color(self.color)
                     self.history.clear()
                     print(f"  🎨 สลับสีจุดเป็น: {self.color.upper()}")
 
@@ -585,9 +840,12 @@ class RealTimeBrailleScanner:
                     print(f"  📸 บันทึก Snapshot ความละเอียดสูง: {snap_path}")
 
         finally:
-            cap.release()
+            if self.ai_worker:
+                self.ai_worker.stop()
+            if self.camera:
+                self.camera.release()
             cv2.destroyAllWindows()
-            print("  กล้องปิดการทำงานเรียบร้อย")
+            print("  กล้องและเธรดปิดการทำงานเรียบร้อย")
 
 
 def main():
@@ -642,6 +900,15 @@ def main():
         '--height', type=int, default=None,
         help='ความสูงวิดีโอแบบระบุเจาะจง (px)',
     )
+    parser.add_argument(
+        '--detector', type=str, default='hybrid',
+        choices=['hybrid', 'yolo', 'cv', 'opencv'],
+        help='โหมดการตรวจจับ: hybrid (CV+YOLO), yolo (YOLO only), cv (OpenCV only) (default: hybrid)',
+    )
+    parser.add_argument(
+        '--conf', type=float, default=0.35,
+        help='Confidence threshold สำหรับ YOLO (default: 0.35)',
+    )
 
     args = parser.parse_args()
 
@@ -657,6 +924,8 @@ def main():
         height=args.height,
         initial_zoom=args.zoom,
         sharpness_level=args.sharp,
+        detector_mode=args.detector,
+        yolo_conf=args.conf,
     )
     scanner.run()
 

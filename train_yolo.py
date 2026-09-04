@@ -57,7 +57,7 @@ def check_dataset(data_dir='datasets/braille_dots'):
     return os.path.join(data_dir, 'data.yaml')
 
 
-def train(epochs=30, batch=16, imgsz=640, device=None, resume=False):
+def train(epochs=15, batch=16, imgsz=416, device=None, resume=False):
     """
     Train YOLOv8 model สำหรับตรวจจับจุดเบรลล์
 
@@ -106,8 +106,9 @@ def train(epochs=30, batch=16, imgsz=640, device=None, resume=False):
             model = YOLO(model_path)
             print(f"  📦 Resuming from: {model_path}")
     else:
-        print(f"  📦 โหลด YOLOv8n pre-trained model...")
-        model = YOLO('yolov8n.pt')
+        init_weights = 'models/braille_yolo.pt' if os.path.exists('models/braille_yolo.pt') else 'yolov8n.pt'
+        print(f"  📦 โหลด Base Weights: {init_weights}")
+        model = YOLO(init_weights)
 
     # 3. เริ่ม Training
     #    Transfer Learning: เริ่มจาก weights ที่เรียนรู้จาก COCO dataset แล้ว
@@ -144,12 +145,20 @@ def train(epochs=30, batch=16, imgsz=640, device=None, resume=False):
         verbose=True,
     )
 
-    # 4. สรุปผล
+    # 4. สรุปผลและบันทึกโมเดลหลัก
+    best_pt = 'runs/detect/train/weights/best.pt'
+    if os.path.exists(best_pt):
+        os.makedirs('models', exist_ok=True)
+        import shutil
+        shutil.copy2(best_pt, 'models/braille_yolo.pt')
+        print(f"  💾 บันทึกโมเดลหลักไปที่: models/braille_yolo.pt")
+
     print()
     print("=" * 60)
     print("  ✅ Training เสร็จสมบูรณ์!")
     print("=" * 60)
-    print(f"  📁 Model:      runs/detect/train/weights/best.pt")
+    print(f"  📁 Best Model: runs/detect/train/weights/best.pt")
+    print(f"  📁 Deploy Pt:  models/braille_yolo.pt")
     print(f"  📊 Plots:      runs/detect/train/")
     print()
     print(f"  ขั้นตอนถัดไป:")
@@ -162,9 +171,9 @@ def train(epochs=30, batch=16, imgsz=640, device=None, resume=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train YOLO for Braille Dot Detection')
-    parser.add_argument('--epochs', type=int, default=30, help='จำนวนรอบ training (default: 30)')
+    parser.add_argument('--epochs', type=int, default=15, help='จำนวนรอบ training (default: 15)')
     parser.add_argument('--batch', type=int, default=16, help='Batch size (default: 16)')
-    parser.add_argument('--imgsz', type=int, default=640, help='Image size (default: 640)')
+    parser.add_argument('--imgsz', type=int, default=416, help='Image size (default: 416)')
     parser.add_argument('--device', type=str, default=None, help='Device: "0"=GPU, "cpu"=CPU')
     parser.add_argument('--resume', action='store_true', help='Resume training จากครั้งก่อน')
     args = parser.parse_args()

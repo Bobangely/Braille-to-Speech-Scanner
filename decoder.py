@@ -1,9 +1,13 @@
+# -*- coding: utf-8 -*-
 """
 Braille Reader - Decoder
 =========================
 แปลง detected Braille cells (dot positions) เป็นตัวอักษร (English & Thai)
 ใช้ Context-Aware State Machine สำหรับภาษาไทย เพื่อแยกพยัญชนะ/สระ/วรรณยุกต์อย่างแม่นยำ
 """
+
+import re
+import unicodedata
 
 from config import BRAILLE_TO_CHAR
 from config_thai import (
@@ -49,6 +53,12 @@ _DOTS_3456 = frozenset({3, 4, 5, 6})
 # Thai combining/trailing vowels that should come AFTER tone marks
 _TRAILING_VOWEL_PARTS = frozenset({'า', 'ำ', 'ะ'})
 
+# Thai Unicode character classes for Orthographic Normalization
+_THAI_COMBINING_MARKS = r'[\u0E31\u0E34-\u0E3A\u0E47\u0E4D]'  # ั, ิ, ี, ึ, ื, ุ, ู, ฺ, ็, ํ
+_THAI_TONES = r'[\u0E48-\u0E4B]'                              # ่, ้, ๊, ๋
+_THAI_THANTHAKHAT = r'[\u0E4C]'                              # ์ (การันต์)
+_THAI_TRAILING_VOWELS = r'[\u0E32\u0E33\u0E45]'              # า, ำ, ๅ
+
 # English letter-to-digit mapping (pre-compute, used in decode_cells_english)
 _LETTER_TO_DIGIT = {
     'a': '1', 'b': '2', 'c': '3', 'd': '4', 'e': '5',
@@ -57,6 +67,47 @@ _LETTER_TO_DIGIT = {
 
 # Braille Unicode bit mapping (Perf 5 — direct tuple lookup instead of dict)
 _DOT_BITS = (0, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20)  # index 0 unused, 1-6 map to bits
+
+
+def normalize_thai_text(text: str) -> str:
+    """
+    จัดระเบียบและเรียงลำดับอักขระภาษาไทยตามมาตรฐาน Unicode (Orthographic Normalization)
+    เพื่อให้ Google TTS และตัวแสดงผลภาษาไทยอ่านออกเสียงได้อย่างถูกต้องแม่นยำ
+
+    1. วรรณยุกต์ที่มาก่อนสระบน/ล่าง -> สลับให้สระบน/ล่างมาก่อน (เช่น ก + ้ + ิ -> ก + ิ + ้)
+    2. การันต์ที่มาก่อนสระบน/ล่าง -> สลับให้สระบน/ล่างมาก่อน (เช่น ด + ์ + ิ -> ด + ิ + ์)
+    3. วรรณยุกต์ที่มาหลังสระตาม (า, ำ, ๅ) -> สลับวรรณยุกต์ไปไว้บนพยัญชนะก่อนสระตาม (เช่น ก + า + ้ -> ก + ้ + า, น + ำ + ้ -> น + ้ + ำ)
+    4. Deduplicate: ตัดเครื่องหมายวรรณยุกต์ สระบน/ล่าง หรือการันต์ที่ซ้ำกันติดกันออก
+    5. Unicode NFC Normalization: รวม composed Unicode form
+    """
+    if not text:
+        return ""
+
+    # 0a. รวมสระเอ ซ้อนกัน 2 ตัว ('เเ') เป็นสระแอ ('แ')
+    text = text.replace('เเ', 'แ')
+
+    # 0b. แก้ไขรูปแบบสับสนของวรรณยุกต์กับสระ:
+    # ู + า -> ้ + า (เช่น ขูาว -> ข้าว)
+    text = re.sub(r'ูา', '้า', text)
+    # [เแ] + พยัญชนะ + ื + พยัญชนะที่ไม่ใช่ 'อ' -> [เแ] + พยัญชนะ + ้ + พยัญชนะ (เช่น แลืว -> แล้ว, แต่ เกือ/เรือ/เสือ ยังเป็นสระเอือ)
+    text = re.sub(r'([เแ][\u0E01-\u0E2E])ื([\u0E01-\u0E2C\u0E2E])', r'\1้\2', text)
+
+    # 1. วรรณยุกต์ + สระบน/ล่าง -> สระบน/ล่าง + วรรณยุกต์
+    text = re.sub(rf'({_THAI_TONES})({_THAI_COMBINING_MARKS})', r'\2\1', text)
+
+    # 2. การันต์ + สระบน/ล่าง -> สระบน/ล่าง + การันต์
+    text = re.sub(rf'({_THAI_THANTHAKHAT})({_THAI_COMBINING_MARKS})', r'\2\1', text)
+
+    # 3. สระตาม (า, ำ, ๅ) + วรรณยุกต์ -> วรรณยุกต์ + สระตาม
+    text = re.sub(rf'({_THAI_TRAILING_VOWELS})({_THAI_TONES})', r'\2\1', text)
+
+    # 4. ตัดวรรณยุกต์ สระบน/ล่าง หรือการันต์ที่ซ้ำซ้อนติดกัน
+    text = re.sub(r'([\u0E31\u0E34-\u0E3A\u0E47-\u0E4D])\1+', r'\1', text)
+
+    # 5. Unicode NFC Normalization
+    text = unicodedata.normalize('NFC', text)
+
+    return text
 
 
 def decode_cells(cells, lang='english'):
@@ -184,42 +235,45 @@ def _check_space(cells, i, result, number_mode):
 
 def _get_vowel_insert_index(result):
     """
-    ดึง index สำหรับแทรกสระนำ (เ แ โ ไ ใ) โดยพิจารณาอักษรควบกล้ำและ ห นำ
+    ดึง index สำหรับแทรกสระหน้าของสระผสม (เ◌า, เ◌อ, ฯลฯ) หน้าพยัญชนะต้น/อักษรควบกล้ำ
+    จะพิจารณาเฉพาะพยัญชนะต้นที่อยู่ติดท้าย result ในพยางค์ปัจจุบันเท่านั้น (ไม่ข้ามสระหรือพยางค์ก่อนหน้า)
     Returns: index หรือ None
     """
     if not result:
         return None
 
-    # ค้นหาย้อนกลับจากท้าย result หา consonant ตัวล่าสุด (ใช้ pre-computed set)
-    last_cons_idx = None
-    for idx in range(len(result) - 1, -1, -1):
-        ch = result[idx]
-        if ch in _ALL_CONSONANTS:
-            last_cons_idx = idx
-            break
-        if ch == ' ':
-            break
+    last_idx = len(result) - 1
+    # ข้ามวรรณยุกต์ถ้าอยู่ท้ายสุด
+    if last_idx >= 0 and result[last_idx] in ('่', '้', '๊', '๋'):
+        last_idx -= 1
 
-    if last_cons_idx is None:
+    if last_idx < 0 or result[last_idx] not in _ALL_CONSONANTS:
         return None
 
-    insert_idx = last_cons_idx
+    # ถ้าตัวก่อนหน้าเป็นสระ แสดงว่าพยัญชนะตัวนี้เป็นตัวสะกดของพยางค์ก่อนหน้า ไม่ใช่พยัญชนะต้น
+    if last_idx > 0 and result[last_idx - 1] in {
+        'ะ', 'ั', 'า', 'ิ', 'ี', 'ึ', 'ื', 'ุ', 'ู', 'ำ',
+        'เ', 'แ', 'โ', 'ไ', 'ใ', '็'
+    }:
+        return None
+
+    insert_idx = last_idx
 
     # ถอยไปดูพยัญชนะตัวก่อนหน้าว่าเป็นอักษรนำ/ควบกล้ำหรือไม่
-    if last_cons_idx > 0:
-        prev_char = result[last_cons_idx - 1]
-        curr_char = result[last_cons_idx]
+    if last_idx > 0:
+        prev_char = result[last_idx - 1]
+        curr_char = result[last_idx]
         
         if prev_char in _ALL_CONSONANTS:
             # 1. ห นำ
             if prev_char == 'ห' and curr_char in ('ง', 'ญ', 'น', 'ม', 'ย', 'ร', 'ล', 'ว'):
-                insert_idx = last_cons_idx - 1
+                insert_idx = last_idx - 1
             # 2. อ นำ
             elif prev_char == 'อ' and curr_char == 'ย':
-                insert_idx = last_cons_idx - 1
+                insert_idx = last_idx - 1
             # 3. ควบกล้ำ
             elif curr_char in ('ร', 'ล', 'ว') and prev_char in ('ก', 'ข', 'ค', 'ต', 'ป', 'ผ', 'พ', 'ท', 'ศ', 'ส'):
-                insert_idx = last_cons_idx - 1
+                insert_idx = last_idx - 1
 
     return insert_idx
 
@@ -298,13 +352,9 @@ def decode_cells_thai(cells):
         # 2. สระ 'ใ' (2 cells: dots 1,5,6 + dot 2)
         # ==============================================================
         if dots == _DOTS_156 and i + 1 < n and cells[i + 1]['dots'] == _DOTS_2:
-            # สระ ใ เป็นสระนำ — ต้อง reorder ไปหน้าพยัญชนะ
-            cons_idx = _get_vowel_insert_index(result)
-            if cons_idx is not None:
-                result.insert(cons_idx, 'ใ')
-            else:
-                result.append('ใ')
-            state = 'VOWEL_TONE'  # อาจตามด้วยวรรณยุกต์
+            # สระ ใ เป็นสระนำ ในระบบเบรลล์ไทยเขียนนำหน้าพยัญชนะต้นเสมอ
+            result.append('ใ')
+            state = 'CONSONANT'  # หลังสระนำต้องตามด้วยพยัญชนะต้น
             i += 2
             continue
 
@@ -379,7 +429,10 @@ def decode_cells_thai(cells):
         if dots in VOWEL_KEYS and state == 'VOWEL_TONE':
             raw_char = THAI_VOWELS[dots]
             _apply_vowel(result, raw_char)
-            # state ยังเป็น VOWEL_TONE (อาจมีวรรณยุกต์ตาม)
+            if raw_char in LEADING_VOWELS:
+                state = 'CONSONANT'
+            else:
+                state = 'VOWEL_TONE'
             i += 1
             continue
 
@@ -390,11 +443,14 @@ def decode_cells_thai(cells):
             i += 1
             continue
 
-        # 4e. ถ้า state เป็น CONSONANT แต่ dots อยู่ใน VOWEL_KEYS (สระลอย เช่น ต้นคำ)
+        # 4e. ถ้า state เป็น CONSONANT แต่ dots อยู่ใน VOWEL_KEYS (สระลอย เช่น ต้นคำ หรือสระนำ)
         if dots in VOWEL_KEYS:
             raw_char = THAI_VOWELS[dots]
             _apply_vowel(result, raw_char)
-            state = 'VOWEL_TONE'
+            if raw_char in LEADING_VOWELS:
+                state = 'CONSONANT'
+            else:
+                state = 'VOWEL_TONE'
             i += 1
             continue
 
@@ -413,12 +469,12 @@ def decode_cells_thai(cells):
         state = 'CONSONANT'
         i += 1
 
-    return ''.join(result).strip()
+    return normalize_thai_text(''.join(result).strip())
 
 
 def _apply_vowel(result, raw_char):
     """
-    จัดการสระ: สระนำ (reorder), สระผสม (decompose), สระ combining (append)
+    จัดการสระ: สระนำ (append โดยตรง), สระผสม (decompose), สระ combining (append)
 
     Parameters
     ----------
@@ -428,13 +484,9 @@ def _apply_vowel(result, raw_char):
         สระที่ได้จาก lookup (อาจเป็นสระนำ, สระผสม, หรือสระ combining)
     """
     # --- สระนำ (Leading Vowels): เ แ โ ไ ---
+    # ในระบบเบรลล์ไทยมาตรฐาน สระนำถูกเขียนนำหน้าพยัญชนะต้นอยู่แล้วตามลำดับซ้ายไปขวา
     if raw_char in LEADING_VOWELS:
-        cons_idx = _get_vowel_insert_index(result)
-        if cons_idx is not None:
-            result.insert(cons_idx, raw_char)
-        else:
-            # ไม่มีพยัญชนะก่อนหน้า → ใส่ 'อ' เป็น placeholder
-            result.append(raw_char)
+        result.append(raw_char)
         return
 
     # --- สระผสม (Compound Vowels) ---
