@@ -40,7 +40,7 @@ class YOLOBrailleDetector:
 
     AVAILABLE_MODES = ['hybrid', 'yolo', 'opencv']
 
-    def __init__(self, model_path=None, confidence=0.35, mode='hybrid', fallback_color='blue'):
+    def __init__(self, model_path=None, confidence=0.35, mode='hybrid', fallback_color='blue', paper_mode=True):
         """
         Parameters
         ----------
@@ -52,10 +52,13 @@ class YOLOBrailleDetector:
             โหมดการตรวจจับ: 'hybrid', 'yolo', 'opencv' (default: 'hybrid')
         fallback_color : str
             สีที่ใช้เมื่อ fallback ไป OpenCV
+        paper_mode : bool
+            ถ้าเป็น True จะไม่ใช้ Otsu thresholding บนภาพเงากระดาษ เพื่อป้องกันจุดศูนย์กลางเบี้ยว (default: True)
         """
         self.confidence = float(confidence)
         self.mode = mode.lower() if mode.lower() in self.AVAILABLE_MODES else 'hybrid'
         self.color = fallback_color.lower()
+        self.paper_mode = paper_mode
         self.model = None
         self.model_path = model_path
         self._font_cache = {}
@@ -238,6 +241,14 @@ class YOLOBrailleDetector:
         """
         h_img, w_img = image.shape[:2]
         refined_dots = []
+
+        # สำหรับกระดาษจริง (รอยนูน) การใช้ Otsu หาเงาจะทำให้จุดศูนย์กลางเบี้ยว
+        # ให้ใช้จุดกึ่งกลางของ Bounding Box จาก YOLO โดยตรงซึ่งแม่นยำกว่ามาก
+        if self.paper_mode:
+            for dot in yolo_dots:
+                dot['refined'] = True # ถือว่าแม่นยำอยู่แล้ว
+                refined_dots.append(dot)
+            return refined_dots
 
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 

@@ -361,6 +361,7 @@ class RealTimeBrailleScanner:
         self.last_seen_text = ""
         self.is_speaking = False
         self.supported_colors = ['blue', 'red', 'green', 'black']
+        self.paper_mode = True
 
         # ตัวตรวจจับแบบ Hybrid (YOLO + OpenCV)
         initial_mode = 'opencv' if self.detector_mode in ('cv', 'opencv') else self.detector_mode
@@ -368,6 +369,7 @@ class RealTimeBrailleScanner:
             confidence=self.yolo_conf,
             mode=initial_mode,
             fallback_color=self.color,
+            paper_mode=self.paper_mode
         )
         # self.tts = TextToSpeech()  # [COMMENTED OUT] ปิดระบบออกเสียงชั่วคราวเพื่อความสะดวกในการทดสอบ
         self.tts = None
@@ -559,6 +561,11 @@ class RealTimeBrailleScanner:
             'black': 'BLACK [C]',
         }
         color_text = color_badges.get(self.color, self.color.upper())
+        if self.paper_mode:
+            color_text = "PAPER [B]"
+        else:
+            color_text = f"{color_text} [B]"
+            
         lang_text = "THAI [L]" if self.lang == 'thai' else "ENG [L]"
         auto_text = "AUDIO: OFF (TESTING)"
 
@@ -625,8 +632,8 @@ class RealTimeBrailleScanner:
         cv2.putText(image, f"| {status_text}", (1025, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, status_color, 2, cv2.LINE_AA)
 
         # วาดคำแนะนำปุ่มกดด้านล่างขวา
-        tip = "[Y] Mode | [V/F] Res | [E] Sharp | [Z/X] Zoom | [SPACE] Speak | [P] Save | [Q] Quit"
-        cv2.putText(image, tip, (w - 535, hud_h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 180, 180), 1, cv2.LINE_AA)
+        tip = "[Y] Mode | [B] Paper | [V/F] Res | [E] Sharp | [Z/X] Zoom | [SPACE] Speak | [P] Save | [Q] Quit"
+        cv2.putText(image, tip, (w - 635, hud_h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 180, 180), 1, cv2.LINE_AA)
 
     def _on_mouse(self, event, x, y, flags, param):
         """Event handler สำหรับการควบคุม Zoom และ Pan ด้วยเมาส์"""
@@ -741,6 +748,15 @@ class RealTimeBrailleScanner:
 
                 # 2. ใช้งาน Sharpening Filter บนภาพที่ซูมแล้ว
                 enhanced_frame = self._apply_sharpening(zoomed_frame)
+                
+                # 2.5 ใช้งาน CLAHE สำหรับกระดาษจริงใน Paper Mode เพื่อดึงรอยนูน
+                if self.paper_mode:
+                    lab = cv2.cvtColor(enhanced_frame, cv2.COLOR_BGR2LAB)
+                    l, a, b = cv2.split(lab)
+                    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+                    cl = clahe.apply(l)
+                    limg = cv2.merge((cl, a, b))
+                    enhanced_frame = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
 
                 # 3. ส่งภาพให้ AI Worker ประมวลผลแบบคู่ขนาน (Non-blocking)
                 self.ai_worker.submit_frame(enhanced_frame, lang=self.lang)
@@ -811,6 +827,13 @@ class RealTimeBrailleScanner:
                 # [R] / [0] -> Reset Zoom
                 elif key in (ord('r'), ord('R'), ord('0')):
                     self.reset_zoom()
+                    
+                # [B] -> สลับโหมดกระดาษจริง (Paper Mode)
+                elif key in (ord('b'), ord('B')):
+                    self.paper_mode = not self.paper_mode
+                    self.detector.paper_mode = self.paper_mode
+                    self.history.clear()
+                    print(f"  📄 Paper Mode: {'เปิด (กระดาษนูนสแกน)' if self.paper_mode else 'ปิด (อ่านจอ/กระดาษสี)'}")
 
                 # [C] -> สลับสีจุดแต้ม
                 elif key in (ord('c'), ord('C')):

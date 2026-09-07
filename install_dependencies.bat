@@ -16,7 +16,7 @@ python --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo  ❌ ไม่พบ Python ในเครื่อง!
     echo.
-    echo  กรุณาติดตั้ง Python ก่อน (แนะนำ Python 3.10 - 3.12):
+    echo  กรุณาติดตั้ง Python ก่อน ^(แนะนำ Python 3.10 - 3.12^):
     echo  1. ดาวน์โหลดที่: https://www.python.org/downloads/
     echo  2. ตอนติดตั้ง อย่าลืมติ๊กถูก [x] "Add python.exe to PATH"
     echo.
@@ -30,7 +30,7 @@ echo.
 
 REM 2. สร้าง Virtual Environment (.venv) หากยังไม่มี
 if not exist ".venv" (
-    echo  📦 กำลังสร้าง Virtual Environment (.venv)...
+    echo  📦 กำลังสร้าง Virtual Environment ^(.venv^)...
     python -m venv .venv
     if %errorlevel% neq 0 (
         echo  ❌ สร้าง .venv ไม่สำเร็จ!

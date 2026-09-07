@@ -307,38 +307,18 @@ class BrailleDetector:
         sin_b = np.sin(tilt_angle)
 
         # 4. ประมวลผลแต่ละบรรทัดการอ่าน
+        prev_expected_rows = None
         for line_indices in reading_lines:
             line_indices = np.array(line_indices)
             l_rot_x = rot_x[line_indices]
             l_rot_y = rot_y[line_indices]
 
             # 4a. กำหนดตำแหน่งแถว 0, 1, 2 อ้างอิงของบรรทัดนี้
-            y_min = float(np.min(l_rot_y))
-            y_max = float(np.max(l_rot_y))
-            y_span = y_max - y_min
-
-            if y_span >= dot_spacing * 1.4:
-                # มีจุดครอบคลุมทั้งแถวบนและแถวล่าง
-                top_mask = l_rot_y < y_min + dot_spacing * 0.55
-                bot_mask = l_rot_y > y_max - dot_spacing * 0.55
-                mid_mask = (~top_mask) & (~bot_mask)
-
-                r_top = float(np.median(l_rot_y[top_mask])) if np.any(top_mask) else (y_max - 2 * dot_spacing)
-                r_bot = float(np.median(l_rot_y[bot_mask])) if np.any(bot_mask) else (y_min + 2 * dot_spacing)
-                r_mid = float(np.median(l_rot_y[mid_mask])) if np.any(mid_mask) else ((r_top + r_bot) / 2.0)
-                expected_rows = [r_top, r_mid, r_bot]
-            elif y_span >= dot_spacing * 0.6:
-                # มี 2 แถว
-                r0 = y_min
-                r1 = y_max
-                if (r1 - r0) > dot_spacing * 1.5:
-                    expected_rows = [r0, (r0 + r1) / 2.0, r1]
-                else:
-                    expected_rows = [r0, r1, r1 + dot_spacing]
-            else:
-                # มีเพียง 1 แถว
-                r_mid = float(np.median(l_rot_y))
-                expected_rows = [r_mid - dot_spacing, r_mid, r_mid + dot_spacing]
+            # ใช้ 1D Template Fitting เพื่อหา Grid แถวที่แม่นยำที่สุด
+            # ระยะบรรทัดมาตรฐานคือ ~4 * dot_spacing (จาก top ถึง top ถัดไป)
+            expected_base = prev_expected_rows[0] + 4.0 * dot_spacing if prev_expected_rows else None
+            expected_rows = self._fit_1d_template(l_rot_y, dot_spacing, 3, expected_base)
+            prev_expected_rows = expected_rows
 
             # 4b. แบ่งกลุ่มจุดตามแกน X เป็นเซลล์ (Split เมื่อ gap > 1.25 * dot_spacing)
             order_x = np.argsort(l_rot_x)
@@ -364,30 +344,15 @@ class BrailleDetector:
                 c_ys = rot_y[cluster_dot_indices]
 
                 # กำหนดคอลัมน์ (มี 2 คอลัมน์ หรือ 1 คอลัมน์)
-                if np.ptp(c_xs) > dot_spacing * 0.55:
-                    c_mid = (np.min(c_xs) + np.max(c_xs)) / 2.0
-                    col_0 = float(np.mean(c_xs[c_xs < c_mid]))
-                    col_1 = float(np.mean(c_xs[c_xs >= c_mid]))
-                else:
-                    c_val = float(np.mean(c_xs))
-                    cell_gap = dot_spacing * 1.375
-                    pitch = dot_spacing + cell_gap
-                    is_right = False
-                    if prev_cell_right is not None:
-                        dist = c_val - prev_cell_right
-                        offset = dist - cell_gap
-                        rem = (offset + pitch / 2.0) % pitch - (pitch / 2.0)
-                        if abs(rem - dot_spacing) < abs(rem):
-                            is_right = True
-                    if is_right:
-                        col_0 = c_val - dot_spacing
-                        col_1 = c_val
-                    else:
-                        col_0 = c_val
-                        col_1 = c_val + dot_spacing
-
+                # ใช้ 1D Template Fitting สำหรับคอลัมน์
+                expected_base = None
+                if prev_cell_right is not None:
+                    # ระยะห่างมาตรฐานระหว่างเซลล์ (cell gap) ประมาณ 1.375 * dot_spacing
+                    expected_base = prev_cell_right + dot_spacing * 1.375
+                
+                expected_cols = self._fit_1d_template(c_xs, dot_spacing, 2, expected_base)
+                col_0, col_1 = expected_cols
                 prev_cell_right = col_1
-                expected_cols = [col_0, col_1]
 
                 # กำหนดจุด 1-6
                 cell_dots = set()
@@ -491,6 +456,39 @@ class BrailleDetector:
 
         # ใช้ 25th percentile แทน median → จับเฉพาะ within-cell spacing
         return float(np.percentile(nn_dists, 25))
+
+    def _fit_1d_template(self, pts, spacing, k, expected_base=None):
+        """
+        Fit a 1D lattice template of k points with given spacing to the data pts.
+        If expected_base is provided, use it to break ties (e.g. for single dot).
+        Returns the list of k absolute coordinates.
+        """
+        if len(pts) == 0:
+            return [expected_base + i*spacing for i in range(k)] if expected_base is not None else [0] * k
+            
+        best_error = float('inf')
+        best_base = 0
+        
+        candidates = set()
+        for p in pts:
+            for i in range(k):
+                candidates.add(p - i * spacing)
+        
+        if expected_base is not None:
+            candidates.add(expected_base)
+                
+        for base in candidates:
+            template = [base + i * spacing for i in range(k)]
+            error = sum(min(abs(p - t) for t in template) for p in pts)
+            # Add a tiny penalty for deviating from expected_base to break ties
+            if expected_base is not None:
+                error += abs(base - expected_base) * 0.01
+                
+            if error < best_error:
+                best_error = error
+                best_base = base
+                
+        return [float(best_base + i * spacing) for i in range(k)]
 
     def _cluster_1d(self, values, tolerance):
         """
