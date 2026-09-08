@@ -1,0 +1,6 @@
+names:
+  0: braille_dot
+nc: 1
+path: C:/Users/bavon/.gemini/antigravity/scratch/braille-reader/datasets/braille_dots
+train: images/train
+val: images/val
