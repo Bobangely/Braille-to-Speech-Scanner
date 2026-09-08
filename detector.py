@@ -42,7 +42,7 @@ class BrailleDetector:
     # Public API
     # =================================================================
 
-    def detect(self, image):
+    def detect(self, image, annotate=True):
         # 1. Preprocess
         processed = self._preprocess(image)
 
@@ -64,7 +64,7 @@ class BrailleDetector:
         debug_info = {
             'mask': mask,
             'dots': dots,
-            'annotated': self._annotate(image.copy(), dots, cells),
+            'annotated': self._annotate(image, dots, cells) if annotate else None,
         }
 
         return cells, debug_info
@@ -73,8 +73,9 @@ class BrailleDetector:
     # 1 — Preprocessing
 
     def _preprocess(self, image):
-        """Gaussian blur เพื่อลด noise"""
-        return cv2.GaussianBlur(image, (5, 5), 0)
+        """รักษารายละเอียดจุดสีที่ความละเอียดต้นฉบับ"""
+        # Segment painted dots at native resolution: blur can erase a 3-5 px dot.
+        return image
 
     # 2 — Color Segmentation
 
@@ -144,6 +145,12 @@ class BrailleDetector:
     def _morph_clean(self, mask):
         """ปิดรูเล็ก + ลบ noise ด้วย morphology"""
         k = self.config.MORPH_KERNEL_SIZE
+        # Do not erode small components or join neighbouring tiny Braille dots.
+        count, _, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+        areas = stats[1:count, cv2.CC_STAT_AREA]
+        plausible = areas[areas >= min(3, self.config.MIN_DOT_AREA)]
+        if plausible.size and np.percentile(plausible, 25) <= 36:
+            return mask.copy()
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
 
         # Close: ปิดรูเล็กๆ ภายในจุด
@@ -169,11 +176,16 @@ class BrailleDetector:
         )
 
         dots = []
+        # Estimate scale without single-pixel speckles before accepting tiny dots.
+        component_areas = [cv2.contourArea(c) for c in contours if cv2.contourArea(c) >= 3]
+        min_area = self.config.MIN_DOT_AREA
+        if component_areas and np.percentile(component_areas, 75) <= 20:
+            min_area = min(min_area, 3)
         for cnt in contours:
             area = cv2.contourArea(cnt)
 
             # กรองตามขนาด
-            if area < self.config.MIN_DOT_AREA:
+            if area < min_area:
                 continue
             if area > self.config.MAX_DOT_AREA:
                 continue
@@ -191,8 +203,8 @@ class BrailleDetector:
             M = cv2.moments(cnt)
             if M['m00'] == 0:
                 continue
-            cx = int(M['m10'] / M['m00'])
-            cy = int(M['m01'] / M['m00'])
+            cx = float(M['m10'] / M['m00'])
+            cy = float(M['m01'] / M['m00'])
 
             dots.append({
                 'center': (cx, cy),
@@ -358,7 +370,7 @@ class BrailleDetector:
 
             # 4c. กำหนดคอลัมน์ซ้าย-ขวา และจัดจุดเข้า 2x3 Grid
             prev_cell_right = None
-            for cluster in cell_clusters:
+            for cluster_index, cluster in enumerate(cell_clusters):
                 cluster_dot_indices = line_indices[cluster]
                 c_xs = rot_x[cluster_dot_indices]
                 c_ys = rot_y[cluster_dot_indices]
@@ -379,6 +391,27 @@ class BrailleDetector:
                         rem = (offset + pitch / 2.0) % pitch - (pitch / 2.0)
                         if abs(rem - dot_spacing) < abs(rem):
                             is_right = True
+
+                    else:
+                        # A leading prefix-6 has only its RIGHT column present.
+                        # Anchor its lattice phase to a following two-column cell.
+                        for following in cell_clusters[cluster_index + 1:]:
+                            following_x = rot_x[line_indices[following]]
+                            if np.ptp(following_x) <= dot_spacing * 0.55:
+                                continue
+                            midpoint = (np.min(following_x) + np.max(following_x)) / 2
+                            anchor = float(np.mean(following_x[following_x < midpoint]))
+                            def phase_error(left):
+                                delta = anchor - left
+                                return abs(delta - round(delta / pitch) * pitch)
+                            is_right = phase_error(c_val - dot_spacing) < phase_error(c_val)
+                            break
+                        else:
+                            if cluster_index + 1 < len(cell_clusters):
+                                next_x = float(np.mean(l_rot_x[cell_clusters[cluster_index + 1]]))
+                                # No full cell exists (e.g. prefix 6 + left-only ล).
+                                gap = next_x - c_val
+                                is_right = abs(gap - cell_gap) < abs(gap - pitch)
                     if is_right:
                         col_0 = c_val - dot_spacing
                         col_1 = c_val
@@ -826,6 +859,8 @@ class BrailleDetector:
         # วาดตัวอักษรของแต่ละเซลล์เหนือกล่อง Grid
         if verbose_results:
             for idx, item in enumerate(verbose_results, 1):
+                if item.get('consumed'):
+                    continue
                 if idx - 1 < len(cells):
                     cell = cells[idx - 1]
                     grid = cell.get('grid')

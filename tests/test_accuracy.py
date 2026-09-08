@@ -78,6 +78,11 @@ TEST_DATASET = [
 ]
 
 
+# These checked-in images were generated with the historical (non-standard) map.
+TEST_DATASET = [(path, color, 'thai-legacy' if lang == 'thai' else lang, expected)
+                for path, color, lang, expected in TEST_DATASET]
+
+
 def run_benchmark():
     print("=" * 70)
     print("   Braille Reader - Accuracy Benchmark & Test Suite")

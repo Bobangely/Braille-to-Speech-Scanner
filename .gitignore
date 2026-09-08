@@ -12,6 +12,7 @@ wheels/
 # Output artifacts
 output/*.png
 output/*.mp3
+output/*_stream/
 !output/.gitkeep
 
 # IDE / Editor

@@ -13,7 +13,7 @@ YOLO & Hybrid CV+YOLO Braille Dot Detector
     6. [Decoder]: ถอดรหัสภาษาไทย (สระ/พยัญชนะ/วรรณยุกต์) และภาษาอังกฤษแบบสมบูรณ์
 
 โหมดการทำงาน:
-    - 'hybrid' : แนะนำสำหรับการใช้งานจริง (OpenCV + YOLO Parallel Fusion)
+    - 'hybrid' : OpenCV + YOLO fusion with colour verification and sequential tiles
     - 'yolo'   : ใช้ YOLO ตรวจจับจุดล้วนๆ
     - 'opencv' : ใช้ OpenCV ดั้งเดิม (Color Mask + Morphology)
 """
@@ -30,6 +30,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from detector import BrailleDetector
 from config import DetectionConfig
+from dot_fusion import tile_windows, merge_dots
+from yolo_cell_stream import CellStream, pair_markers
 
 
 class YOLOBrailleDetector:
@@ -40,7 +42,10 @@ class YOLOBrailleDetector:
 
     AVAILABLE_MODES = ['hybrid', 'yolo', 'opencv']
 
-    def __init__(self, model_path=None, confidence=0.35, mode='hybrid', fallback_color='blue'):
+    def __init__(self, model_path=None, confidence=0.35, mode='hybrid', fallback_color='blue',
+                 imgsz=1280, tile_size=1280, tile_overlap=0.2, max_tiles=16,
+                 max_det=3000, yolo_pipeline='stream', crop_batch=8, max_cells=256,
+                 proposal_confidence=None):
         """
         Parameters
         ----------
@@ -54,6 +59,25 @@ class YOLOBrailleDetector:
             สีที่ใช้เมื่อ fallback ไป OpenCV
         """
         self.confidence = float(confidence)
+        if not 0 < self.confidence <= 1:
+            raise ValueError('confidence must be in (0, 1]')
+        self.proposal_confidence = (min(.3, self.confidence) if proposal_confidence is None
+                                    else float(proposal_confidence))
+        if not 0 < self.proposal_confidence <= self.confidence:
+            raise ValueError('proposal confidence must be positive and no higher than final confidence')
+        if imgsz < 32 or imgsz % 32 or (tile_size != 0 and tile_size < 32):
+            raise ValueError('imgsz must be a multiple of 32; tile_size must be 0 or >=32')
+        if not 0 <= tile_overlap < 1 or max_tiles < 1 or max_det < 1:
+            raise ValueError('Invalid tile overlap, tile budget, or detection limit')
+        self.tile_size = int(tile_size)
+        self.tile_overlap = float(tile_overlap)
+        self.max_tiles = int(max_tiles)
+        self.max_det = int(max_det)
+        self._inference_info = {}
+        if yolo_pipeline not in ('stream', 'legacy'):
+            raise ValueError('yolo_pipeline must be stream or legacy')
+        self.yolo_pipeline = yolo_pipeline
+        self._cell_stream = CellStream(self._predict_crop_batch, crop_batch, max_cells)
         self.mode = mode.lower() if mode.lower() in self.AVAILABLE_MODES else 'hybrid'
         self.color = fallback_color.lower()
         self.model = None
@@ -62,10 +86,12 @@ class YOLOBrailleDetector:
 
         # YOLO Inference Resolution — เพิ่มจาก 416 เป็น 1280
         # เพื่อให้ YOLO มองเห็นจุดเบรลล์ขนาดเล็กได้ดีขึ้น (ไม่ย่อภาพจนจุดหายไป)
-        self.yolo_imgsz = 1280
+        self.yolo_imgsz = int(imgsz)
 
         # โหลดโมเดล YOLO
         self._load_model(model_path)
+        if mode.lower() == 'yolo':
+            self.mode = 'yolo'  # do not silently switch a YOLO run to colour detection
 
         # ตัวตรวจจับ OpenCV ดั้งเดิม (สำหรับ Grid Clustering และโหมด OpenCV)
         self._opencv_detector = BrailleDetector(dot_color=self.color)
@@ -81,6 +107,8 @@ class YOLOBrailleDetector:
         ]
 
         for path in search_paths:
+            if path and path != model_path:
+                path = os.path.join(os.path.dirname(os.path.abspath(__file__)), path)
             if path and os.path.exists(path):
                 try:
                     from ultralytics import YOLO
@@ -91,14 +119,14 @@ class YOLOBrailleDetector:
                 except Exception as e:
                     print(f"  ⚠️ [YOLO] โหลดโมเดลล้มเหลว ({path}): {e}")
 
-        print("  ℹ️ [YOLO] ไม่พบโมเดล YOLO — จะ fallback ไปใช้ OpenCV อัตโนมัติ")
+        print("  ℹ️ [YOLO] ไม่พบโมเดล YOLO ที่โหลดได้; โหมด YOLO จะรายงานข้อผิดพลาด")
         self.mode = 'opencv'
 
     def set_mode(self, mode):
         """ตั้งค่าโหมดการทำงาน ('hybrid', 'yolo', 'opencv')"""
         mode_str = mode.lower()
         if mode_str in self.AVAILABLE_MODES:
-            if mode_str in ('hybrid', 'yolo') and self.model is None:
+            if mode_str == 'hybrid' and self.model is None:
                 print("  ⚠️ ไม่พบ YOLO model จึงทำงานในโหมด OPENCV")
                 self.mode = 'opencv'
             else:
@@ -123,28 +151,61 @@ class YOLOBrailleDetector:
         """ตรวจสอบว่า YOLO พร้อมใช้งานหรือไม่"""
         return self.model is not None
 
-    def detect(self, image):
+    def detect(self, image, lang='thai'):
         """
         ตรวจจับจุดเบรลล์ตามโหมดปัจจุบัน
         Returns:
             cells : list of dict (dots, center, x, y, grid)
             debug_info : dict (dots, mask, annotated, method)
         """
+        if self.mode == 'yolo' and self.model is None:
+            raise RuntimeError('YOLO weights are unavailable. Load a model or explicitly select opencv.')
         if self.mode == 'opencv' or self.model is None:
-            cells, debug_info = self._opencv_detector.detect(image)
+            cells, debug_info = self._opencv_detector.detect(image, annotate=False)
             debug_info['method'] = 'opencv'
             return cells, debug_info
 
         if self.mode == 'yolo':
+            if self.yolo_pipeline == 'stream':
+                return self._detect_cell_stream(image, lang)
             return self._detect_yolo_only(image)
 
-        # โหมด Hybrid (CV + YOLO) — True Parallel Fusion
+        # Combine CV dots with independently colour-verified YOLO candidates.
         return self._detect_hybrid(image)
+
+    def _predict_crop_batch(self, crops):
+        results = self.model(crops, verbose=False, conf=self.confidence,
+                             imgsz=320, max_det=12, iou=0.2)
+        return [self._extract_yolo_boxes([result], crop.shape)
+                for result, crop in zip(results, crops)]
+
+    def _detect_cell_stream(self, image, lang):
+        # Tiny dots can produce shifted duplicate boxes despite default NMS.
+        # Suppress overlaps before geometry estimates the inter-dot spacing.
+        overview = self._predict_dots(image, iou=0.2, confidence=self.proposal_confidence)
+        inference_info = dict(self._inference_info)
+        cells, symbols = [], []
+        for group in pair_markers(self._cell_stream.iter_cells(image, overview), lang):
+            start = len(cells)
+            cells.extend(group)
+            symbols.append(dict(cell_start=start, cell_end=len(cells)-1,
+                                line_id=group[0]['line_id'], symbol=group[0].get('symbol')))
+        dots = [dot for cell in cells for dot in cell['read_dots']]
+        mask = np.zeros(image.shape[:2], np.uint8)
+        for dot in dots:
+            cv2.circle(mask, tuple(int(round(v)) for v in dot['center']), 2, 255, -1)
+        return cells, dict(method='yolo_cell_stream', dots=dots, mask=mask,
+                           num_detections=len(dots), overview_detections=len(overview),
+                           line_count=len({c['line_id'] for c in cells}),
+                           crop_count=len(cells), symbols=symbols,
+                           crop_disagreements=sum(c['crop_disagreement'] for c in cells),
+                           proposal_confidence=self.proposal_confidence,
+                           read_confidence=self.confidence,
+                           **inference_info)
 
     def _detect_yolo_only(self, image):
         """ตรวจจับด้วย YOLO ล้วนๆ (imgsz=1280 สำหรับจุดเล็ก)"""
-        results = self.model(image, verbose=False, conf=self.confidence, imgsz=self.yolo_imgsz)
-        dots = self._extract_yolo_boxes(results, image.shape)
+        dots = self._predict_dots(image)
 
         cells = []
         if len(dots) >= 1:
@@ -161,6 +222,7 @@ class YOLOBrailleDetector:
             'dots': dots,
             'method': 'yolo',
             'num_detections': len(dots),
+            **self._inference_info,
         }
         return cells, debug_info
 
@@ -172,17 +234,26 @@ class YOLOBrailleDetector:
         3. Fallback ไป OpenCV Color ถ้า YOLO ไม่พบจุด
         4. จัดกลุ่มเซลล์ 2x3
         """
-        results = self.model(image, verbose=False, conf=self.confidence, imgsz=self.yolo_imgsz)
-        raw_dots = self._extract_yolo_boxes(results, image.shape)
+        # Always run CV, even when YOLO finds only part of a sentence.
+        cv_cells, cv_debug = self._opencv_detector.detect(image, annotate=False)
+        try:
+            raw_dots = self._predict_dots(image)
+        except Exception as exc:
+            cv_debug.update(method='hybrid_cv_fallback', yolo_error=str(exc),
+                            num_detections=len(cv_debug['dots']))
+            return cv_cells, cv_debug
 
         # ถ้า YOLO ไม่พบจุดเลย ให้ fallback ไปใช้ OpenCV color detector
         if len(raw_dots) == 0:
-            cells, cv_debug = self._opencv_detector.detect(image)
             cv_debug['method'] = 'hybrid_cv_fallback'
-            return cells, cv_debug
+            cv_debug.update(self._inference_info)
+            cv_debug['num_detections'] = len(cv_debug['dots'])
+            return cv_cells, cv_debug
 
         # ขั้นตอน Refinement ด้วย OpenCV
         refined_dots = self._refine_dots_with_opencv(image, raw_dots)
+        cv_dots = [dict(dot, source='opencv') for dot in cv_debug['dots']]
+        refined_dots = merge_dots(cv_dots, refined_dots)
 
         cells = []
         if len(refined_dots) >= 1:
@@ -199,12 +270,47 @@ class YOLOBrailleDetector:
             'dots': refined_dots,
             'method': 'hybrid',
             'num_detections': len(refined_dots),
+            'cv_detections': len(cv_dots),
+            'yolo_detections': len(raw_dots),
+            **self._inference_info,
         }
         return cells, debug_info
 
-    def _extract_yolo_boxes(self, results, img_shape):
+    def _predict_dots(self, image, iou=0.7, confidence=None):
+        """Overview plus sequential overlapping tiles; coordinates stay in source pixels."""
+        height, width = image.shape[:2]
+        windows = tile_windows(width, height, self.tile_size,
+                               self.tile_overlap, self.max_tiles)
+        self._inference_info = {'tile_count': 0, 'tile_budget_exceeded': windows is None}
+        threshold = self.confidence if confidence is None else confidence
+
+        def predict(patch):
+            results = self.model(patch, verbose=False, conf=threshold,
+                                 imgsz=self.yolo_imgsz, max_det=self.max_det, iou=iou)
+            return self._extract_yolo_boxes(results, patch.shape, confidence=threshold)
+
+        dots = predict(image)
+        for x1, y1, x2, y2 in windows or []:
+            patch_dots = predict(image[y1:y2, x1:x2])
+            translated = []
+            for dot in patch_dots:
+                bx1, by1, bx2, by2 = dot['bbox']
+                # Partial dots at internal tile edges are recovered by overlap.
+                if ((x1 > 0 and bx1 <= 1) or (y1 > 0 and by1 <= 1)
+                        or (x2 < width and bx2 >= x2 - x1 - 1)
+                        or (y2 < height and by2 >= y2 - y1 - 1)):
+                    continue
+                translated.append(dict(dot,
+                    center=(dot['center'][0] + x1, dot['center'][1] + y1),
+                    bbox=(bx1 + x1, by1 + y1, bx2 + x1, by2 + y1)))
+            dots = merge_dots(dots, translated)
+            self._inference_info['tile_count'] += 1
+        return dots
+
+    def _extract_yolo_boxes(self, results, img_shape, confidence=None):
         """แปลงผลลัพธ์จาก Ultralytics YOLO เป็น dot dictionary"""
         dots = []
+        threshold = self.confidence if confidence is None else confidence
         if len(results) == 0 or results[0].boxes is None:
             return dots
 
@@ -214,6 +320,12 @@ class YOLOBrailleDetector:
         for i in range(len(boxes)):
             x1, y1, x2, y2 = boxes.xyxy[i].cpu().numpy()
             conf = float(boxes.conf[i].cpu().numpy())
+            if not np.isfinite([x1, y1, x2, y2, conf]).all():
+                continue
+            x1, x2 = np.clip([x1, x2], 0, w_img)
+            y1, y2 = np.clip([y1, y2], 0, h_img)
+            if x2 <= x1 or y2 <= y1 or conf < threshold:
+                continue
 
             cx = (x1 + x2) / 2.0
             cy = (y1 + y2) / 2.0
@@ -239,7 +351,8 @@ class YOLOBrailleDetector:
         h_img, w_img = image.shape[:2]
         refined_dots = []
 
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        # Verify the selected paint colour, instead of also matching dark text/shadows.
+        color_mask = self._opencv_detector._color_segment(image)
 
         for dot in yolo_dots:
             x1, y1, x2, y2 = dot['bbox']
@@ -255,20 +368,16 @@ class YOLOBrailleDetector:
             rx2 = min(w_img, x2 + pad_x)
             ry2 = min(h_img, y2 + pad_y)
 
-            roi_gray = gray[ry1:ry2, rx1:rx2]
-            if roi_gray.size == 0:
-                refined_dots.append(dot)
+            roi_mask = color_mask[ry1:ry2, rx1:rx2]
+            if roi_mask.size == 0:
                 continue
 
-            # ตรวจสอบ contrast ใน ROI
-            min_val, max_val, _, _ = cv2.minMaxLoc(roi_gray)
+            # A verified dot needs both foreground paint and background in its ROI.
+            min_val, max_val, _, _ = cv2.minMaxLoc(roi_mask)
             if max_val - min_val < 15:
-                # Contrast ต่ำ ใช้พิกัดเดิมของ YOLO
-                refined_dots.append(dot)
                 continue
 
-            # ใช้ Otsu thresholding บน patch
-            _, thresh = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            thresh = roi_mask
 
             # ค้นหา contours ใน patch
             contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -279,39 +388,48 @@ class YOLOBrailleDetector:
             patch_cy = (y2 + y1) / 2.0 - ry1
 
             for cnt in contours:
+                # A clipped arc of one large dot must not become another dot.
+                px, py, pw, ph = cv2.boundingRect(cnt)
+                if (px == 0 or py == 0 or px + pw >= roi_mask.shape[1]
+                        or py + ph >= roi_mask.shape[0]):
+                    continue
                 c_area = cv2.contourArea(cnt)
-                if c_area < 5:
+                if c_area < 3:
                     continue
                 M = cv2.moments(cnt)
-                if M['m00'] > 0:
-                    mcx = M['m10'] / M['m00']
-                    mcy = M['m01'] / M['m00']
-                    dist = (mcx - patch_cx) ** 2 + (mcy - patch_cy) ** 2
-                    if dist < best_dist:
-                        best_dist = dist
-                        best_cnt = cnt
+                if M['m00'] <= 0:
+                    continue
+                mcx = M['m10'] / M['m00']
+                mcy = M['m01'] / M['m00']
+                dist = (mcx - patch_cx) ** 2 + (mcy - patch_cy) ** 2
+                if dist > (0.5 * min(bw, bh) + 1) ** 2:
+                    continue
+                if dist < best_dist:
+                    best_dist = dist
+                    best_cnt = cnt
 
             if best_cnt is not None:
                 M = cv2.moments(best_cnt)
-                if M['m00'] > 0:
-                    mcx = rx1 + (M['m10'] / M['m00'])
-                    mcy = ry1 + (M['m01'] / M['m00'])
-                    area = cv2.contourArea(best_cnt)
-                    perimeter = cv2.arcLength(best_cnt, True)
-                    circ = (4 * np.pi * area) / (perimeter ** 2) if perimeter > 0 else 0.5
-
-                    refined_dots.append({
-                        'center': (mcx, mcy),
-                        'area': max(area, dot['area']),
-                        'circularity': float(circ),
-                        'confidence': dot['confidence'],
-                        'bbox': dot['bbox'],
-                        'refined': True,
-                    })
+                if M['m00'] <= 0:
+                    continue
+                mcx = rx1 + (M['m10'] / M['m00'])
+                mcy = ry1 + (M['m01'] / M['m00'])
+                area = cv2.contourArea(best_cnt)
+                perimeter = cv2.arcLength(best_cnt, True)
+                circ = (4 * np.pi * area) / (perimeter ** 2) if perimeter > 0 else 0.5
+                if circ < self._opencv_detector.config.MIN_CIRCULARITY:
                     continue
 
-            # Fallback หาก contour ไม่ชัดเจน
-            refined_dots.append(dot)
+                refined_dots.append({
+                    'center': (mcx, mcy),
+                    'area': area,
+                    'circularity': float(circ),
+                    'confidence': dot['confidence'],
+                    'bbox': dot['bbox'],
+                    'refined': True,
+                })
+
+            # Unverified candidates are discarded; CV supplies independently found dots.
 
         return refined_dots
 
@@ -349,7 +467,10 @@ class YOLOBrailleDetector:
         3. แถบสรุปผลลัพธ์ (Bottom Banner) พร้อม Badge โหมดการตรวจจับ
         """
         h, w = image.shape[:2]
-        banner_h = 80
+        text_lines = decoded_text.splitlines()[:3]
+        if len(decoded_text.splitlines()) > 3:
+            text_lines[-1] += ' …'
+        banner_h = 80 + 32*max(0, len(text_lines)-1)
         canvas = np.zeros((h + banner_h, w, 3), dtype=np.uint8)
         canvas[:h, :w] = image.copy()
         canvas[h:, :] = (28, 22, 16)  # Dark navy slate
@@ -427,6 +548,8 @@ class YOLOBrailleDetector:
         # ตัวอักษรเหนือ Cell
         if verbose_results:
             for idx, item in enumerate(verbose_results, 1):
+                if item.get('consumed'):
+                    continue
                 if idx - 1 < len(cells):
                     cell = cells[idx - 1]
                     grid = cell.get('grid')
@@ -456,15 +579,17 @@ class YOLOBrailleDetector:
             mode_color = (255, 150, 255)
 
         if decoded_text:
-            text_disp = f"ข้อความ: \"{decoded_text}\"" if lang == 'thai' else f"Text: \"{decoded_text}\""
             braille_chars = [item.get('unicode', '·') for item in (verbose_results or [])]
             braille_disp = ' '.join(braille_chars)
 
-            draw.text((20, h + 12), text_disp, fill=(255, 255, 100), font=font_large)
+            for line_index, line in enumerate(text_lines):
+                label = 'ข้อความ' if lang in ('thai', 'th') else 'Text'
+                text_disp = f'{label}: {line}' if line_index == 0 else line
+                draw.text((20, h + 12 + line_index*32), text_disp, fill=(255, 255, 100), font=font_large)
 
             lang_label = "ไทย (Thai)" if lang == 'thai' else "English"
             sub_text = f"{mode_badge}  |  Braille: {braille_disp}  |  {len(cells)} Cells ({len(dots)} Dots)  |  {lang_label}"
-            draw.text((20, h + 48), sub_text, fill=(180, 210, 230), font=font_small)
+            draw.text((20, h + banner_h - 32), sub_text, fill=(180, 210, 230), font=font_small)
         else:
             draw.text((20, h + 22), f"{mode_badge}  -  พร้อมสแกน...", fill=mode_color, font=font_mid)
 
@@ -480,24 +605,47 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='YOLO & Hybrid Braille Dot Detector')
     parser.add_argument('image', type=str, help='Path ของภาพ')
     parser.add_argument('--model', type=str, default=None, help='Path ของ YOLO model (.pt)')
-    parser.add_argument('--mode', type=str, default='hybrid', choices=['hybrid', 'yolo', 'opencv'], help='โหมดการตรวจจับ')
+    parser.add_argument('--mode', type=str, default='yolo', choices=['hybrid', 'yolo', 'opencv'], help='โหมดการตรวจจับ')
+    parser.add_argument('--yolo-pipeline', choices=['stream', 'legacy'], default='stream')
+    parser.add_argument('--crop-batch', type=int, default=8)
+    parser.add_argument('--max-cells', type=int, default=256)
     parser.add_argument('--conf', type=float, default=0.35, help='Confidence threshold')
+    parser.add_argument('--proposal-conf', type=float, default=None, help='Overview threshold (default: min(0.3, conf))')
+    parser.add_argument('--color', default='blue', choices=['blue', 'red', 'green', 'black'])
+    parser.add_argument('--imgsz', type=int, default=1280, help='YOLO input size (multiple of 32)')
+    parser.add_argument('--tile-size', type=int, default=1280, help='Source tile size; 0 disables tiles')
+    parser.add_argument('--max-tiles', type=int, default=16, help='Maximum extra tile predictions')
+    parser.add_argument('--max-det', type=int, default=3000, help='Maximum dots per prediction')
     parser.add_argument('--lang', type=str, default='thai', help='ภาษา (thai/english)')
     parser.add_argument('--save', action='store_true', help='บันทึกภาพผลลัพธ์')
     parser.add_argument('--no-show', action='store_true', help='ไม่เปิดหน้าต่างแสดงภาพ GUI')
+    parser.add_argument('--dump-stream', action='store_true', help='Export cell crops and JSON to output/<image>_stream/')
     args = parser.parse_args()
+    if args.dump_stream and (args.mode != 'yolo' or args.yolo_pipeline != 'stream'):
+        parser.error('--dump-stream requires --mode yolo --yolo-pipeline stream')
 
     image = cv2.imread(args.image)
     if image is None:
         print(f"ERR: Cannot read image: {args.image}")
         sys.exit(1)
 
-    detector = YOLOBrailleDetector(model_path=args.model, confidence=args.conf, mode=args.mode)
-    cells, debug_info = detector.detect(image)
+    detector = YOLOBrailleDetector(model_path=args.model, confidence=args.conf, mode=args.mode,
+                                  fallback_color=args.color, imgsz=args.imgsz,
+                                  tile_size=args.tile_size, max_tiles=args.max_tiles,
+                                  max_det=args.max_det, yolo_pipeline=args.yolo_pipeline,
+                                  crop_batch=args.crop_batch, max_cells=args.max_cells,
+                                  proposal_confidence=args.proposal_conf)
+    cells, debug_info = detector.detect(image, lang=args.lang)
 
     from decoder import decode_cells, decode_cells_verbose
     decoded = decode_cells(cells, lang=args.lang) if cells else ""
     verbose = decode_cells_verbose(cells, lang=args.lang) if cells else []
+    if args.dump_stream:
+        from tools.diagnostics.export_yolo_stream import export_stream
+        from pathlib import Path
+        destination = Path(__file__).resolve().parent/'output'/(Path(args.image).stem+'_stream')
+        manifest = export_stream(image, cells, debug_info, destination, args.lang, source=args.image)
+        print(f'  Cell stream report: {manifest}')
 
     print(f"\n  🎯 Mode:          {detector.mode.upper()}")
     print(f"  🔍 Method Used:   {debug_info.get('method')}")
@@ -511,8 +659,12 @@ if __name__ == '__main__':
     )
 
     if args.save:
-        out_path = args.image.replace('.png', f'_{detector.mode}.png').replace('.jpg', f'_{detector.mode}.jpg')
-        cv2.imwrite(out_path, annotated)
+        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
+        os.makedirs(output_dir, exist_ok=True)
+        stem = os.path.splitext(os.path.basename(args.image))[0]
+        out_path = os.path.join(output_dir, f'{stem}_{detector.mode}.png')
+        if not cv2.imwrite(out_path, annotated):
+            raise OSError(f'Cannot save annotation: {out_path}')
         print(f"  💾 Saved to: {out_path}")
 
     if not args.no_show:

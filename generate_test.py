@@ -127,7 +127,7 @@ def bgr_to_color_name(bgr):
     return 'blue'
 
 
-def generate_test_suite(output_dir='sample_images', annotated_dir='output', save_annotated=True):
+def generate_test_suite(output_dir='sample_images/standard', annotated_dir='output/standard_previews', save_annotated=True):
     """
     สร้างชุดภาพทดสอบภาษาอังกฤษและภาษาไทย
     พร้อมสร้างภาพ Annotated (มี Grid 2x3 และแถบข้อความคำแปล) บันทึกลง output/
@@ -250,7 +250,7 @@ if __name__ == '__main__':
 
     print()
     print(f"สร้างภาพทดสอบสำเร็จ {len(files)} ไฟล์")
-    print("ภาพดิบ (Input):     sample_images/")
+    print("ภาพดิบ (Input):     sample_images/standard/")
     print("ภาพมี Grid + คำ:   output/*_annotated.png")
     print()
     print("ทดสอบอังกฤษ:  python main.py sample_images/test_hello_blue.png")

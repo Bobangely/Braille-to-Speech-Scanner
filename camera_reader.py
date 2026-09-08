@@ -36,6 +36,7 @@ Braille Reader - Real-time Webcam Scanner
 """
 
 import argparse
+import inspect
 import os
 import sys
 import time
@@ -55,6 +56,7 @@ if sys.stdout.encoding != 'utf-8':
 
 from detector import BrailleDetector
 from yolo_detector import YOLOBrailleDetector
+from live_preview import LivePreview
 from decoder import decode_cells, decode_cells_verbose
 from tts import speak, TextToSpeech
 from config import DetectionConfig
@@ -105,6 +107,7 @@ class ThreadedCameraCapture:
         self.actual_fps = target_fps
 
         self.frame = None
+        self.frame_id = 0
         self.ret = False
         self.lock = threading.Lock()
         self.running = False
@@ -158,16 +161,18 @@ class ThreadedCameraCapture:
             if ret and frame is not None:
                 with self.lock:
                     self.frame = frame
+                    self.frame_id += 1
                     self.ret = True
             else:
                 time.sleep(0.005)
 
-    def read_latest(self):
+    def read_latest(self, with_id=False):
         """ดึงเฟรมล่าสุดจากกล้องแบบ Non-blocking (0ms delay)"""
         with self.lock:
             if self.frame is None:
-                return False, None
-            return self.ret, self.frame.copy()
+                return (False, None, self.frame_id) if with_id else (False, None)
+            # Camera read publishes a new array; preview/inference do not mutate it.
+            return (self.ret, self.frame, self.frame_id) if with_id else (self.ret, self.frame.copy())
 
     def set_resolution(self, width, height, fps=60):
         """ปรับเปลี่ยนความละเอียดของกล้องแบบสด"""
@@ -202,20 +207,31 @@ class AsyncBrailleWorker:
     """
     Worker Thread แยกอิสระสำหรับ AI Detection & Decoder
     - นำเฟรมล่าสุดจากกล้องไปประมวลผล (YOLO Hybrid / OpenCV)
-    - ไม่บล็อก Video Stream ทำให้หน้าจอกล้องรันที่ 60 FPS นิ่งสนิท
+    - แยกงาน AI ออกจากภาพกล้อง; ความเร็วจริงขึ้นกับกล้องและเครื่อง
     - รายงาน ai_fps ควบคู่ไปกับ display_fps
     """
     def __init__(self, detector, default_lang='thai'):
         self.detector = detector
         self.lang = default_lang
+        parameters = inspect.signature(detector.detect).parameters
+        self._detect_accepts_lang = ('lang' in parameters or any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values()))
 
         # Shared input
         self._new_frame_event = threading.Event()
         self._input_lock = threading.Lock()
         self._pending_frame = None
+        self._pending_strength = 0.0
+        self._pending_context = None
 
         # Shared output
         self._output_lock = threading.Lock()
+        self.result_id = 0
+        self.result_lang = default_lang
+        self.error = None
+        self.source_shape = None
+        self.result_context = None
+        self.debug_info = {}
         self.cells = []
         self.dots = []
         self.decoded_text = ""
@@ -230,12 +246,14 @@ class AsyncBrailleWorker:
         self.thread = threading.Thread(target=self._worker_loop, name="AIInferenceWorker", daemon=True)
         self.thread.start()
 
-    def submit_frame(self, frame, lang=None):
+    def submit_frame(self, frame, lang=None, sharpness_strength=0.0, context=None):
         """ส่งเฟรมใหม่ให้ AI ประมวลผล (Non-blocking)"""
-        if lang:
-            self.lang = lang
         with self._input_lock:
+            if lang:
+                self.lang = lang
             self._pending_frame = frame
+            self._pending_strength = sharpness_strength
+            self._pending_context = context
         self._new_frame_event.set()
 
     def get_latest_results(self):
@@ -247,6 +265,12 @@ class AsyncBrailleWorker:
                 'decoded_text': self.decoded_text,
                 'verbose_results': list(self.verbose_results),
                 'ai_fps': self.ai_fps,
+                'result_id': self.result_id,
+                'lang': self.result_lang,
+                'error': self.error,
+                'source_shape': self.source_shape,
+                'context': self.result_context,
+                'debug_info': dict(self.debug_info),
             }
 
     def _worker_loop(self):
@@ -259,20 +283,29 @@ class AsyncBrailleWorker:
                 if self._pending_frame is None:
                     continue
                 frame_to_process = self._pending_frame
+                frame_lang = self.lang
+                strength = self._pending_strength
+                frame_context = self._pending_context
                 self._pending_frame = None
 
             t_start = time.time()
             try:
+                if strength:
+                    h, w = frame_to_process.shape[:2]
+                    small = cv2.resize(frame_to_process, (max(1, w//2), max(1, h//2)))
+                    blur = cv2.resize(cv2.GaussianBlur(small, (5, 5), 0), (w, h))
+                    frame_to_process = cv2.addWeighted(frame_to_process, 1 + strength, blur, -strength, 0)
                 # 1. ตรวจจับด้วย YOLO / OpenCV Detector
-                cells, debug_info = self.detector.detect(frame_to_process)
+                detect_options = {'lang': frame_lang} if self._detect_accepts_lang else {}
+                cells, debug_info = self.detector.detect(frame_to_process, **detect_options)
                 dots = debug_info.get('dots', [])
 
                 # 2. ถอดรหัสอักษรเบรลล์
                 decoded_text = ""
                 verbose_results = []
                 if cells:
-                    decoded_text = decode_cells(cells, lang=self.lang)
-                    verbose_results = decode_cells_verbose(cells, lang=self.lang)
+                    decoded_text = decode_cells(cells, lang=frame_lang)
+                    verbose_results = decode_cells_verbose(cells, lang=frame_lang)
 
                 t_end = time.time()
                 dt = max(1e-5, t_end - t_start)
@@ -284,9 +317,25 @@ class AsyncBrailleWorker:
                     self.dots = dots
                     self.decoded_text = decoded_text
                     self.verbose_results = verbose_results
+                    self.result_id += 1
+                    self.result_lang = frame_lang
+                    self.error = None
+                    self.source_shape = frame_to_process.shape
+                    self.result_context = frame_context
+                    self.debug_info = {key: debug_info[key] for key in (
+                        'method', 'line_count', 'crop_count', 'crop_disagreements',
+                        'overview_detections', 'tile_count', 'tile_budget_exceeded') if key in debug_info}
 
-            except Exception:
-                pass
+            except Exception as exc:
+                with self._output_lock:
+                    self.cells, self.dots, self.verbose_results = [], [], []
+                    self.decoded_text = ''
+                    self.result_id += 1
+                    self.result_lang = frame_lang
+                    self.error = str(exc)
+                    self.source_shape = None
+                    self.result_context = frame_context
+                    self.debug_info = {}
 
     def stop(self):
         self.running = False
@@ -311,8 +360,14 @@ class RealTimeBrailleScanner:
         height=None,
         initial_zoom=1.0,
         sharpness_level=2,
-        detector_mode='hybrid',
+        detector_mode='yolo',
         yolo_conf=0.35,
+        yolo_imgsz=1280,
+        yolo_tile_size=1280,
+        yolo_pipeline='stream',
+        crop_batch=8,
+        max_cells=256,
+        proposal_confidence=None,
     ):
         self.camera_id = camera_id
         self.color = color.lower()
@@ -356,6 +411,11 @@ class RealTimeBrailleScanner:
 
         # State tracking
         self.history = deque(maxlen=stability_threshold)
+        self._last_stability_result_id = 0
+        self._last_submitted_frame_id = -1
+        self._last_submitted_context = None
+        self._last_error = None
+        self._preview = LivePreview(max_width=1280)
         self.last_spoken_text = ""
         self.last_spoken_time = 0.0
         self.last_seen_text = ""
@@ -368,6 +428,12 @@ class RealTimeBrailleScanner:
             confidence=self.yolo_conf,
             mode=initial_mode,
             fallback_color=self.color,
+            imgsz=yolo_imgsz,
+            tile_size=yolo_tile_size,
+            yolo_pipeline=yolo_pipeline,
+            crop_batch=crop_batch,
+            max_cells=max_cells,
+            proposal_confidence=proposal_confidence,
         )
         # self.tts = TextToSpeech()  # [COMMENTED OUT] ปิดระบบออกเสียงชั่วคราวเพื่อความสะดวกในการทดสอบ
         self.tts = None
@@ -465,8 +531,8 @@ class RealTimeBrailleScanner:
         y2 = y1 + crop_h
 
         cropped = frame[y1:y2, x1:x2]
-        zoomed = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
-        return zoomed, (x1, y1, x2, y2)
+        # Keep native crop pixels for AI; only the display renderer resizes.
+        return cropped, (x1, y1, x2, y2)
 
     def _apply_sharpening(self, frame):
         """เพิ่มความคมชัดของภาพตามระดับที่เลือก (Fast Unsharp Masking 60fps Ready)"""
@@ -546,9 +612,8 @@ class RealTimeBrailleScanner:
         hud_h = 42
 
         # พื้นหลังแถบ HUD ด้านบน (Semi-transparent dark bar)
-        overlay = image.copy()
-        cv2.rectangle(overlay, (0, 0), (w, hud_h), (20, 20, 20), -1)
-        cv2.addWeighted(overlay, 0.75, image, 0.25, 0, image)
+        hud = image[:hud_h]
+        cv2.addWeighted(np.full_like(hud, 20), 0.75, hud, 0.25, 0, hud)
         cv2.line(image, (0, hud_h), (w, hud_h), (60, 80, 100), 1)
 
         # ข้อมูลสถานะ
@@ -630,6 +695,15 @@ class RealTimeBrailleScanner:
 
     def _on_mouse(self, event, x, y, flags, param):
         """Event handler สำหรับการควบคุม Zoom และ Pan ด้วยเมาส์"""
+        w, h = getattr(self, '_preview_image_size', (self.actual_width, self.actual_height))
+        if y >= h:
+            return
+        crop = getattr(self, '_preview_crop_box', None)
+        if crop is None:
+            crop = (0, 0, self.actual_width, self.actual_height)
+        # Mouse positions are preview pixels, then mapped through the native crop.
+        x = crop[0] + x / max(1, w) * (crop[2] - crop[0])
+        y = crop[1] + y / max(1, h) * (crop[3] - crop[1])
         h, w = self.actual_height, self.actual_width
         # ลูกกลิ้งเมาส์ -> ซูมเข้า/ออก
         if event == cv2.EVENT_MOUSEWHEEL:
@@ -718,7 +792,7 @@ class RealTimeBrailleScanner:
 
         try:
             while True:
-                ret, frame = self.camera.read_latest()
+                ret, frame, frame_id = self.camera.read_latest(with_id=True)
                 if not ret or frame is None:
                     frame_fail_count += 1
                     if frame_fail_count >= 300:  # ~1.5s
@@ -740,13 +814,28 @@ class RealTimeBrailleScanner:
                 zoomed_frame, crop_box = self._apply_zoom(frame)
 
                 # 2. ใช้งาน Sharpening Filter บนภาพที่ซูมแล้ว
-                enhanced_frame = self._apply_sharpening(zoomed_frame)
+                enhanced_frame = zoomed_frame
 
                 # 3. ส่งภาพให้ AI Worker ประมวลผลแบบคู่ขนาน (Non-blocking)
-                self.ai_worker.submit_frame(enhanced_frame, lang=self.lang)
+                context = (self.lang, self.detector_mode, self.color, self.sharpness_idx,
+                           tuple(crop_box) if crop_box is not None else None, enhanced_frame.shape)
+                if (frame_id != self._last_submitted_frame_id
+                        or context != self._last_submitted_context):
+                    self.ai_worker.submit_frame(enhanced_frame, lang=self.lang,
+                        sharpness_strength=SHARPNESS_LEVELS[self.sharpness_idx][2], context=context)
+                    self._last_submitted_frame_id = frame_id
+                    self._last_submitted_context = context
 
                 # 4. ดึงผลลัพธ์การตรวจจับล่าสุดจาก AI Worker
                 ai_res = self.ai_worker.get_latest_results()
+                if ai_res.get('context') != context or ai_res['lang'] != self.lang:
+                    ai_res = dict(ai_res, result_id=-1, cells=[], dots=[], decoded_text='',
+                                  verbose_results=[], error=None)
+                    self.history.clear()
+                if ai_res['error'] != self._last_error:
+                    self._last_error = ai_res['error']
+                    if self._last_error:
+                        print(f"[ERR] Scanner: {self._last_error}")
                 cells = ai_res['cells']
                 dots = ai_res['dots']
                 decoded_text = ai_res['decoded_text']
@@ -756,7 +845,12 @@ class RealTimeBrailleScanner:
                 # 5. ตรวจสอบความนิ่งของคำ (Stability Buffer)
                 if decoded_text != self.last_seen_text:
                     self.last_seen_text = decoded_text
-                    self.history.append(decoded_text)
+                if ai_res['result_id'] != self._last_stability_result_id:
+                    self._last_stability_result_id = ai_res['result_id']
+                    if ai_res['result_id'] >= 0 and not ai_res['error']:
+                        self.history.append(decoded_text)
+                    else:
+                        self.history.clear()
 
                 is_locked = False
                 if len(self.history) == self.stability_threshold:
@@ -764,18 +858,23 @@ class RealTimeBrailleScanner:
                         is_locked = True
 
                 # 6. วาด 2x3 Grid Overlay และแบนเนอร์แสดงผลลัพธ์
-                annotated = self.detector.annotate_with_text(
-                    enhanced_frame, dots, cells,
-                    decoded_text=decoded_text,
-                    verbose_results=verbose_results,
-                    lang=self.lang
-                )
+                preview_result = ai_res
+                if ai_res.get('source_shape') != enhanced_frame.shape:
+                    preview_result = dict(ai_res, result_id=-1, dots=[], cells=[],
+                                          decoded_text='', verbose_results=[])
+                annotated = self._preview.render(enhanced_frame, self.detector, preview_result, self.lang)
+                self._preview_image_size = (annotated.shape[1], round(
+                    enhanced_frame.shape[0]*annotated.shape[1]/enhanced_frame.shape[1]))
+                self._preview_crop_box = crop_box
 
                 # 7. วาด Mini Viewfinder มุมขวาบน (กรณีซูมอยู่)
                 self._draw_mini_viewfinder(annotated, frame, crop_box)
 
                 # 8. วาด Top HUD Bar แสดงสถานะ Display FPS & AI FPS
                 self._draw_top_hud(annotated, decoded_text, is_locked)
+                if ai_res['error']:
+                    cv2.putText(annotated, 'SCAN ERROR - see console', (10, 55),
+                                cv2.FONT_HERSHEY_SIMPLEX, .6, (0, 0, 255), 2, cv2.LINE_AA)
 
                 # 9. แสดงผลลัพธ์บนหน้าต่าง (ลื่นไหล 60 FPS)
                 cv2.imshow(window_name, annotated)
@@ -834,10 +933,15 @@ class RealTimeBrailleScanner:
                 # [P] -> บันทึก Snapshot ความละเอียดสูง
                 elif key in (ord('p'), ord('P')):
                     os.makedirs('output', exist_ok=True)
-                    timestamp = int(time.time())
-                    snap_path = f"output/snapshot_{timestamp}_{self.actual_width}x{self.actual_height}.png"
-                    cv2.imwrite(snap_path, annotated)
-                    print(f"  📸 บันทึก Snapshot ความละเอียดสูง: {snap_path}")
+                    timestamp = time.time_ns()
+                    snap_path = f"output/snapshot_{timestamp}.png"
+                    raw_path = snap_path.replace('.png', '_raw.png')
+                    saved_raw = cv2.imwrite(raw_path, enhanced_frame)
+                    saved_preview = cv2.imwrite(snap_path, annotated)
+                    if saved_raw and saved_preview:
+                        print(f"  📸 ภาพดิบ: {raw_path} | ภาพผลลัพธ์: {snap_path}")
+                    else:
+                        print('[ERR] บันทึกภาพไม่ครบ กรุณาตรวจสอบพื้นที่จัดเก็บ')
 
         finally:
             if self.ai_worker:
@@ -901,15 +1005,21 @@ def main():
         help='ความสูงวิดีโอแบบระบุเจาะจง (px)',
     )
     parser.add_argument(
-        '--detector', type=str, default='hybrid',
+        '--detector', type=str, default='yolo',
         choices=['hybrid', 'yolo', 'cv', 'opencv'],
-        help='โหมดการตรวจจับ: hybrid (CV+YOLO), yolo (YOLO only), cv (OpenCV only) (default: hybrid)',
+        help='โหมดการตรวจจับ: yolo (default), hybrid (CV+YOLO), cv (OpenCV only)',
     )
     parser.add_argument(
         '--conf', type=float, default=0.35,
         help='Confidence threshold สำหรับ YOLO (default: 0.35)',
     )
 
+    parser.add_argument('--imgsz', type=int, default=1280, help='YOLO input size (multiple of 32)')
+    parser.add_argument('--tile-size', type=int, default=1280, help='Tile size; 0 disables extra inference')
+    parser.add_argument('--yolo-pipeline', choices=['stream', 'legacy'], default='stream')
+    parser.add_argument('--crop-batch', type=int, default=8, help='Cells per YOLO crop batch (1..32)')
+    parser.add_argument('--max-cells', type=int, default=256, help='Maximum cells per frame')
+    parser.add_argument('--proposal-conf', type=float, default=None, help='Overview threshold (default: min(0.3, conf))')
     args = parser.parse_args()
 
     scanner = RealTimeBrailleScanner(
@@ -926,6 +1036,12 @@ def main():
         sharpness_level=args.sharp,
         detector_mode=args.detector,
         yolo_conf=args.conf,
+        yolo_imgsz=args.imgsz,
+        yolo_tile_size=args.tile_size,
+        yolo_pipeline=args.yolo_pipeline,
+        crop_batch=args.crop_batch,
+        max_cells=args.max_cells,
+        proposal_confidence=args.proposal_conf,
     )
     scanner.run()
 

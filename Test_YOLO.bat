@@ -1,11 +1,11 @@
 @echo off
 chcp 65001 >nul 2>&1
-title Braille Scanner - Hybrid CV + YOLO Tester
+title Braille Scanner - YOLO Cell Stream Tester
 cd /d "%~dp0"
 
 echo.
 echo  ==============================================================
-echo     🧠 Braille Dot Detector (Hybrid CV + YOLO Deep Learning)
+echo     Braille Dot Detector - YOLO Cell Stream
 echo  ==============================================================
 echo.
 
@@ -18,7 +18,7 @@ if "%~1"=="" goto menu
 
 REM ถ้าลากไฟล์รูปภาพมาวางบน .bat ให้รันรูปนั้นทันที
 echo  🔍 ตรวจจับภาพ: %~1
-.venv\Scripts\python.exe yolo_detector.py "%~1" --lang thai --save
+.venv\Scripts\python.exe yolo_detector.py "%~1" --mode yolo --yolo-pipeline stream --lang thai --save --dump-stream
 goto end
 
 :menu
@@ -35,30 +35,33 @@ echo.
 set /p choice="  กรุณาเลือกเมนู (1-5 หรือ Q): "
 
 if /i "%choice%"=="1" (
-    .venv\Scripts\python.exe yolo_detector.py sample_images/Test_thai_01.png --lang thai --save
+    .venv\Scripts\python.exe yolo_detector.py sample_images/Test_thai_01.png --mode yolo --color black --lang thai --save
     goto menu
 )
 if /i "%choice%"=="2" (
-    .venv\Scripts\python.exe yolo_detector.py sample_images/test_thai_home.png --lang thai --save
+    .venv\Scripts\python.exe yolo_detector.py sample_images/test_thai_home.png --mode yolo --lang thai-legacy --save
     goto menu
 )
 if /i "%choice%"=="3" (
-    .venv\Scripts\python.exe yolo_detector.py sample_images/test_thai_cat.png --lang thai --save
+    .venv\Scripts\python.exe yolo_detector.py sample_images/test_thai_cat.png --mode yolo --color green --lang thai-legacy --save
     goto menu
 )
 if /i "%choice%"=="4" (
-    .venv\Scripts\python.exe yolo_detector.py sample_images/test_hello_blue.png --lang english --save
+    .venv\Scripts\python.exe yolo_detector.py sample_images/test_hello_blue.png --mode yolo --lang english --save
     goto menu
 )
-if /i "%choice%"=="5" (
-    echo.
-    set /p custom_img="  ใส่ path ของรูปภาพ (หรือลากไฟล์มาวางที่นี่): "
-    if not "%custom_img%"=="" (
-        .venv\Scripts\python.exe yolo_detector.py %custom_img% --lang thai --save
-    )
-    goto menu
-)
+if /i "%choice%"=="5" goto custom
 if /i "%choice%"=="Q" goto end
+goto menu
+
+:custom
+echo.
+set "custom_img="
+set /p custom_img="  ใส่ path ของรูปภาพ (หรือลากไฟล์มาวางที่นี่): "
+if not defined custom_img goto menu
+set "custom_img=%custom_img:"=%"
+.venv\Scripts\python.exe yolo_detector.py "%custom_img%" --mode yolo --lang thai --save --dump-stream
+goto menu
 
 :end
 echo.

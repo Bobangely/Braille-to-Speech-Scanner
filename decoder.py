@@ -10,7 +10,7 @@ import re
 import unicodedata
 
 from config import BRAILLE_TO_CHAR
-from config_thai import (
+from config_thai_legacy import (
     THAI_CONSONANTS,
     THAI_BRAILLE_TO_CHAR,
     THAI_CONSONANTS_PREFIX6,
@@ -69,7 +69,7 @@ _LETTER_TO_DIGIT = {
 _DOT_BITS = (0, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20)  # index 0 unused, 1-6 map to bits
 
 
-def normalize_thai_text(text: str) -> str:
+def normalize_thai_text_legacy(text: str) -> str:
     """
     จัดระเบียบและเรียงลำดับอักขระภาษาไทยตามมาตรฐาน Unicode (Orthographic Normalization)
     เพื่อให้ Google TTS และตัวแสดงผลภาษาไทยอ่านออกเสียงได้อย่างถูกต้องแม่นยำ
@@ -110,6 +110,16 @@ def normalize_thai_text(text: str) -> str:
     return text
 
 
+def normalize_thai_text(text: str) -> str:
+    from thai_decoder import normalize_thai
+    return normalize_thai(text)
+
+
+def decode_cells_thai(cells):
+    from thai_decoder import decode_thai
+    return decode_thai(cells)
+
+
 def decode_cells(cells, lang='english'):
     """
     แปลง list ของ Braille cells เป็นข้อความตามภาษาที่เลือก
@@ -131,7 +141,10 @@ def decode_cells(cells, lang='english'):
 
     lang_lower = lang.lower()
     if lang_lower in ('thai', 'th'):
-        return decode_cells_thai(cells)
+        from thai_decoder import decode_thai
+        return decode_thai(cells)
+    elif lang_lower == 'thai-legacy':
+        return decode_cells_thai_legacy(cells)
     else:
         return decode_cells_english(cells)
 
@@ -148,7 +161,16 @@ def decode_cells_english(cells):
         dots = cell['dots']
 
         # เช็คระยะห่างเพื่อแทรก space ระหว่างคำ (Dynamic resolution)
-        if i > 0:
+        if i > 0 and 'line_id' in cell and 'line_id' in cells[i - 1]:
+            from thai_decoder import _break_before
+            if cell['line_id'] != cells[i - 1]['line_id']:
+                result.append('\n')
+                capitalize_next = number_mode = False
+            elif _break_before(cells, i):
+                if result and not result[-1].endswith((' ', '\n')):
+                    result.append(' ')
+                capitalize_next = number_mode = False
+        elif i > 0:
             prev_cell = cells[i - 1]
             prev_y = prev_cell.get('y', 0)
             curr_y = cell.get('y', 0)
@@ -305,7 +327,7 @@ def _is_trailing_vowel_part(result, idx):
     return False
 
 
-def decode_cells_thai(cells):
+def decode_cells_thai_legacy(cells):
     """
     แปลง Braille cells เป็นภาษาไทย (Thai Braille Grade 1)
     ตามมาตรฐานอักษรเบรลล์ไทยสากล (Genevieve Caulfield / มูลนิธิช่วยคนตาบอดแห่งประเทศไทย)
@@ -469,7 +491,7 @@ def decode_cells_thai(cells):
         state = 'CONSONANT'
         i += 1
 
-    return normalize_thai_text(''.join(result).strip())
+    return normalize_thai_text_legacy(''.join(result).strip())
 
 
 def _apply_vowel(result, raw_char):
@@ -572,8 +594,11 @@ def decode_cells_verbose(cells, lang='english'):
     list of dict
         แต่ละ dict มี: 'dots', 'char', 'braille_unicode', 'center'
     """
+    if lang.lower() in ('thai', 'th'):
+        from thai_decoder import tokenize_thai
+        return tokenize_thai(cells)
     results = []
-    is_thai = lang.lower() in ('thai', 'th')
+    is_thai = lang.lower() == 'thai-legacy'
 
     if is_thai:
         # สร้าง per-cell char mapping จาก state machine context

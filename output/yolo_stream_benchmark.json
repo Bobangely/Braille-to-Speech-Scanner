@@ -1,0 +1,4301 @@
+{
+  "mode": "yolo",
+  "pipeline": "stream",
+  "dataset": "synthetic reference fixtures; not camera accuracy",
+  "proposal_confidence": 0.3,
+  "read_confidence": 0.35,
+  "overview_imgsz": 1280,
+  "crop_imgsz": 320,
+  "tile_size": 0,
+  "model_sha256": "41d14e6550301cd6ee0b831f18b7ab75a023c5f50109fc33af67b6d3159929be",
+  "ultralytics_version": "8.4.138",
+  "torch_version": "2.14.0+cpu",
+  "passed": 99,
+  "total": 99,
+  "records": [
+    {
+      "expected": "ญ",
+      "actual": "ญ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 1.3509168999953545
+    },
+    {
+      "expected": "ญ",
+      "actual": "ญ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05959389999770792
+    },
+    {
+      "expected": "ญ",
+      "actual": "ญ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.07213380000030156
+    },
+    {
+      "expected": "ศ",
+      "actual": "ศ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05760030000237748
+    },
+    {
+      "expected": "ศ",
+      "actual": "ศ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05217350000020815
+    },
+    {
+      "expected": "ศ",
+      "actual": "ศ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05356360000587301
+    },
+    {
+      "expected": "ภ",
+      "actual": "ภ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05226730000140378
+    },
+    {
+      "expected": "ภ",
+      "actual": "ภ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05655569999362342
+    },
+    {
+      "expected": "ภ",
+      "actual": "ภ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.051071499998215586
+    },
+    {
+      "expected": "ธ",
+      "actual": "ธ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          5,
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          5,
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.053309499999159016
+    },
+    {
+      "expected": "ธ",
+      "actual": "ธ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          5,
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          5,
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.051288900001964066
+    },
+    {
+      "expected": "ธ",
+      "actual": "ธ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          5,
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          5,
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.052941900001314934
+    },
+    {
+      "expected": "ฬ",
+      "actual": "ฬ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05553440000221599
+    },
+    {
+      "expected": "ฬ",
+      "actual": "ฬ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05498770000122022
+    },
+    {
+      "expected": "ฬ",
+      "actual": "ฬ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05605120000109309
+    },
+    {
+      "expected": "ฆ",
+      "actual": "ฆ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05832669999654172
+    },
+    {
+      "expected": "ฆ",
+      "actual": "ฆ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.0544099999970058
+    },
+    {
+      "expected": "ฆ",
+      "actual": "ฆ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05583720000140602
+    },
+    {
+      "expected": "ฌ",
+      "actual": "ฌ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          3,
+          4,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          3,
+          4,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05570070000248961
+    },
+    {
+      "expected": "ฌ",
+      "actual": "ฌ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          3,
+          4,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          3,
+          4,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.0563075000027311
+    },
+    {
+      "expected": "ฌ",
+      "actual": "ฌ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          3,
+          4,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          3,
+          4,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05309080000006361
+    },
+    {
+      "expected": "ฎ",
+      "actual": "ฎ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05558279999968363
+    },
+    {
+      "expected": "ฎ",
+      "actual": "ฎ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.054067299999587703
+    },
+    {
+      "expected": "ฎ",
+      "actual": "ฎ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.052191899994795676
+    },
+    {
+      "expected": "ฏ",
+      "actual": "ฏ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05224100000486942
+    },
+    {
+      "expected": "ฏ",
+      "actual": "ฏ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.051879600003303494
+    },
+    {
+      "expected": "ฏ",
+      "actual": "ฏ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.050120500003686175
+    },
+    {
+      "expected": "ฐ",
+      "actual": "ฐ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.051412500004516914
+    },
+    {
+      "expected": "ฐ",
+      "actual": "ฐ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.058375799999339506
+    },
+    {
+      "expected": "ฐ",
+      "actual": "ฐ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.0637358999956632
+    },
+    {
+      "expected": "ฑ",
+      "actual": "ฑ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05031230000167852
+    },
+    {
+      "expected": "ฑ",
+      "actual": "ฑ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.04869679999683285
+    },
+    {
+      "expected": "ฑ",
+      "actual": "ฑ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.04926509999495465
+    },
+    {
+      "expected": "ณ",
+      "actual": "ณ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.0509061999982805
+    },
+    {
+      "expected": "ณ",
+      "actual": "ณ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05015770000318298
+    },
+    {
+      "expected": "ณ",
+      "actual": "ณ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.048628099997586105
+    },
+    {
+      "expected": "ฅ",
+      "actual": "ฅ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          6
+        ],
+        [
+          1,
+          3,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          6
+        ],
+        [
+          1,
+          3,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.04928319999453379
+    },
+    {
+      "expected": "ฅ",
+      "actual": "ฅ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          6
+        ],
+        [
+          1,
+          3,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          6
+        ],
+        [
+          1,
+          3,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.050016799999866635
+    },
+    {
+      "expected": "ฅ",
+      "actual": "ฅ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          6
+        ],
+        [
+          1,
+          3,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          6
+        ],
+        [
+          1,
+          3,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.049834900004498195
+    },
+    {
+      "expected": "ฒ",
+      "actual": "ฒ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.0494131000014022
+    },
+    {
+      "expected": "ฒ",
+      "actual": "ฒ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.051711099993553944
+    },
+    {
+      "expected": "ฒ",
+      "actual": "ฒ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          6
+        ],
+        [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05097070000192616
+    },
+    {
+      "expected": "ษ",
+      "actual": "ษ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05188530000305036
+    },
+    {
+      "expected": "ษ",
+      "actual": "ษ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.050626299998839386
+    },
+    {
+      "expected": "ษ",
+      "actual": "ษ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.04886869999609189
+    },
+    {
+      "expected": "ฃ",
+      "actual": "ฃ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          5,
+          6
+        ],
+        [
+          1,
+          3
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          5,
+          6
+        ],
+        [
+          1,
+          3
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05062470000120811
+    },
+    {
+      "expected": "ฃ",
+      "actual": "ฃ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          5,
+          6
+        ],
+        [
+          1,
+          3
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          5,
+          6
+        ],
+        [
+          1,
+          3
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.04991619999782415
+    },
+    {
+      "expected": "ฃ",
+      "actual": "ฃ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          3,
+          5,
+          6
+        ],
+        [
+          1,
+          3
+        ]
+      ],
+      "patterns_actual": [
+        [
+          3,
+          5,
+          6
+        ],
+        [
+          1,
+          3
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.04840949999925215
+    },
+    {
+      "expected": "กึ",
+      "actual": "กึ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          4,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          4,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.051707500002521556
+    },
+    {
+      "expected": "กึ",
+      "actual": "กึ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          4,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          4,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.04980549999891082
+    },
+    {
+      "expected": "กึ",
+      "actual": "กึ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          4,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          4,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05171330000302987
+    },
+    {
+      "expected": "กื",
+      "actual": "กื",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.0520089999990887
+    },
+    {
+      "expected": "กื",
+      "actual": "กื",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.04980210000212537
+    },
+    {
+      "expected": "กื",
+      "actual": "กื",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05006109999521868
+    },
+    {
+      "expected": "ก่า",
+      "actual": "ก่า",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.06303910000133328
+    },
+    {
+      "expected": "ก่า",
+      "actual": "ก่า",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05474520000279881
+    },
+    {
+      "expected": "ก่า",
+      "actual": "ก่า",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.054875499998161104
+    },
+    {
+      "expected": "ก้า",
+      "actual": "ก้า",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05574479999631876
+    },
+    {
+      "expected": "ก้า",
+      "actual": "ก้า",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05461439999635331
+    },
+    {
+      "expected": "ก้า",
+      "actual": "ก้า",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05413640000188025
+    },
+    {
+      "expected": "ก๊า",
+      "actual": "ก๊า",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.056368199999269564
+    },
+    {
+      "expected": "ก๊า",
+      "actual": "ก๊า",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.057477900001686066
+    },
+    {
+      "expected": "ก๊า",
+      "actual": "ก๊า",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05546350000076927
+    },
+    {
+      "expected": "ก๋า",
+      "actual": "ก๋า",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05542099999729544
+    },
+    {
+      "expected": "ก๋า",
+      "actual": "ก๋า",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.054310999999870546
+    },
+    {
+      "expected": "ก๋า",
+      "actual": "ก๋า",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.054756199999246746
+    },
+    {
+      "expected": "เก้า",
+      "actual": "เก้า",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05600570000387961
+    },
+    {
+      "expected": "เก้า",
+      "actual": "เก้า",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05554239999764832
+    },
+    {
+      "expected": "เก้า",
+      "actual": "เก้า",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05612190000101691
+    },
+    {
+      "expected": "เสีย",
+      "actual": "เสีย",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.05204200000298442
+    },
+    {
+      "expected": "เสีย",
+      "actual": "เสีย",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.04943050000292715
+    },
+    {
+      "expected": "เสีย",
+      "actual": "เสีย",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.0508036000028369
+    },
+    {
+      "expected": "เสื้อ",
+      "actual": "เสื้อ",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05542580000474118
+    },
+    {
+      "expected": "เสื้อ",
+      "actual": "เสื้อ",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.054622900002868846
+    },
+    {
+      "expected": "เสื้อ",
+      "actual": "เสื้อ",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05558029999519931
+    },
+    {
+      "expected": "กลัว",
+      "actual": "กลัว",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          1,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          1,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05629400000179885
+    },
+    {
+      "expected": "กลัว",
+      "actual": "กลัว",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          1,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          1,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.05600090000370983
+    },
+    {
+      "expected": "กลัว",
+      "actual": "กลัว",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          1,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          1,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 3,
+      "seconds": 0.06050150000373833
+    },
+    {
+      "expected": "ภู่",
+      "actual": "ภู่",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5
+        ],
+        [
+          3,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5
+        ],
+        [
+          3,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 4,
+      "seconds": 0.0716517000037129
+    },
+    {
+      "expected": "ภู่",
+      "actual": "ภู่",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5
+        ],
+        [
+          3,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5
+        ],
+        [
+          3,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 4,
+      "seconds": 0.060410500002035405
+    },
+    {
+      "expected": "ภู่",
+      "actual": "ภู่",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5
+        ],
+        [
+          3,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5
+        ],
+        [
+          3,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 4,
+      "seconds": 0.06172289999813074
+    },
+    {
+      "expected": "ศักดิ์",
+      "actual": "ศักดิ์",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          3,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          4,
+          5
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          3,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          3,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          4,
+          5
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          3,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 7,
+      "seconds": 0.08837080000375863
+    },
+    {
+      "expected": "ศักดิ์",
+      "actual": "ศักดิ์",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          3,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          4,
+          5
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          3,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          3,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          4,
+          5
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          3,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 7,
+      "seconds": 0.0828791000021738
+    },
+    {
+      "expected": "ศักดิ์",
+      "actual": "ศักดิ์",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          3,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          4,
+          5
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          3,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          2,
+          3,
+          4
+        ],
+        [
+          3,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          4,
+          5
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          3,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 7,
+      "seconds": 0.07692800000222633
+    },
+    {
+      "expected": "ใคร",
+      "actual": "ใคร",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          5,
+          6
+        ],
+        [
+          2
+        ],
+        [
+          1,
+          3,
+          6
+        ],
+        [
+          1,
+          2,
+          3,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          5,
+          6
+        ],
+        [
+          2
+        ],
+        [
+          1,
+          3,
+          6
+        ],
+        [
+          1,
+          2,
+          3,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 4,
+      "seconds": 0.060935900000913534
+    },
+    {
+      "expected": "ใคร",
+      "actual": "ใคร",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          5,
+          6
+        ],
+        [
+          2
+        ],
+        [
+          1,
+          3,
+          6
+        ],
+        [
+          1,
+          2,
+          3,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          5,
+          6
+        ],
+        [
+          2
+        ],
+        [
+          1,
+          3,
+          6
+        ],
+        [
+          1,
+          2,
+          3,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 4,
+      "seconds": 0.06273570000485051
+    },
+    {
+      "expected": "ใคร",
+      "actual": "ใคร",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          1,
+          5,
+          6
+        ],
+        [
+          2
+        ],
+        [
+          1,
+          3,
+          6
+        ],
+        [
+          1,
+          2,
+          3,
+          5
+        ]
+      ],
+      "patterns_actual": [
+        [
+          1,
+          5,
+          6
+        ],
+        [
+          2
+        ],
+        [
+          1,
+          3,
+          6
+        ],
+        [
+          1,
+          2,
+          3,
+          5
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 4,
+      "seconds": 0.06042610000440618
+    },
+    {
+      "expected": "ญา\nภ้",
+      "actual": "ญา\nภ้",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 120,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 2,
+      "crops": 6,
+      "seconds": 0.10219379999762168
+    },
+    {
+      "expected": "ญา\nภ้",
+      "actual": "ญา\nภ้",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 120,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 2,
+      "crops": 6,
+      "seconds": 0.081662900003721
+    },
+    {
+      "expected": "ญา\nภ้",
+      "actual": "ญา\nภ้",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 120,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 2,
+      "crops": 6,
+      "seconds": 0.08085030000074767
+    },
+    {
+      "expected": "ญา\nภ้",
+      "actual": "ญา\nภ้",
+      "scale": 1.0,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 6,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 2,
+      "crops": 6,
+      "seconds": 0.09889230000408133
+    },
+    {
+      "expected": "ญา\nภ้",
+      "actual": "ญา\nภ้",
+      "scale": 0.25,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 6,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 2,
+      "crops": 6,
+      "seconds": 0.08324030000221683
+    },
+    {
+      "expected": "ญา\nภ้",
+      "actual": "ญา\nภ้",
+      "scale": 0.2,
+      "pitch": 95,
+      "line_pitch": 128,
+      "angle": 6,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 2,
+      "crops": 6,
+      "seconds": 0.0828618000014103
+    },
+    {
+      "expected": "ญา\nภ้",
+      "actual": "ญา\nภ้",
+      "scale": 1.0,
+      "pitch": 148,
+      "line_pitch": 140,
+      "angle": -6,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 2,
+      "crops": 6,
+      "seconds": 0.09877030000643572
+    },
+    {
+      "expected": "ญา\nภ้",
+      "actual": "ญา\nภ้",
+      "scale": 0.25,
+      "pitch": 148,
+      "line_pitch": 140,
+      "angle": -6,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 2,
+      "crops": 6,
+      "seconds": 0.08399609999469249
+    },
+    {
+      "expected": "ญา\nภ้",
+      "actual": "ญา\nภ้",
+      "scale": 0.2,
+      "pitch": 148,
+      "line_pitch": 140,
+      "angle": -6,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ],
+        [
+          1,
+          6
+        ],
+        [
+          6
+        ],
+        [
+          1,
+          4,
+          5,
+          6
+        ],
+        [
+          2,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 2,
+      "crops": 6,
+      "seconds": 0.08485490000020945
+    },
+    {
+      "expected": "ญ",
+      "actual": "ญ",
+      "scale": 1.0,
+      "pitch": 148,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.048944999995001126
+    },
+    {
+      "expected": "ญ",
+      "actual": "ญ",
+      "scale": 0.25,
+      "pitch": 148,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.049450799997430295
+    },
+    {
+      "expected": "ญ",
+      "actual": "ญ",
+      "scale": 0.2,
+      "pitch": 148,
+      "line_pitch": 128,
+      "angle": 0,
+      "patterns_expected": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "patterns_actual": [
+        [
+          6
+        ],
+        [
+          1,
+          3,
+          4,
+          5,
+          6
+        ]
+      ],
+      "passed": true,
+      "line_count": 1,
+      "crops": 2,
+      "seconds": 0.04954600000201026
+    }
+  ]
+}
