@@ -152,8 +152,7 @@ class CellStreamTests(unittest.TestCase):
         detector.model = Mock(side_effect=lambda source, **kwargs: [object() for _ in source]
                               if isinstance(source, list) else [object()])
         # Overview contains a full letter; the crop model rejects all dots.
-        with patch.object(detector, '_extract_yolo_boxes', side_effect=[dots, [], []]), \
-                patch.object(detector._opencv_detector, 'detect', side_effect=AssertionError('CV called')):
+        with patch.object(detector, '_extract_yolo_boxes', side_effect=[dots, [], []]):
             cells, debug = detector.detect(image)
         self.assertTrue(all(not cell['dots'] for cell in cells))
         calls = detector.model.call_args_list

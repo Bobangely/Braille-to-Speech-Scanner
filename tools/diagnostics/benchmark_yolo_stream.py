@@ -18,10 +18,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', default='output/yolo_stream_benchmark.json')
     parser.add_argument('--scales', nargs='+', type=float, default=[1.0, .25, .2])
+    parser.add_argument('--model', default=None, help='Local candidate weights to evaluate')
     args = parser.parse_args()
     if any(not 0 < scale <= 2 for scale in args.scales):
         parser.error('scales must be in (0, 2]')
-    detector = YOLOBrailleDetector(mode='yolo', tile_size=0)
+    detector = YOLOBrailleDetector(model_path=args.model, tile_size=0)
     records = []
     cases = [(text, [patterns], 95, 128, 0) for text, patterns in CASES]
     cases += [('ญา\nภ้', [['6', '13456', '16'], ['6', '1456', '256']], pitch, height, angle)

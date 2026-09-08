@@ -22,7 +22,6 @@ Braille Reader - Real-time Webcam Scanner
   [X] / [-] / [_] : ซูมออก (Zoom Out -0.2x)
   [R] / [0]     : รีเซ็ตการซูม (Reset Zoom 1.0x)
   [SPACE] / [S] : ออกเสียงข้อความปัจจุบันทันที (Speak Now)
-  [C]           : สลับสีจุดแต้ม (Blue -> Red -> Green -> Black)
   [L]           : สลับภาษา (Thai <-> English)
   [A]           : เปิด/ปิดระบบออกเสียงอัตโนมัติ (Toggle Auto-Speak)
   [P]           : ถ่ายภาพ Snapshot บันทึกลง output/
@@ -54,12 +53,10 @@ if sys.stdout.encoding != 'utf-8':
     except Exception:
         pass
 
-from detector import BrailleDetector
 from yolo_detector import YOLOBrailleDetector
 from live_preview import LivePreview
 from decoder import decode_cells, decode_cells_verbose
 from tts import speak, TextToSpeech
-from config import DetectionConfig
 
 
 # รายการความละเอียดมาตรฐานที่สามารถสลับใช้งานได้
@@ -206,7 +203,7 @@ class ThreadedCameraCapture:
 class AsyncBrailleWorker:
     """
     Worker Thread แยกอิสระสำหรับ AI Detection & Decoder
-    - นำเฟรมล่าสุดจากกล้องไปประมวลผล (YOLO Hybrid / OpenCV)
+    - นำเฟรมล่าสุดจากกล้องไปประมวลผล (YOLO cell stream)
     - แยกงาน AI ออกจากภาพกล้อง; ความเร็วจริงขึ้นกับกล้องและเครื่อง
     - รายงาน ai_fps ควบคู่ไปกับ display_fps
     """
@@ -257,7 +254,7 @@ class AsyncBrailleWorker:
         self._new_frame_event.set()
 
     def get_latest_results(self):
-        """ดึงผลลัพธ์การตรวจจับล่าสุดออกมาวาดบนหน้าจอ 60 FPS"""
+        """ดึงผลลัพธ์การตรวจจับล่าสุดออกมาวาดบนหน้าจอกล้อง"""
         with self._output_lock:
             return {
                 'cells': list(self.cells),
@@ -295,7 +292,7 @@ class AsyncBrailleWorker:
                     small = cv2.resize(frame_to_process, (max(1, w//2), max(1, h//2)))
                     blur = cv2.resize(cv2.GaussianBlur(small, (5, 5), 0), (w, h))
                     frame_to_process = cv2.addWeighted(frame_to_process, 1 + strength, blur, -strength, 0)
-                # 1. ตรวจจับด้วย YOLO / OpenCV Detector
+                # 1. ตรวจจับด้วย YOLO Detector
                 detect_options = {'lang': frame_lang} if self._detect_accepts_lang else {}
                 cells, debug_info = self.detector.detect(frame_to_process, **detect_options)
                 dots = debug_info.get('dots', [])
@@ -345,12 +342,11 @@ class AsyncBrailleWorker:
 
 
 class RealTimeBrailleScanner:
-    """ตัวควบคุมการสแกนอักษรเบรลล์จากกล้องแบบ Real-time พร้อมระบบ Multi-threaded 60 FPS, 4K/FHD, Zoom & Sharpening"""
+    """ตัวควบคุมการสแกนอักษรเบรลล์จากกล้องแบบ Real-time พร้อมระบบ YOLO / Async Preview, 4K/FHD, Zoom & Sharpening"""
 
     def __init__(
         self,
         camera_id=0,
-        color='blue',
         lang='thai',
         auto_speak=True,
         stability_threshold=6,
@@ -368,9 +364,9 @@ class RealTimeBrailleScanner:
         crop_batch=8,
         max_cells=256,
         proposal_confidence=None,
+        model_path=None,
     ):
         self.camera_id = camera_id
-        self.color = color.lower()
         self.lang = lang.lower()
         self.auto_speak = auto_speak
         self.stability_threshold = stability_threshold
@@ -420,14 +416,13 @@ class RealTimeBrailleScanner:
         self.last_spoken_time = 0.0
         self.last_seen_text = ""
         self.is_speaking = False
-        self.supported_colors = ['blue', 'red', 'green', 'black']
 
-        # ตัวตรวจจับแบบ Hybrid (YOLO + OpenCV)
-        initial_mode = 'opencv' if self.detector_mode in ('cv', 'opencv') else self.detector_mode
+        # ตัวตรวจจับ YOLO
+        initial_mode = self.detector_mode
         self.detector = YOLOBrailleDetector(
+            model_path=model_path,
             confidence=self.yolo_conf,
             mode=initial_mode,
-            fallback_color=self.color,
             imgsz=yolo_imgsz,
             tile_size=yolo_tile_size,
             yolo_pipeline=yolo_pipeline,
@@ -447,12 +442,6 @@ class RealTimeBrailleScanner:
         self.ai_fps = 0.0
         self._prev_frame_time = time.time()
 
-    def cycle_detector_mode(self):
-        """สลับโหมดการตรวจจับ: HYBRID (CV+YOLO) <-> YOLO ONLY <-> OPENCV ONLY"""
-        new_mode = self.detector.cycle_mode()
-        self.detector_mode = 'cv' if new_mode == 'opencv' else new_mode
-        self.history.clear()
-        print(f"  ⚡ สลับโหมดการตรวจจับเป็น: {new_mode.upper()}")
 
     def cycle_sharpness(self):
         """สลับระดับความคมชัด: OFF -> LOW -> MED -> HIGH -> ULTRA"""
@@ -534,23 +523,6 @@ class RealTimeBrailleScanner:
         # Keep native crop pixels for AI; only the display renderer resizes.
         return cropped, (x1, y1, x2, y2)
 
-    def _apply_sharpening(self, frame):
-        """เพิ่มความคมชัดของภาพตามระดับที่เลือก (Fast Unsharp Masking 60fps Ready)"""
-        _, _, strength = SHARPNESS_LEVELS[self.sharpness_idx]
-        if strength <= 0.01:
-            return frame
-
-        h, w = frame.shape[:2]
-        # เพื่อรักษาความเร็ว 60 FPS บน 1080p/4K ย่อขนาดเพื่อสร้าง Gaussian Blur
-        if w >= 1280:
-            small = cv2.resize(frame, (w // 2, h // 2), interpolation=cv2.INTER_LINEAR)
-            blur_small = cv2.GaussianBlur(small, (0, 0), sigmaX=1.5)
-            blur = cv2.resize(blur_small, (w, h), interpolation=cv2.INTER_LINEAR)
-        else:
-            blur = cv2.GaussianBlur(frame, (0, 0), sigmaX=2.0)
-
-        sharpened = cv2.addWeighted(frame, 1.0 + strength, blur, -strength, 0)
-        return sharpened
 
     def _draw_mini_viewfinder(self, image, orig_frame, crop_box):
         """วาด Mini Viewfinder แสดงตำแหน่งพื้นที่ที่ถูกซูมบนภาพมุมกว้าง"""
@@ -617,26 +589,12 @@ class RealTimeBrailleScanner:
         cv2.line(image, (0, hud_h), (w, hud_h), (60, 80, 100), 1)
 
         # ข้อมูลสถานะ
-        color_badges = {
-            'blue': 'BLUE [C]',
-            'red': 'RED [C]',
-            'green': 'GREEN [C]',
-            'black': 'BLACK [C]',
-        }
-        color_text = color_badges.get(self.color, self.color.upper())
         lang_text = "THAI [L]" if self.lang == 'thai' else "ENG [L]"
         auto_text = "AUDIO: OFF (TESTING)"
 
         # Detector Mode badge
-        if self.detector.mode == 'hybrid':
-            mode_badge = "HYBRID [Y]"
-            mode_color = (0, 255, 130)  # Bright Emerald Green
-        elif self.detector.mode == 'yolo':
-            mode_badge = "YOLO [Y]"
-            mode_color = (0, 215, 255)  # Cyan/Gold
-        else:
-            mode_badge = "OPENCV [Y]"
-            mode_color = (255, 140, 255)  # Magenta/Pink
+        mode_badge = 'YOLO'
+        mode_color = (0, 210, 255)
 
         # Resolution badge
         if self.actual_width >= 3840:
@@ -685,12 +643,11 @@ class RealTimeBrailleScanner:
         cv2.putText(image, f"| {res_badge}", (280, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, res_color, 1, cv2.LINE_AA)
         cv2.putText(image, f"| {sharp_text}", (490, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, sharp_color, 1, cv2.LINE_AA)
         cv2.putText(image, f"| {zoom_text}", (660, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, zoom_color, 1 if self.zoom_level <= 1.001 else 2, cv2.LINE_AA)
-        cv2.putText(image, f"| {color_text}", (815, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 200, 80), 1, cv2.LINE_AA)
         cv2.putText(image, f"| {lang_text}", (925, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 220, 255), 1, cv2.LINE_AA)
         cv2.putText(image, f"| {status_text}", (1025, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, status_color, 2, cv2.LINE_AA)
 
         # วาดคำแนะนำปุ่มกดด้านล่างขวา
-        tip = "[Y] Mode | [V/F] Res | [E] Sharp | [Z/X] Zoom | [SPACE] Speak | [P] Save | [Q] Quit"
+        tip = "[V/F] Res | [E] Sharp | [Z/X] Zoom | [SPACE] Speak | [P] Save | [Q] Quit"
         cv2.putText(image, tip, (w - 535, hud_h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 180, 180), 1, cv2.LINE_AA)
 
     def _on_mouse(self, event, x, y, flags, param):
@@ -720,21 +677,19 @@ class RealTimeBrailleScanner:
             self.history.clear()
 
     def run(self):
-        """เริ่มการทำงานกล้องและลูปประมวลผล Multi-threaded 60 FPS"""
+        """เริ่มการทำงานกล้องและลูปประมวลผล YOLO / Async Preview"""
         lvl_num, lvl_name, _ = SHARPNESS_LEVELS[self.sharpness_idx]
         print("=" * 70)
-        print("   Braille-to-Speech Real-Time Scanner (Multi-Threaded 60 FPS)")
+        print("   Braille-to-Speech Real-Time Scanner (YOLO / Async Preview)")
         print("=" * 70)
         print(f"  เปิดกล้อง ID:        Camera Index {self.camera_id}")
         print(f"  ความละเอียดเป้าหมาย:  {self.target_width}x{self.target_height} ({self.res_name})")
         print(f"  ระดับความคมชัด:      Level {lvl_num} [{lvl_name}]")
-        print(f"  สีจุดแต้มเริ่มต้น:    {self.color.upper()}")
         print(f"  ภาษาเริ่มต้น:        {self.lang.upper()}")
         print(f"  อัตราการซูมเริ่มต้น:  {self.zoom_level:.1f}x")
         print(f"  ระบบ Auto-Speak:    {'เปิดใช้งาน' if self.auto_speak else 'ปิดใช้งาน'}")
         print()
         print("  คีย์ลัดและควบคุม:")
-        print("    [Y] / [M]       - สลับโหมดการตรวจจับ (HYBRID / YOLO / OPENCV)")
         print("    [V] / [F]       - สลับความละเอียด (4K UHD <-> Full HD 1080p <-> HD 720p)")
         print("    [E]             - ปรับระดับความคมชัด (OFF -> LOW -> MED -> HIGH -> ULTRA)")
         print("    [Z] / [+]       - ซูมเข้า (Zoom In)")
@@ -742,7 +697,6 @@ class RealTimeBrailleScanner:
         print("    [R] / [0]       - รีเซ็ตการซูม (Reset Zoom 1.0x)")
         print("    [Wheel Up/Down] - ซูมเข้า/ออกด้วยล้อเมาส์")
         print("    [SPACE]         - สั่งอ่านออกเสียงข้อความปัจจุบัน")
-        print("    [C]             - สลับสีจุด (Blue -> Red -> Green -> Black)")
         print("    [L]             - สลับภาษา (Thai <-> English)")
         print("    [A]             - เปิด/ปิด Auto-TTS")
         print("    [P]             - ถ่ายภาพ Snapshot ลง output/")
@@ -780,7 +734,7 @@ class RealTimeBrailleScanner:
         self.ai_worker.start()
         self.camera.start()
 
-        window_name = "Braille Real-Time Scanner [Multi-threaded 60 FPS | 4K/FHD/Zoom]"
+        window_name = "Braille Real-Time Scanner [YOLO / Async Preview | 4K/FHD/Zoom]"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         disp_w = min(1600, self.actual_width)
         disp_h = int(disp_w * (self.actual_height / max(1, self.actual_width)))
@@ -817,7 +771,7 @@ class RealTimeBrailleScanner:
                 enhanced_frame = zoomed_frame
 
                 # 3. ส่งภาพให้ AI Worker ประมวลผลแบบคู่ขนาน (Non-blocking)
-                context = (self.lang, self.detector_mode, self.color, self.sharpness_idx,
+                context = (self.lang, self.detector_mode, self.sharpness_idx,
                            tuple(crop_box) if crop_box is not None else None, enhanced_frame.shape)
                 if (frame_id != self._last_submitted_frame_id
                         or context != self._last_submitted_context):
@@ -876,7 +830,7 @@ class RealTimeBrailleScanner:
                     cv2.putText(annotated, 'SCAN ERROR - see console', (10, 55),
                                 cv2.FONT_HERSHEY_SIMPLEX, .6, (0, 0, 255), 2, cv2.LINE_AA)
 
-                # 9. แสดงผลลัพธ์บนหน้าต่าง (ลื่นไหล 60 FPS)
+                # 9. แสดงผลลัพธ์บนหน้าต่าง
                 cv2.imshow(window_name, annotated)
 
                 # 10. จัดการคีย์บอร์ด
@@ -886,10 +840,6 @@ class RealTimeBrailleScanner:
                 if key in (ord('q'), ord('Q'), 27):
                     print("  ปิดโปรแกรม...")
                     break
-
-                # [Y] หรือ [M] -> สลับโหมด Detector (HYBRID <-> YOLO <-> OPENCV)
-                elif key in (ord('y'), ord('Y'), ord('m'), ord('M')):
-                    self.cycle_detector_mode()
 
                 # [V] หรือ [F] -> สลับความละเอียด (4K <-> FHD <-> HD)
                 elif key in (ord('v'), ord('V'), ord('f'), ord('F')):
@@ -910,14 +860,6 @@ class RealTimeBrailleScanner:
                 # [R] / [0] -> Reset Zoom
                 elif key in (ord('r'), ord('R'), ord('0')):
                     self.reset_zoom()
-
-                # [C] -> สลับสีจุดแต้ม
-                elif key in (ord('c'), ord('C')):
-                    curr_idx = self.supported_colors.index(self.color)
-                    self.color = self.supported_colors[(curr_idx + 1) % len(self.supported_colors)]
-                    self.detector.set_color(self.color)
-                    self.history.clear()
-                    print(f"  🎨 สลับสีจุดเป็น: {self.color.upper()}")
 
                 # [L] -> สลับภาษา
                 elif key in (ord('l'), ord('L')):
@@ -971,11 +913,6 @@ def main():
         help='ระดับความคมชัดเริ่มต้น: 0=OFF, 1=LOW, 2=MED, 3=HIGH, 4=ULTRA (default: 2)',
     )
     parser.add_argument(
-        '--color', type=str, default='blue',
-        choices=['blue', 'red', 'green', 'black'],
-        help='สีของจุดที่แต้ม (default: blue)',
-    )
-    parser.add_argument(
         '--lang', type=str, default='thai',
         choices=['thai', 'english'],
         help='ภาษาที่ต้องการอ่าน (default: thai)',
@@ -1006,8 +943,8 @@ def main():
     )
     parser.add_argument(
         '--detector', type=str, default='yolo',
-        choices=['hybrid', 'yolo', 'cv', 'opencv'],
-        help='โหมดการตรวจจับ: yolo (default), hybrid (CV+YOLO), cv (OpenCV only)',
+        choices=['yolo'],
+        help='YOLO เป็นตัวตรวจจับเดียว',
     )
     parser.add_argument(
         '--conf', type=float, default=0.35,
@@ -1016,15 +953,15 @@ def main():
 
     parser.add_argument('--imgsz', type=int, default=1280, help='YOLO input size (multiple of 32)')
     parser.add_argument('--tile-size', type=int, default=1280, help='Tile size; 0 disables extra inference')
-    parser.add_argument('--yolo-pipeline', choices=['stream', 'legacy'], default='stream')
+    parser.add_argument('--yolo-pipeline', choices=['stream'], default='stream')
     parser.add_argument('--crop-batch', type=int, default=8, help='Cells per YOLO crop batch (1..32)')
     parser.add_argument('--max-cells', type=int, default=256, help='Maximum cells per frame')
     parser.add_argument('--proposal-conf', type=float, default=None, help='Overview threshold (default: min(0.3, conf))')
+    parser.add_argument('--model', default=None, help='Local YOLO weights')
     args = parser.parse_args()
 
     scanner = RealTimeBrailleScanner(
         camera_id=args.camera,
-        color=args.color,
         lang=args.lang,
         auto_speak=not args.no_auto_speak,
         stability_threshold=args.stability,
@@ -1042,6 +979,7 @@ def main():
         crop_batch=args.crop_batch,
         max_cells=args.max_cells,
         proposal_confidence=args.proposal_conf,
+        model_path=args.model,
     )
     scanner.run()
 

@@ -112,19 +112,8 @@ def generate_braille_image(
     return image
 
 
-from detector import BrailleDetector
+from yolo_detector import YOLOBrailleDetector
 from decoder import decode_cells, decode_cells_verbose
-
-
-def bgr_to_color_name(bgr):
-    """แปลง BGR tuple เป็นชื่อสีสำหรับ detector"""
-    if bgr == (255, 120, 0):
-        return 'blue'
-    elif bgr == (0, 0, 220):
-        return 'red'
-    elif bgr == (0, 180, 0):
-        return 'green'
-    return 'blue'
 
 
 def generate_test_suite(output_dir='sample_images/standard', annotated_dir='output/standard_previews', save_annotated=True):
@@ -195,6 +184,7 @@ def generate_test_suite(output_dir='sample_images/standard', annotated_dir='outp
     ]
 
     generated = []
+    detector = YOLOBrailleDetector() if save_annotated else None
 
     def _process_cases(cases, lang):
         for filename, text, color, noise in cases:
@@ -210,9 +200,7 @@ def generate_test_suite(output_dir='sample_images/standard', annotated_dir='outp
                 # 2. สร้างภาพ Annotated พร้อม Grid และแบนเนอร์แสดงข้อความ
                 anno_info = ""
                 if save_annotated:
-                    color_name = bgr_to_color_name(color)
-                    detector = BrailleDetector(dot_color=color_name)
-                    cells, debug_info = detector.detect(img)
+                    cells, debug_info = detector.detect(img, lang=lang)
                     decoded_text = decode_cells(cells, lang=lang)
                     verbose_results = decode_cells_verbose(cells, lang=lang)
 

@@ -7,7 +7,7 @@ from live_preview import LivePreview, scaled_geometry
 
 class PreviewTests(unittest.TestCase):
     def test_reuses_overlay_but_always_displays_fresh_camera_pixels(self):
-        detector = Mock(mode='hybrid')
+        detector = Mock(mode='yolo')
         def annotate(image, *args, **kwargs):
             image[0, 0] = (0, 255, 0)
             return image

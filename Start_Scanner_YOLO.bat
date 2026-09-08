@@ -9,12 +9,10 @@ echo    Braille Scanner - YOLO Cell Stream
 echo  ======================================================
 echo.
 echo  Key Controls:
-echo    [Y] / [M]       : Switch Mode (HYBRID / YOLO / OPENCV)
 echo    [V] / [F]       : Switch Resolution (Full HD / 4K / HD)
 echo    [E]             : Sharpness Level (OFF to ULTRA)
 echo    [Z] / [X]       : Zoom In / Zoom Out
 echo    [R] / [0]       : Reset Zoom (1.0x)
-echo    [C]             : Switch Color (Blue / Red / Green / Black)
 echo    [L]             : Switch Language (Thai / English)
 echo    [P]             : Save Snapshot to output/
 echo    [Q] / [ESC]     : Quit

@@ -47,7 +47,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 1.3509168999953545
+      "seconds": 1.2763512000001356
     },
     {
       "expected": "ญ",
@@ -83,7 +83,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05959389999770792
+      "seconds": 0.05521980000048643
     },
     {
       "expected": "ญ",
@@ -119,7 +119,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.07213380000030156
+      "seconds": 0.052723100000548584
     },
     {
       "expected": "ศ",
@@ -151,7 +151,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05760030000237748
+      "seconds": 0.05127439999978378
     },
     {
       "expected": "ศ",
@@ -183,7 +183,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05217350000020815
+      "seconds": 0.05125199999929464
     },
     {
       "expected": "ศ",
@@ -215,7 +215,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05356360000587301
+      "seconds": 0.05194729999948322
     },
     {
       "expected": "ภ",
@@ -249,7 +249,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05226730000140378
+      "seconds": 0.05171830000017508
     },
     {
       "expected": "ภ",
@@ -283,7 +283,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05655569999362342
+      "seconds": 0.052353000000039174
     },
     {
       "expected": "ภ",
@@ -317,7 +317,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.051071499998215586
+      "seconds": 0.05056239999976242
     },
     {
       "expected": "ธ",
@@ -357,7 +357,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.053309499999159016
+      "seconds": 0.05386209999960556
     },
     {
       "expected": "ธ",
@@ -397,7 +397,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.051288900001964066
+      "seconds": 0.05235559999982797
     },
     {
       "expected": "ธ",
@@ -437,7 +437,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.052941900001314934
+      "seconds": 0.050801599999431346
     },
     {
       "expected": "ฬ",
@@ -469,7 +469,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05553440000221599
+      "seconds": 0.05057400000077905
     },
     {
       "expected": "ฬ",
@@ -501,7 +501,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05498770000122022
+      "seconds": 0.05210609999994631
     },
     {
       "expected": "ฬ",
@@ -533,7 +533,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05605120000109309
+      "seconds": 0.0507409000001644
     },
     {
       "expected": "ฆ",
@@ -565,7 +565,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05832669999654172
+      "seconds": 0.050094999999600986
     },
     {
       "expected": "ฆ",
@@ -597,7 +597,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.0544099999970058
+      "seconds": 0.05126620000010007
     },
     {
       "expected": "ฆ",
@@ -629,7 +629,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05583720000140602
+      "seconds": 0.05190980000043055
     },
     {
       "expected": "ฌ",
@@ -661,7 +661,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05570070000248961
+      "seconds": 0.052136000000245986
     },
     {
       "expected": "ฌ",
@@ -693,7 +693,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.0563075000027311
+      "seconds": 0.05036180000024615
     },
     {
       "expected": "ฌ",
@@ -725,7 +725,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05309080000006361
+      "seconds": 0.04917530000057013
     },
     {
       "expected": "ฎ",
@@ -757,7 +757,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05558279999968363
+      "seconds": 0.05078010000033828
     },
     {
       "expected": "ฎ",
@@ -789,7 +789,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.054067299999587703
+      "seconds": 0.050417100000231585
     },
     {
       "expected": "ฎ",
@@ -821,7 +821,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.052191899994795676
+      "seconds": 0.049987599999440135
     },
     {
       "expected": "ฏ",
@@ -855,7 +855,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05224100000486942
+      "seconds": 0.05093769999984943
     },
     {
       "expected": "ฏ",
@@ -889,7 +889,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.051879600003303494
+      "seconds": 0.05144190000009985
     },
     {
       "expected": "ฏ",
@@ -923,7 +923,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.050120500003686175
+      "seconds": 0.049807500000497384
     },
     {
       "expected": "ฐ",
@@ -957,7 +957,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.051412500004516914
+      "seconds": 0.05098990000078629
     },
     {
       "expected": "ฐ",
@@ -991,7 +991,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.058375799999339506
+      "seconds": 0.04966530000001512
     },
     {
       "expected": "ฐ",
@@ -1025,7 +1025,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.0637358999956632
+      "seconds": 0.05038349999995262
     },
     {
       "expected": "ฑ",
@@ -1061,7 +1061,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05031230000167852
+      "seconds": 0.05144380000001547
     },
     {
       "expected": "ฑ",
@@ -1097,7 +1097,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.04869679999683285
+      "seconds": 0.04988119999961782
     },
     {
       "expected": "ฑ",
@@ -1133,7 +1133,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.04926509999495465
+      "seconds": 0.04943640000055893
     },
     {
       "expected": "ณ",
@@ -1167,7 +1167,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.0509061999982805
+      "seconds": 0.050255299999662384
     },
     {
       "expected": "ณ",
@@ -1201,7 +1201,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05015770000318298
+      "seconds": 0.04947809999976016
     },
     {
       "expected": "ณ",
@@ -1235,7 +1235,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.048628099997586105
+      "seconds": 0.05042750000029628
     },
     {
       "expected": "ฅ",
@@ -1269,7 +1269,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.04928319999453379
+      "seconds": 0.05048280000028171
     },
     {
       "expected": "ฅ",
@@ -1303,7 +1303,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.050016799999866635
+      "seconds": 0.050521399999524874
     },
     {
       "expected": "ฅ",
@@ -1337,7 +1337,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.049834900004498195
+      "seconds": 0.05236940000031609
     },
     {
       "expected": "ฒ",
@@ -1375,7 +1375,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.0494131000014022
+      "seconds": 0.054936800000177755
     },
     {
       "expected": "ฒ",
@@ -1413,7 +1413,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.051711099993553944
+      "seconds": 0.053298499999982596
     },
     {
       "expected": "ฒ",
@@ -1451,7 +1451,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05097070000192616
+      "seconds": 0.0535251999999673
     },
     {
       "expected": "ษ",
@@ -1485,7 +1485,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05188530000305036
+      "seconds": 0.054061199999523524
     },
     {
       "expected": "ษ",
@@ -1519,7 +1519,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.050626299998839386
+      "seconds": 0.053845400000682275
     },
     {
       "expected": "ษ",
@@ -1553,7 +1553,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.04886869999609189
+      "seconds": 0.05454749999989872
     },
     {
       "expected": "ฃ",
@@ -1587,7 +1587,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05062470000120811
+      "seconds": 0.05435659999966447
     },
     {
       "expected": "ฃ",
@@ -1621,7 +1621,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.04991619999782415
+      "seconds": 0.05373150000013993
     },
     {
       "expected": "ฃ",
@@ -1655,7 +1655,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.04840949999925215
+      "seconds": 0.05274869999993825
     },
     {
       "expected": "กึ",
@@ -1693,7 +1693,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.051707500002521556
+      "seconds": 0.0538035999998101
     },
     {
       "expected": "กึ",
@@ -1731,7 +1731,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.04980549999891082
+      "seconds": 0.0529593000001114
     },
     {
       "expected": "กึ",
@@ -1769,7 +1769,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05171330000302987
+      "seconds": 0.05423140000038984
     },
     {
       "expected": "กื",
@@ -1805,7 +1805,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.0520089999990887
+      "seconds": 0.05506080000031943
     },
     {
       "expected": "กื",
@@ -1841,7 +1841,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.04980210000212537
+      "seconds": 0.053783499999553896
     },
     {
       "expected": "กื",
@@ -1877,7 +1877,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05006109999521868
+      "seconds": 0.0495043999999325
     },
     {
       "expected": "ก่า",
@@ -1921,7 +1921,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.06303910000133328
+      "seconds": 0.06474470000011934
     },
     {
       "expected": "ก่า",
@@ -1965,7 +1965,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05474520000279881
+      "seconds": 0.05668470000000525
     },
     {
       "expected": "ก่า",
@@ -2009,7 +2009,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.054875499998161104
+      "seconds": 0.056198700000095414
     },
     {
       "expected": "ก้า",
@@ -2055,7 +2055,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05574479999631876
+      "seconds": 0.05724590000045282
     },
     {
       "expected": "ก้า",
@@ -2101,7 +2101,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05461439999635331
+      "seconds": 0.05688509999981761
     },
     {
       "expected": "ก้า",
@@ -2147,7 +2147,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05413640000188025
+      "seconds": 0.05636450000019977
     },
     {
       "expected": "ก๊า",
@@ -2195,7 +2195,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.056368199999269564
+      "seconds": 0.0562303000006068
     },
     {
       "expected": "ก๊า",
@@ -2243,7 +2243,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.057477900001686066
+      "seconds": 0.05538799999976618
     },
     {
       "expected": "ก๊า",
@@ -2291,7 +2291,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05546350000076927
+      "seconds": 0.057136399999762943
     },
     {
       "expected": "ก๋า",
@@ -2337,7 +2337,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05542099999729544
+      "seconds": 0.056248100000630075
     },
     {
       "expected": "ก๋า",
@@ -2383,7 +2383,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.054310999999870546
+      "seconds": 0.05661749999944732
     },
     {
       "expected": "ก๋า",
@@ -2429,7 +2429,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.054756199999246746
+      "seconds": 0.05610340000021097
     },
     {
       "expected": "เก้า",
@@ -2477,7 +2477,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05600570000387961
+      "seconds": 0.056146300000364135
     },
     {
       "expected": "เก้า",
@@ -2525,7 +2525,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05554239999764832
+      "seconds": 0.05513909999990574
     },
     {
       "expected": "เก้า",
@@ -2573,7 +2573,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05612190000101691
+      "seconds": 0.055059000000255764
     },
     {
       "expected": "เสีย",
@@ -2613,7 +2613,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.05204200000298442
+      "seconds": 0.050710999999864725
     },
     {
       "expected": "เสีย",
@@ -2653,7 +2653,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.04943050000292715
+      "seconds": 0.05028779999975086
     },
     {
       "expected": "เสีย",
@@ -2693,7 +2693,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.0508036000028369
+      "seconds": 0.050761899999997695
     },
     {
       "expected": "เสื้อ",
@@ -2743,7 +2743,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05542580000474118
+      "seconds": 0.05583500000011554
     },
     {
       "expected": "เสื้อ",
@@ -2793,7 +2793,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.054622900002868846
+      "seconds": 0.056180399999902875
     },
     {
       "expected": "เสื้อ",
@@ -2843,7 +2843,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05558029999519931
+      "seconds": 0.05614229999991949
     },
     {
       "expected": "กลัว",
@@ -2889,7 +2889,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05629400000179885
+      "seconds": 0.0564131000000998
     },
     {
       "expected": "กลัว",
@@ -2935,7 +2935,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.05600090000370983
+      "seconds": 0.05615209999996296
     },
     {
       "expected": "กลัว",
@@ -2981,7 +2981,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 3,
-      "seconds": 0.06050150000373833
+      "seconds": 0.05640490000041609
     },
     {
       "expected": "ภู่",
@@ -3031,7 +3031,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 4,
-      "seconds": 0.0716517000037129
+      "seconds": 0.06866739999986748
     },
     {
       "expected": "ภู่",
@@ -3081,7 +3081,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 4,
-      "seconds": 0.060410500002035405
+      "seconds": 0.06054800000038085
     },
     {
       "expected": "ภู่",
@@ -3131,7 +3131,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 4,
-      "seconds": 0.06172289999813074
+      "seconds": 0.06089260000044305
     },
     {
       "expected": "ศักดิ์",
@@ -3213,7 +3213,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 7,
-      "seconds": 0.08837080000375863
+      "seconds": 0.08567539999967266
     },
     {
       "expected": "ศักดิ์",
@@ -3295,7 +3295,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 7,
-      "seconds": 0.0828791000021738
+      "seconds": 0.0773111999997127
     },
     {
       "expected": "ศักดิ์",
@@ -3377,7 +3377,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 7,
-      "seconds": 0.07692800000222633
+      "seconds": 0.07702860000063083
     },
     {
       "expected": "ใคร",
@@ -3431,7 +3431,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 4,
-      "seconds": 0.060935900000913534
+      "seconds": 0.061664000000746455
     },
     {
       "expected": "ใคร",
@@ -3485,7 +3485,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 4,
-      "seconds": 0.06273570000485051
+      "seconds": 0.0876416999999492
     },
     {
       "expected": "ใคร",
@@ -3539,7 +3539,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 4,
-      "seconds": 0.06042610000440618
+      "seconds": 0.06426060000012512
     },
     {
       "expected": "ญา\nภ้",
@@ -3611,7 +3611,7 @@
       "passed": true,
       "line_count": 2,
       "crops": 6,
-      "seconds": 0.10219379999762168
+      "seconds": 0.10142550000000483
     },
     {
       "expected": "ญา\nภ้",
@@ -3683,7 +3683,7 @@
       "passed": true,
       "line_count": 2,
       "crops": 6,
-      "seconds": 0.081662900003721
+      "seconds": 0.0821087999993324
     },
     {
       "expected": "ญา\nภ้",
@@ -3755,7 +3755,7 @@
       "passed": true,
       "line_count": 2,
       "crops": 6,
-      "seconds": 0.08085030000074767
+      "seconds": 0.08153989999937039
     },
     {
       "expected": "ญา\nภ้",
@@ -3827,7 +3827,7 @@
       "passed": true,
       "line_count": 2,
       "crops": 6,
-      "seconds": 0.09889230000408133
+      "seconds": 0.09512350000022707
     },
     {
       "expected": "ญา\nภ้",
@@ -3899,7 +3899,7 @@
       "passed": true,
       "line_count": 2,
       "crops": 6,
-      "seconds": 0.08324030000221683
+      "seconds": 0.08325679999961721
     },
     {
       "expected": "ญา\nภ้",
@@ -3971,7 +3971,7 @@
       "passed": true,
       "line_count": 2,
       "crops": 6,
-      "seconds": 0.0828618000014103
+      "seconds": 0.08719380000002275
     },
     {
       "expected": "ญา\nภ้",
@@ -4043,7 +4043,7 @@
       "passed": true,
       "line_count": 2,
       "crops": 6,
-      "seconds": 0.09877030000643572
+      "seconds": 0.09750010000061593
     },
     {
       "expected": "ญา\nภ้",
@@ -4115,7 +4115,7 @@
       "passed": true,
       "line_count": 2,
       "crops": 6,
-      "seconds": 0.08399609999469249
+      "seconds": 0.08551669999997102
     },
     {
       "expected": "ญา\nภ้",
@@ -4187,7 +4187,7 @@
       "passed": true,
       "line_count": 2,
       "crops": 6,
-      "seconds": 0.08485490000020945
+      "seconds": 0.08373909999954776
     },
     {
       "expected": "ญ",
@@ -4223,7 +4223,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.048944999995001126
+      "seconds": 0.049747199999728764
     },
     {
       "expected": "ญ",
@@ -4259,7 +4259,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.049450799997430295
+      "seconds": 0.05025209999985236
     },
     {
       "expected": "ญ",
@@ -4295,7 +4295,7 @@
       "passed": true,
       "line_count": 1,
       "crops": 2,
-      "seconds": 0.04954600000201026
+      "seconds": 0.04965249999986554
     }
   ]
 }

@@ -35,7 +35,7 @@ echo.
 set /p choice="  กรุณาเลือกเมนู (1-5 หรือ Q): "
 
 if /i "%choice%"=="1" (
-    .venv\Scripts\python.exe yolo_detector.py sample_images/Test_thai_01.png --mode yolo --color black --lang thai --save
+    .venv\Scripts\python.exe yolo_detector.py sample_images/Test_thai_01.png --mode yolo --lang thai --save
     goto menu
 )
 if /i "%choice%"=="2" (
@@ -43,7 +43,7 @@ if /i "%choice%"=="2" (
     goto menu
 )
 if /i "%choice%"=="3" (
-    .venv\Scripts\python.exe yolo_detector.py sample_images/test_thai_cat.png --mode yolo --color green --lang thai-legacy --save
+    .venv\Scripts\python.exe yolo_detector.py sample_images/test_thai_cat.png --mode yolo --lang thai-legacy --save
     goto menu
 )
 if /i "%choice%"=="4" (

@@ -1,4 +1,4 @@
-"""Native-resolution tiled inference and conservative, size-aware dot fusion."""
+"""Native-resolution YOLO tiles and conservative, size-aware box deduplication."""
 
 import math
 
@@ -32,7 +32,7 @@ def tile_windows(width, height, size=1280, overlap=0.2, max_tiles=16):
 
 
 def merge_dots(preferred, candidates):
-    """Keep CV centroids when available; merge only within the smaller dot's radius.
+    """Keep overview centroids; merge tile duplicates within the smaller dot's radius.
 
     Unlike a fixed distance threshold, this preserves distinct adjacent small
     dots. Input dictionaries are copied so detector results remain independent.
@@ -52,6 +52,4 @@ def merge_dots(preferred, candidates):
         else:
             if 'confidence' in dot:
                 best['confidence'] = max(best.get('confidence', 0), dot['confidence'])
-            if best.get('source') == 'opencv':
-                best['source'] = 'both'
     return merged

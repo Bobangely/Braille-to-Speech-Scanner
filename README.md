@@ -1,65 +1,52 @@
-# Braille-to-Speech Scanner
+# Thai Braille Reader — YOLO
 
-ต้นแบบอ่านจุดเบรลล์ที่แต้มสีด้วยกล้อง: **YOLO → แยกบรรทัดและ crop ทีละเซลล์ → YOLO อ่าน crop → จับคู่ marker → ประกอบข้อความไทย/อังกฤษ**
+branch `codex/yolo-cell-stream` ใช้ **YOLO เป็นตัวตรวจจับเดียว**: ตรวจจุด → crop เซลล์ → YOLO อ่าน crop → จับ marker → ประกอบข้อความไทย/อังกฤษ
 
-branch ปัจจุบัน `codex/yolo-cell-stream` แยกจาก `feature/yolo-detection` เน้น YOLO; weights ที่มีตรวจจุด และใช้เรขาคณิตเสนอกรอบเซลล์
+ถอด CV/Hybrid และ fallback ตรวจสีออกจากเส้นทางใช้งานแล้ว `cv2` ยังใช้เปิดกล้องและจัดการภาพ โค้ด CV เก่าอยู่ใน `archive/legacy_cv/` เพื่ออ้างอิงเท่านั้น
 
-รอบพัฒนาปัจจุบันเน้น algorithm และ dataset บนคอมพิวเตอร์ ยังไม่รับรองประสิทธิภาพบน Redxa Dragon Q6A
+## งานรอบปัจจุบัน
 
-## เริ่มใช้งาน
+สร้าง dataset เบรลล์ไทยสังเคราะห์ **3,000 ภาพ**: train 2,400 / validation 300 / test 300 อยู่ใน `datasets/thai_synthetic/seed_20260908/` พร้อม label จุดและข้อมูลเซลล์/บรรทัด ภาพฝึกไม่มีกรอบ debug ทับ
 
-เปิดกล้องด้วย `Start_Scanner_YOLO.bat` หรือรันจากโฟลเดอร์โปรเจกต์:
+**[รีวิวภาษาไทย สิ่งที่ทำ ผลตรวจ และวิธีฝึกต่อ](docs/SYNTHETIC_DATASET.md)**
 
-```powershell
-.venv\Scripts\python.exe camera_reader.py --detector yolo --yolo-pipeline stream --lang thai --res fhd --sharp 0
-```
-
-ตรวจภาพเดี่ยว:
+ข้อมูลที่สร้างในเครื่องถูกแยกจาก source code ด้วย `.gitignore` หากเริ่มจาก clone ใหม่ ให้สร้างด้วยคำสั่งนี้:
 
 ```powershell
-.venv\Scripts\python.exe yolo_detector.py path/to/image.png --mode yolo --lang thai --save --dump-stream
+.venv\Scripts\python.exe tools\training\generate_yolo_training.py
 ```
 
-โหมด YOLO stream ไม่ใช้การตรวจสี; `--color` ใช้กับ CV/Hybrid ซึ่งยังเปิดเปรียบเทียบได้อย่างชัดเจน ภาพผลลัพธ์และรายงาน crop บันทึกใน `output/` ปุ่ม `P` ในกล้องเก็บภาพดิบ `*_raw.png` ควบคู่ภาพผลลัพธ์
+ตัวสร้างไม่เขียนทับ dataset เดิม การเพิ่มข้อมูลใช้ `--extend-from` และ seed ใหม่ โดยคง validation/test เดิมไว้ ดูตัวอย่างในเอกสารรีวิว
 
-`--tile-size 0` ปิดการตรวจส่วนย่อยเพิ่มเติมหาก AI ช้า หน้าจอใช้ preview กว้างไม่เกิน 1280 พิกเซล ส่วน AI ยังรับภาพต้นฉบับ/ภาพครอปที่ไม่ขยายพิกเซล
+## ฝึก YOLO
 
-## ภาษาไทย: ตารางใหม่กับภาพเก่า
+```powershell
+.venv\Scripts\python.exe tools\training\train_yolo.py --data datasets/thai_synthetic/seed_20260908/data.yaml --epochs 30 --batch 8 --imgsz 640 --device cpu --name thai_synthetic_round1
+```
 
-- `--lang thai` ใช้ตารางที่ตรวจเทียบ Liblouis และ World Braille Usage
-- ภาพไทยสังเคราะห์เดิมใน `sample_images/` ใช้รหัสสระ/วรรณยุกต์เก่าบางตัว ให้ทดสอบด้วย `--lang thai-legacy` ใน `yolo_detector.py`
-- `generate_test.py` สร้างภาพตามตารางใหม่ใน `sample_images/standard/` โดยไม่ทับชุดภาพเก่า
-- อย่านำคะแนนจากภาพเก่ามาอ้างเป็นความแม่นยำของเบรลล์มาตรฐานหรือกล้องจริง
+เก็บโมเดลทดลองใน `runs/detect/<ชื่อรอบ>/weights/` ไม่แทนที่ `models/braille_yolo.pt` อัตโนมัติ ใช้ `--weights` เพื่อฝึกต่อเป็นรอบใหม่ และ `--resume <last.pt>` เฉพาะรอบที่ถูกขัดจังหวะ
 
-## โครงสร้างที่ใช้งาน
+## ใช้งานกล้องและภาพเดี่ยว
 
-| ตำแหน่ง | หน้าที่ |
-|---|---|
-| `camera_reader.py`, `live_preview.py` | กล้อง งาน AI เบื้องหลัง และหน้าจอ |
-| `yolo_detector.py`, `yolo_cell_stream.py` | YOLO, แยกบรรทัด/crop, อ่านเซลล์ และจับคู่ marker |
-| `detector.py`, `dot_fusion.py` | CV/Hybrid เดิม และเครื่องมือ tiles/ลบจุดซ้ำ |
-| `config_thai.py`, `thai_decoder.py` | รหัสไทยมาตรฐานและการประกอบข้อความ |
-| `decoder.py`, `config.py`, `config_thai_legacy.py` | API decoder, อังกฤษ และความเข้ากันได้กับภาพเก่า |
-| `main.py`, `tts.py` | อ่านภาพด้วย CV และส่วนสังเคราะห์เสียง |
-| `tests/` | ชุดทดสอบอัตโนมัติ |
-| `tools/training/` | สร้างข้อมูลและฝึก YOLO |
-| `tools/diagnostics/` | ตรวจกล้อง/จุด และวัดเวลาวาดหน้าจอ |
-| `models/`, `datasets/`, `sample_images/` | โมเดล ข้อมูลฝึก และภาพต้นฉบับ |
-| `output/` | รายงานและภาพผลลัพธ์ |
-| `archive/` | README และสคริปต์ตรวจแบบเก่าที่เก็บไว้อ้างอิง |
+เปิด `Start_Scanner_YOLO.bat` หรือ:
 
-## ทดสอบ
+```powershell
+.venv\Scripts\python.exe camera_reader.py --lang thai --res fhd --sharp 0
+.venv\Scripts\python.exe yolo_detector.py path/to/image.png --lang thai --save --dump-stream
+```
+
+ระบุ `--model <ไฟล์ best.pt>` เพื่อทดลองโมเดลใหม่ ปุ่ม `P` ในกล้องเก็บภาพดิบ `*_raw.png` ควบคู่ภาพผลลัพธ์สำหรับตรวจข้อมูลภายหลัง
+
+## ตรวจสอบ
 
 ```powershell
 .venv\Scripts\python.exe -m unittest discover -s tests -v
+.venv\Scripts\python.exe tools\training\validate_dataset.py datasets/thai_synthetic/seed_20260908
 .venv\Scripts\python.exe tools\diagnostics\benchmark_yolo_stream.py
-.venv\Scripts\python.exe benchmark_detection.py --dataset standard --mode hybrid --output output/standard_thai_benchmark.json
-.venv\Scripts\python.exe benchmark_detection.py --dataset legacy --mode hybrid --scales 1 .25 .15 --output output/legacy_benchmark.json
-.venv\Scripts\python.exe tools\diagnostics\benchmark_preview.py
 ```
 
-YOLO stream ผ่าน 99/99 ภาพสังเคราะห์ (33 กรณี × 3 ขนาด) และ 36 unit tests ยังไม่ใช่ผลความแม่นยำจากกล้องจริงหรือความเร็วบนบอร์ด
+ผ่าน 31 tests และ YOLO weights หลักยังอ่านชุดสังเคราะห์มาตรฐานได้ 99/99 ภาพหลังถอด CV ออก ทดลองฝึกสั้น 1 epoch บนชุดเล็กแล้ว ส่วนชุดหลักยังไม่ได้ฝึกเต็มรอบ
 
-[การใช้ YOLO cell stream และผลทดสอบ](docs/YOLO_CELL_STREAM.md) · [รายละเอียดภาษาไทยและกล้องรอบก่อน](docs/THAI_AND_CAMERA.md) · [การปรับจุดเล็กรอบก่อน](DETECTION_VALIDATION.md)
+คะแนนนี้ยังไม่ยืนยันความแม่นยำกับหนังสือจริงหรือ FPS บน Redxa ระบบเสียงในหน้ากล้องยังปิดไว้ตามโค้ดเดิม
 
-โปรเจกต์ใช้ environment เดิม `.venv` โมเดล YOLO ที่ฝึกแล้วอยู่ใน `models/braille_yolo.pt` และยังไม่ได้เทรนใหม่ในรอบนี้ ระบบเสียงในหน้ากล้องยังถูกปิดไว้ตามโค้ดเดิม
+[การทำงานของ cell stream และข้อจำกัด](docs/YOLO_CELL_STREAM.md) · [ประวัติโค้ด CV ที่เลิกใช้](archive/legacy_cv/README.md)

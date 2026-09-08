@@ -1,191 +1,85 @@
+"""Fine-tune local YOLO weights on an audited dataset without replacing production weights."""
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-"""
-YOLO Training Script for Braille Dot Detection
-=================================================
-สคริปต์สำหรับ train YOLOv8 model ให้ตรวจจับจุดเบรลล์
-
-ขั้นตอนการทำงาน:
-    1. เช็คว่ามี training data (datasets/braille_dots/) หรือยัง
-       ถ้ายังไม่มี จะสร้างให้อัตโนมัติ
-    2. โหลด YOLOv8n (nano) pre-trained model จาก Ultralytics
-    3. Train บน dataset ที่สร้าง
-    4. บันทึก model ไว้ที่ runs/detect/train/weights/best.pt
-
-การใช้งาน:
-    .venv\\Scripts\\python.exe train_yolo.py              ← train ด้วยค่า default
-    .venv\\Scripts\\python.exe train_yolo.py --epochs 50  ← กำหนดจำนวน epochs
-    .venv\\Scripts\\python.exe train_yolo.py --resume     ← resume training จากครั้งก่อน
-
-YOLO Training Parameters อธิบาย:
-    - epochs: จำนวนรอบ training ทั้งหมด (มากขึ้น = แม่นยำขึ้น แต่ช้าลง)
-    - batch: จำนวนภาพต่อ batch (ใหญ่ขึ้น = ใช้ RAM/VRAM มากขึ้น แต่เร็วขึ้น)
-    - imgsz: ขนาดภาพ input สำหรับ YOLO (640 = มาตรฐาน)
-    - device: อุปกรณ์ที่ใช้ train ('0' = GPU, 'cpu' = CPU)
-    - patience: หยุด train ถ้า mAP ไม่ดีขึ้นติดต่อกัน N epochs
-"""
-
-import os
-import sys
 import argparse
+from datetime import datetime, timezone
+import hashlib
+import json
+
+from tools.training.validate_dataset import validate_dataset
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
-def check_dataset(data_dir='datasets/braille_dots'):
-    """
-    ตรวจสอบว่ามี training data หรือยัง
-    ถ้ายังไม่มี จะสร้างให้อัตโนมัติ
-    """
-    yaml_path = os.path.join(data_dir, 'data.yaml')
-
-    if os.path.exists(yaml_path):
-        # นับจำนวนภาพ
-        train_dir = os.path.join(data_dir, 'images', 'train')
-        val_dir = os.path.join(data_dir, 'images', 'val')
-        n_train = len(os.listdir(train_dir)) if os.path.exists(train_dir) else 0
-        n_val = len(os.listdir(val_dir)) if os.path.exists(val_dir) else 0
-
-        if n_train > 0 and n_val > 0:
-            print(f"  ✅ Dataset พร้อมแล้ว!")
-            print(f"     Training: {n_train} ภาพ")
-            print(f"     Validation: {n_val} ภาพ")
-            return yaml_path
-
-    print(f"  ⚠️ ไม่พบ dataset — กำลังสร้างอัตโนมัติ...")
-    print()
-
-    from generate_yolo_training import generate_dataset
-    generate_dataset(output_dir=data_dir, num_train=800, num_val=200)
-
-    return os.path.join(data_dir, 'data.yaml')
-
-
-def train(epochs=15, batch=16, imgsz=416, device=None, resume=False):
-    """
-    Train YOLOv8 model สำหรับตรวจจับจุดเบรลล์
-
-    Parameters
-    ----------
-    epochs : int
-        จำนวนรอบ training (default: 30)
-        - 10-20: ทดลองเร็วๆ
-        - 30-50: คุณภาพดี
-        - 100+: คุณภาพสูงสุด (ใช้เวลานาน)
-    batch : int
-        จำนวนภาพต่อ batch (default: 16)
-        - ถ้า GPU memory ไม่พอ ให้ลดเป็น 8 หรือ 4
-    imgsz : int
-        ขนาดภาพ input (default: 640)
-    device : str
-        อุปกรณ์ ('0' = GPU, 'cpu' = CPU, None = auto-detect)
-    resume : bool
-        ถ้า True จะ resume training จากครั้งก่อน
-    """
+def train(data, weights=None, epochs=30, batch=8, imgsz=640, device='cpu',
+          name=None, resume=None, workers=0):
+    data = Path(data).resolve()
+    if data.is_dir():
+        data = data/'data.yaml'
+    if min(epochs, batch, imgsz) < 1 or imgsz % 32 or workers < 0:
+        raise ValueError('Positive epochs/batch, imgsz multiple of 32, and nonnegative workers required')
+    report = validate_dataset(data.parent)
+    name = name or 'synthetic_'+datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')
+    if Path(name).name != name or name in ('.', '..'):
+        raise ValueError('Run name must be a directory name, not a path')
+    project = ROOT/'runs/detect'
+    if not resume and (project/name).exists():
+        raise FileExistsError(f'Run already exists: {project/name}')
+    checkpoint = Path(resume or weights or ROOT/'models/braille_yolo.pt').resolve()
+    if not checkpoint.is_file():
+        raise FileNotFoundError(f'Local weights missing: {checkpoint}')
+    before_hash = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
     from ultralytics import YOLO
-
-    print()
-    print("=" * 60)
-    print("  🧠 YOLO Braille Dot Detector — Training")
-    print("=" * 60)
-    print()
-
-    # 1. เช็ค dataset
-    data_yaml = check_dataset()
-    print()
-
-    # 2. โหลด pre-trained YOLOv8 nano model
-    #    YOLOv8n = รุ่นเล็กสุด (3.2M parameters)
-    #    เหมาะกับ:
-    #    - Dataset ขนาดเล็ก-กลาง
-    #    - ต้องการ inference เร็ว (real-time)
-    #    - Train ได้บน CPU (ช้าหน่อย) หรือ GPU (เร็วมาก)
+    model = YOLO(str(checkpoint))
+    if model.task != 'detect' or model.names != {0: 'braille_dot'}:
+        raise ValueError('Expected a local braille_dot detection checkpoint')
     if resume:
-        model_path = 'runs/detect/train/weights/last.pt'
-        if not os.path.exists(model_path):
-            print(f"  ⚠️ ไม่พบ checkpoint สำหรับ resume: {model_path}")
-            print(f"     จะเริ่ม training ใหม่...")
-            model = YOLO('yolov8n.pt')  # โหลด pre-trained จาก COCO
-        else:
-            model = YOLO(model_path)
-            print(f"  📦 Resuming from: {model_path}")
+        if weights is not None:
+            raise ValueError('Choose --weights for a new round, or --resume for an interrupted round')
+        previous_data = Path(model.ckpt.get('train_args', {}).get('data', '')).resolve()
+        if previous_data != data:
+            raise ValueError('Resume requires the same dataset; use --weights to fine-tune on a new version')
+        if model.ckpt.get('epoch', -1) < 0:
+            raise ValueError('Checkpoint is from a finished run; start a new round with --weights')
+        model.train(resume=True, device=device)
     else:
-        init_weights = 'models/braille_yolo.pt' if os.path.exists('models/braille_yolo.pt') else 'yolov8n.pt'
-        print(f"  📦 โหลด Base Weights: {init_weights}")
-        model = YOLO(init_weights)
-
-    # 3. เริ่ม Training
-    #    Transfer Learning: เริ่มจาก weights ที่เรียนรู้จาก COCO dataset แล้ว
-    #    (80+ classes ของ object ทั่วไป เช่น คน, รถ, แมว)
-    #    แล้ว fine-tune ให้ detect "braille_dot" โดยเฉพาะ
-    print(f"\n  🏋️ เริ่ม Training...")
-    print(f"     Epochs:  {epochs}")
-    print(f"     Batch:   {batch}")
-    print(f"     ImgSize: {imgsz}")
-    print(f"     Device:  {device or 'auto'}")
-    print()
-
-    # Train!
-    # - data: path ไปยัง data.yaml
-    # - epochs: จำนวนรอบ
-    # - batch: จำนวนภาพต่อ batch
-    # - imgsz: ขนาดภาพ
-    # - patience: early stopping (หยุดถ้า mAP ไม่ดีขึ้น N epochs ติดต่อกัน)
-    # - save: บันทึก checkpoint ทุก epoch
-    # - plots: สร้าง training plots (loss, mAP)
-    # - project/name: โฟลเดอร์ output
-    results = model.train(
-        data=data_yaml,
-        epochs=epochs,
-        batch=batch,
-        imgsz=imgsz,
-        device=device or '',   # '' = auto-detect GPU/CPU
-        patience=10,           # หยุดถ้า mAP ไม่ดีขึ้น 10 epochs
-        save=True,
-        plots=True,
-        project='runs/detect',
-        name='train',
-        exist_ok=True,         # เขียนทับโฟลเดอร์เดิมได้
-        verbose=True,
-    )
-
-    # 4. สรุปผลและบันทึกโมเดลหลัก
-    best_pt = 'runs/detect/train/weights/best.pt'
-    if os.path.exists(best_pt):
-        os.makedirs('models', exist_ok=True)
-        import shutil
-        shutil.copy2(best_pt, 'models/braille_yolo.pt')
-        print(f"  💾 บันทึกโมเดลหลักไปที่: models/braille_yolo.pt")
-
-    print()
-    print("=" * 60)
-    print("  ✅ Training เสร็จสมบูรณ์!")
-    print("=" * 60)
-    print(f"  📁 Best Model: runs/detect/train/weights/best.pt")
-    print(f"  📁 Deploy Pt:  models/braille_yolo.pt")
-    print(f"  📊 Plots:      runs/detect/train/")
-    print()
-    print(f"  ขั้นตอนถัดไป:")
-    print(f"    # ทดสอบ model กับภาพ")
-    print(f"    .venv\\Scripts\\python.exe yolo_detector.py sample_images/test_thai_home.png")
-    print()
-
-    return results
+        model.train(data=str(data), epochs=epochs, batch=batch, imgsz=imgsz, device=device,
+                    workers=workers, seed=42, deterministic=True, patience=10,
+                    project=str(project), name=name, exist_ok=False, save=True, plots=True,
+                    # Geometry augmentation is already applied to images AND metadata.
+                    fliplr=0, flipud=0, degrees=0, perspective=0, translate=0, scale=0,
+                    mosaic=0, mixup=0, copy_paste=0, close_mosaic=0,
+                    hsv_h=0, hsv_s=0, hsv_v=0, amp=False)
+    save_dir = Path(model.trainer.save_dir)
+    best = save_dir/'weights/best.pt'
+    last = save_dir/'weights/last.pt'
+    if not best.is_file() or not last.is_file():
+        raise RuntimeError('Training did not produce both best.pt and last.pt')
+    training_report = dict(dataset=str(data), dataset_audit=report, source_weights=str(checkpoint),
+                           source_sha256=before_hash, best_weights=str(best), last_weights=str(last),
+                           best_sha256=hashlib.sha256(best.read_bytes()).hexdigest(),
+                           production_weights_replaced=False, resumed=bool(resume))
+    if not resume and hashlib.sha256(checkpoint.read_bytes()).hexdigest() != before_hash:
+        raise RuntimeError('Source weights changed during training')
+    (save_dir/'training_report.json').write_text(json.dumps(training_report, ensure_ascii=False, indent=2), encoding='utf-8')
+    print(json.dumps(training_report, ensure_ascii=False, indent=2))
+    return best
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Train YOLO for Braille Dot Detection')
-    parser.add_argument('--epochs', type=int, default=15, help='จำนวนรอบ training (default: 15)')
-    parser.add_argument('--batch', type=int, default=16, help='Batch size (default: 16)')
-    parser.add_argument('--imgsz', type=int, default=416, help='Image size (default: 416)')
-    parser.add_argument('--device', type=str, default=None, help='Device: "0"=GPU, "cpu"=CPU')
-    parser.add_argument('--resume', action='store_true', help='Resume training จากครั้งก่อน')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--data', required=True, help='Dataset directory or data.yaml')
+    parser.add_argument('--weights', default=None, help='Previous best.pt for a new training round')
+    parser.add_argument('--resume', default=None, help='Interrupted last.pt; requires the same dataset')
+    parser.add_argument('--epochs', type=int, default=30)
+    parser.add_argument('--batch', type=int, default=8)
+    parser.add_argument('--imgsz', type=int, default=640)
+    parser.add_argument('--device', default='cpu', help='cpu or GPU index such as 0')
+    parser.add_argument('--workers', type=int, default=0)
+    parser.add_argument('--name', default=None)
     args = parser.parse_args()
-
-    train(
-        epochs=args.epochs,
-        batch=args.batch,
-        imgsz=args.imgsz,
-        device=args.device,
-        resume=args.resume,
-    )
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    train(**vars(args))

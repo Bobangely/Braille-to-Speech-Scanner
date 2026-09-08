@@ -5,7 +5,6 @@ import cv2
 import numpy as np
 
 from decoder import decode_cells, decode_cells_verbose
-from detector import BrailleDetector
 from thai_decoder import normalize_thai
 from generate_test import generate_braille_image
 
@@ -49,13 +48,6 @@ class ThaiStandardTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertEqual(decode_cells(logical_cells(patterns), lang='thai'), expected)
 
-    def test_reference_patterns_cv_and_small_dots(self):
-        for expected, patterns in CASES:
-            for scale in (1.0, .25, .2):
-                with self.subTest(expected=expected, scale=scale):
-                    image = cv2.resize(render(patterns), None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-                    cells, _ = BrailleDetector().detect(image, annotate=False)
-                    self.assertEqual(decode_cells(cells, lang='thai'), expected)
 
     def test_multicell_overlay_has_single_label(self):
         labels = decode_cells_verbose(logical_cells(['6', '13456', '16']), lang='thai')
@@ -78,12 +70,6 @@ class ThaiStandardTests(unittest.TestCase):
         self.assertEqual(normalize_thai('ก้ิ'), 'กิ้')
         self.assertEqual(normalize_thai('ขูาว แลืว'), 'ขูาว แลืว')
 
-    def test_common_words_generated_with_standard_map(self):
-        for word in ['ภาษา', 'ธรรม', 'หญิง', 'ผู้ใหญ่', 'ภูมิ', 'ศรี', 'ก้าน',
-                     'เก้า', 'เกือบ', 'เสียง', 'เรื่อง', 'กลัว', 'ไปเที่ยว', 'ภูเขา']:
-            with self.subTest(word=word):
-                cells, _ = BrailleDetector().detect(generate_braille_image(word, lang='thai'), annotate=False)
-                self.assertEqual(decode_cells(cells, lang='thai'), word)
 
 
 if __name__ == '__main__':
