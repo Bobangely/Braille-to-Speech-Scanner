@@ -28,6 +28,11 @@ def _records(root, visited=None):
 def validate_dataset(directory):
     root = Path(directory).resolve()
     config = yaml.safe_load((root/'data.yaml').read_text(encoding='utf-8'))
+    # Ultralytics resolves relative split lists against this field. Audit the
+    # same files that training will read, including when the YAML was edited.
+    configured_root = Path(config.get('path', ''))
+    if not configured_root.is_absolute() or configured_root.resolve() != root:
+        raise ValueError('Dataset path must be the absolute path of this dataset version')
     if config.get('names') != {0: 'braille_dot'} or config.get('nc') != 1:
         raise ValueError('Dataset must contain exactly class 0: braille_dot')
     expected = {}

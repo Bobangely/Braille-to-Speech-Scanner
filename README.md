@@ -1,5 +1,7 @@
 # Thai Braille Reader — YOLO
 
+รีวิวก่อน merge: [บั๊กที่แก้ การเก็บโค้ด ผลตรวจ และข้อจำกัด](docs/PRE_MERGE_REVIEW_TH.md)
+
 branch `codex/yolo-cell-stream` ใช้ **YOLO เป็นตัวตรวจจับเดียว**: ตรวจจุด → crop เซลล์ → YOLO อ่าน crop → จับ marker → ประกอบข้อความไทย/อังกฤษ
 
 ถอด CV/Hybrid และ fallback ตรวจสีออกจากเส้นทางใช้งานแล้ว `cv2` ยังใช้เปิดกล้องและจัดการภาพ โค้ด CV เก่าอยู่ใน `archive/legacy_cv/` เพื่ออ้างอิงเท่านั้น
@@ -45,7 +47,7 @@ branch `codex/yolo-cell-stream` ใช้ **YOLO เป็นตัวตรว�
 .venv\Scripts\python.exe tools\diagnostics\benchmark_yolo_stream.py
 ```
 
-ผ่าน 31 tests และ YOLO weights หลักยังอ่านชุดสังเคราะห์มาตรฐานได้ 99/99 ภาพหลังถอด CV ออก ทดลองฝึกสั้น 1 epoch บนชุดเล็กแล้ว ส่วนชุดหลักยังไม่ได้ฝึกเต็มรอบ
+ผ่าน 46 tests และ YOLO weights หลักยังอ่านชุดสังเคราะห์มาตรฐานได้ 99/99 ภาพหลังรีวิวก่อน merge ทดลองฝึกสั้น 1 epoch บนชุดเล็กแล้ว ส่วนชุดหลักยังไม่ได้ฝึกเต็มรอบ
 
 คะแนนนี้ยังไม่ยืนยันความแม่นยำกับหนังสือจริงหรือ FPS บน Redxa ระบบเสียงในหน้ากล้องยังปิดไว้ตามโค้ดเดิม
 

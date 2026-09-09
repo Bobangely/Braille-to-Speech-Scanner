@@ -65,6 +65,34 @@ def _cell_pitch(column_centers, anchors, spacing):
     return min(candidates, key=score)
 
 
+def _line_rows(rows, centers, spacing):
+    """Separate incompatible row gaps and reject runs with no clear line phase."""
+    gaps = np.diff(centers)
+    nearby = gaps[(gaps >= .65*spacing) & (gaps <= 1.5*spacing)]
+    row_pitch = float(np.median(nearby)) if len(nearby) else spacing
+    bands = []
+    for row, center in zip(rows, centers):
+        gap = (center-bands[-1][-1][0])/row_pitch if bands else None
+        if gap is None or gap > 2.15 or abs(gap-round(gap)) > .15:
+            bands.append([])
+        bands[-1].append((center, row))
+
+    lines = []
+    for band in bands:
+        extent = int(round((band[-1][0]-band[0][0])/row_pitch)) + 1
+        if extent > 3 and extent % 3:
+            raise ValueError('Ambiguous Braille line boundaries: include complete '
+                             'three-row cells or isolate a line in the camera ROI')
+        current = []
+        for item in band:
+            if current and item[0]-current[0][0] > 2.35*row_pitch:
+                lines.append(current)
+                current = []
+            current.append(item)
+        lines.append(current)
+    return lines, row_pitch
+
+
 def plan_cells(dots, image_shape):
     """Split rows into lines of at most three rows BEFORE assigning any cell.
 
@@ -84,13 +112,7 @@ def plan_cells(dots, image_shape):
     rectified = points @ rotation
     rows = _clusters(rectified[:, 1], .45 * spacing)
     row_centers = [float(np.median(rectified[row, 1])) for row in rows]
-    lines = []
-    for row, center in zip(rows, row_centers):
-        if (not lines or len(lines[-1]) == 3
-                or center-lines[-1][0][0] > 2.35*spacing
-                or center-lines[-1][-1][0] > 2.15*spacing):
-            lines.append([])
-        lines[-1].append((center, row))
+    lines, row_pitch = _line_rows(rows, row_centers, spacing)
 
     cells = []
     for line_id, line in enumerate(lines):
@@ -101,10 +123,10 @@ def plan_cells(dots, image_shape):
             expected_rows = [observed_rows[0] + i*dy for i in range(3)]
         elif len(line) == 2:
             gap = observed_rows[1]-observed_rows[0]
-            dy = gap/2 if gap > 1.5*spacing else gap
+            dy = gap/2 if gap > 1.5*row_pitch else gap
             expected_rows = [observed_rows[0] + i*dy for i in range(3)]
         else:
-            dy = spacing
+            dy = row_pitch
             expected_rows = [observed_rows[0] + i*dy for i in range(3)]
         lower = expected_rows[0] - .45*dy
         upper = expected_rows[-1] + .45*dy
@@ -174,7 +196,7 @@ def plan_cells(dots, image_shape):
                 x=center[0], y=center[1], line_id=line_id, line_cell_index=line_cell_index,
                 reading_x=float((left+right)/2), dot_spacing=dx, cell_pitch=pitch,
                 pitch_ambiguous=len(anchors) < 2,
-                column_ambiguous=column_ambiguous, row_ambiguous=len(line) < 3,
+                column_ambiguous=column_ambiguous, row_ambiguous=(len(line) == 1 or (len(line) == 2 and observed_rows[-1]-observed_rows[0] < 1.5*row_pitch)),
                 source_dot_ids=source_ids, crop_quad=quad.tolist(),
                 grid=dict(expected_cols=[float(source_slots[1, 0]), float(source_slots[4, 0])],
                           expected_rows=[float(np.mean(source_slots[[r, r+3], 1])) for r in range(3)],
@@ -261,7 +283,8 @@ def pair_markers(cells, lang='thai'):
         distance = following['reading_x']-current['reading_x']
         adjacent = (current['line_id'] == following['line_id']
                     and 0 < distance <= 1.5*max(current['cell_pitch'], following['cell_pitch']))
-        if lang in ('thai', 'th') and adjacent:
+        if (lang.lower() in ('thai', 'th') and adjacent
+                and not current.get('row_ambiguous') and not following.get('row_ambiguous')):
             # Never blindly turn a genuine dot-3 vowel into prefix-6. This repair
             # is restricted to a leading marker whose column phase is ambiguous.
             if (current['dots'] == frozenset({3}) and current['column_ambiguous']

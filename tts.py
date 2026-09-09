@@ -9,7 +9,6 @@ Braille Reader - Text to Speech (TTS) Module
 
 import os
 import sys
-import threading
 
 from decoder import normalize_thai_text
 

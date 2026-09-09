@@ -21,9 +21,7 @@ echo    [Z] / [+]       : Zoom In
 echo    [X] / [-]       : Zoom Out
 echo    [R] / [0]       : Reset Zoom (1.0x)
 echo    [Mouse Wheel]   : ซูมเข้า/ออกด้วยล้อเมาส์
-echo    [SPACE]         : Speak Now (สั่งอ่านทันที)
 echo    [L]             : สลับภาษา (Thai / English)
-echo    [A]             : เปิด/ปิด Auto-TTS
 echo    [P]             : ถ่ายภาพ Snapshot ลง output/
 echo    [Q]             : ปิดโปรแกรม
 echo.

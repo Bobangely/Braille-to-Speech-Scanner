@@ -3,7 +3,6 @@
 import os
 from pathlib import Path
 import sys
-import time
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -72,24 +71,18 @@ class YOLOBrailleDetector:
         self._load_model(model_path)
 
     def _load_model(self, model_path):
-        """ค้นหาและโหลดไฟล์ YOLO weights"""
-        search_paths = [model_path] if model_path else [str(Path(__file__).resolve().parent/'models/braille_yolo.pt')]
+        """Load a local single-class dot detector; fail before scanning on mismatch."""
+        path = Path(model_path) if model_path else Path(__file__).resolve().parent/'models/braille_yolo.pt'
+        if not path.is_file():
+            raise FileNotFoundError(f'Local YOLO weights are unavailable: {path}')
+        from ultralytics import YOLO
 
-        for path in search_paths:
-            if path and path != model_path:
-                path = os.path.join(os.path.dirname(os.path.abspath(__file__)), path)
-            if path and os.path.exists(path):
-                try:
-                    from ultralytics import YOLO
-                    self.model = YOLO(path)
-                    self.model_path = path
-                    print(f"  🧠 [YOLO] โหลดโมเดลสำเร็จ: {path}")
-                    return
-                except Exception as e:
-                    print(f"  ⚠️ [YOLO] โหลดโมเดลล้มเหลว ({path}): {e}")
-
-        print("  ℹ️ [YOLO] ไม่พบโมเดล YOLO ที่โหลดได้; โหมด YOLO จะรายงานข้อผิดพลาด")
-        self.model = None
+        model = YOLO(str(path))
+        if model.task != 'detect' or model.names != {0: 'braille_dot'}:
+            raise ValueError('Expected a detect model with exactly one class: 0: braille_dot')
+        self.model = model
+        self.model_path = str(path.resolve())
+        print(f"  🧠 [YOLO] โหลดโมเดลสำเร็จ: {self.model_path}")
 
 
     def is_yolo_ready(self):
@@ -101,7 +94,7 @@ class YOLOBrailleDetector:
         ตรวจจับจุดเบรลล์ตามโหมดปัจจุบัน
         Returns:
             cells : list of dict (dots, center, x, y, grid)
-            debug_info : dict (dots, mask, annotated, method)
+        debug_info : dict (dots, method, crop and overview diagnostics)
         """
         if self.model is None:
             raise RuntimeError('YOLO weights are unavailable. Provide a local model file.')
@@ -125,10 +118,7 @@ class YOLOBrailleDetector:
             symbols.append(dict(cell_start=start, cell_end=len(cells)-1,
                                 line_id=group[0]['line_id'], symbol=group[0].get('symbol')))
         dots = [dot for cell in cells for dot in cell['read_dots']]
-        mask = np.zeros(image.shape[:2], np.uint8)
-        for dot in dots:
-            cv2.circle(mask, tuple(int(round(v)) for v in dot['center']), 2, 255, -1)
-        return cells, dict(method='yolo_cell_stream', dots=dots, mask=mask,
+        return cells, dict(method='yolo_cell_stream', dots=dots,
                            num_detections=len(dots), overview_detections=len(overview),
                            line_count=len({c['line_id'] for c in cells}),
                            crop_count=len(cells), symbols=symbols,

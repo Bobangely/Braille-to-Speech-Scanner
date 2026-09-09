@@ -18,6 +18,8 @@ def train(data, weights=None, epochs=30, batch=8, imgsz=640, device='cpu',
     data = Path(data).resolve()
     if data.is_dir():
         data = data/'data.yaml'
+    if data.name != 'data.yaml':
+        raise ValueError('Training requires the audited data.yaml, not an alternate YAML file')
     if min(epochs, batch, imgsz) < 1 or imgsz % 32 or workers < 0:
         raise ValueError('Positive epochs/batch, imgsz multiple of 32, and nonnegative workers required')
     report = validate_dataset(data.parent)

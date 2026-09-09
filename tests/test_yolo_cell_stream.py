@@ -45,6 +45,30 @@ def test_crop_predictor(crops):
 
 
 class CellStreamTests(unittest.TestCase):
+    def test_sparse_line_does_not_borrow_dots_from_next_line(self):
+        image, dots, _ = page([['23', '23'], ['13456', '13456']], line_pitch=128)
+        cells = list(CellStream(test_crop_predictor).iter_cells(image, dots))
+        self.assertEqual([c['line_id'] for c in cells], [0, 0, 1, 1])
+        first_ids = {i for c in cells[:2] for i in c['source_dot_ids']}
+        second_ids = {i for c in cells[2:] for i in c['source_dot_ids']}
+        self.assertEqual(first_ids, set(range(4)))
+        self.assertEqual(second_ids, set(range(4, len(dots))))
+        self.assertTrue(all(c['row_ambiguous'] for c in cells[:2]))
+        self.assertTrue(all(not c['row_ambiguous'] for c in cells[2:]))
+        self.assertEqual([t['char'] for t in tokenize_thai(cells)[:2]], ['�', '�'])
+        self.assertEqual([c['dots'] for c in cells[2:]], [frozenset({1, 3, 4, 5, 6})]*2)
+
+    def test_uniform_rows_with_missing_line_phase_are_rejected(self):
+        image, dots, _ = page([['23', '23'], ['1245', '1245']], line_pitch=120)
+        with self.assertRaisesRegex(ValueError, 'Ambiguous Braille line boundaries'):
+            list(CellStream(test_crop_predictor).iter_cells(image, dots))
+
+    def test_two_observed_rows_are_not_silently_treated_as_top_and_middle(self):
+        image, dots, _ = page([['23', '23']])
+        cells = list(CellStream(test_crop_predictor).iter_cells(image, dots))
+        self.assertEqual(decode_thai(cells), '��')
+        self.assertEqual(decode_cells(cells, 'english'), '��')
+
     def test_adjacent_lines_never_merge_or_share_source_dots(self):
         for gap in (1.0, 1.2, 1.8, 2.5):
             for angle in (-6, 0, 6):

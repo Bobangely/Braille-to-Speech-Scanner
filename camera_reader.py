@@ -1,7 +1,7 @@
 """
 Braille Reader - Real-time Webcam Scanner
 ===========================================
-ระบบสแกนและอ่านออกเสียงอักษรเบรลล์แบบสดผ่านกล้อง Webcam (Real-time OBR + TTS)
+ระบบสแกนอักษรเบรลล์แบบสดผ่านกล้อง Webcam (YOLO cell stream)
 รองรับความละเอียดสูง 4K UHD และ Full HD (FHD) พร้อมระบบปรับระดับความคมชัด (Multi-level Sharpness) & Digital Zoom
 
 ฟีเจอร์เด่น:
@@ -11,8 +11,7 @@ Braille Reader - Real-time Webcam Scanner
 - ระบบ Digital Zoom In / Zoom Out (1.0x - 4.0x) สำหรับขยายอักษรเบรลล์ขนาดเล็ก
 - สแกนเฟรมวิดีโอแบบสดพร้อม 2x3 Virtual Grid Overlay และแถบคำแปลภาษาไทย/อังกฤษ
 - ระบบ Frame Stabilization ตรวจจับความนิ่งของคำก่อนตัดสินใจ
-- ระบบ Auto-TTS Debounce ออกเสียงอัตโนมัติเมื่อข้อความนิ่ง ไม่บล็อก Video Stream
-- สลับสีจุดแต้ม (Blue, Red, Green, Black) และสลับภาษา (ไทย/อังกฤษ) ได้ทันทีผ่านคีย์ลัด
+- สลับภาษา (ไทย/อังกฤษ) ได้ทันทีผ่านคีย์ลัด
 - บันทึกภาพ Snapshot พร้อมคำแปลลงโฟลเดอร์ output/
 
 คีย์ลัด (Hotkeys):
@@ -21,9 +20,7 @@ Braille Reader - Real-time Webcam Scanner
   [Z] / [+] / [=] : ซูมเข้า (Zoom In +0.2x)
   [X] / [-] / [_] : ซูมออก (Zoom Out -0.2x)
   [R] / [0]     : รีเซ็ตการซูม (Reset Zoom 1.0x)
-  [SPACE] / [S] : ออกเสียงข้อความปัจจุบันทันที (Speak Now)
   [L]           : สลับภาษา (Thai <-> English)
-  [A]           : เปิด/ปิดระบบออกเสียงอัตโนมัติ (Toggle Auto-Speak)
   [P]           : ถ่ายภาพ Snapshot บันทึกลง output/
   [Q] / [ESC]   : ออกจากโปรแกรม
 
@@ -44,7 +41,6 @@ from collections import deque
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw
 
 # ปรับ encoding สำหรับ Windows console
 if sys.stdout.encoding != 'utf-8':
@@ -56,7 +52,6 @@ if sys.stdout.encoding != 'utf-8':
 from yolo_detector import YOLOBrailleDetector
 from live_preview import LivePreview
 from decoder import decode_cells, decode_cells_verbose
-from tts import speak, TextToSpeech
 
 
 # รายการความละเอียดมาตรฐานที่สามารถสลับใช้งานได้
@@ -151,17 +146,22 @@ class ThreadedCameraCapture:
         return True
 
     def _capture_loop(self):
-        while self.running:
-            if self.cap is None or not self.cap.isOpened():
-                break
-            ret, frame = self.cap.read()
-            if ret and frame is not None:
+        try:
+            while self.running:
+                if self.cap is None or not self.cap.isOpened():
+                    break
+                ret, frame = self.cap.read()
                 with self.lock:
-                    self.frame = frame
-                    self.frame_id += 1
-                    self.ret = True
-            else:
-                time.sleep(0.005)
+                    self.ret = bool(ret and frame is not None)
+                    self.frame = frame if self.ret else None
+                    if self.ret:
+                        self.frame_id += 1
+                if not ret or frame is None:
+                    time.sleep(0.005)
+        finally:
+            with self.lock:
+                self.ret = False
+                self.frame = None
 
     def read_latest(self, with_id=False):
         """ดึงเฟรมล่าสุดจากกล้องแบบ Non-blocking (0ms delay)"""
@@ -348,9 +348,7 @@ class RealTimeBrailleScanner:
         self,
         camera_id=0,
         lang='thai',
-        auto_speak=True,
         stability_threshold=6,
-        cooldown_seconds=3.0,
         res_preset='4k',
         width=None,
         height=None,
@@ -368,35 +366,30 @@ class RealTimeBrailleScanner:
     ):
         self.camera_id = camera_id
         self.lang = lang.lower()
-        self.auto_speak = auto_speak
         self.stability_threshold = stability_threshold
-        self.cooldown_seconds = cooldown_seconds
         self.detector_mode = detector_mode.lower()
         self.yolo_conf = yolo_conf
 
         # กำหนดระดับความคมชัดเริ่มต้น (0 ถึง 4)
         self.sharpness_idx = max(0, min(len(SHARPNESS_LEVELS) - 1, int(sharpness_level)))
 
-        # กำหนดความละเอียดเริ่มต้น
         self.available_resolutions = list(RESOLUTION_LIST)
-        self.curr_res_idx = 0
-
-        if width and height:
-            self.target_width = int(width)
-            self.target_height = int(height)
-            self.res_name = f"{self.target_width}x{self.target_height}"
-        elif res_preset and res_preset.lower() in ('fhd', '1080p'):
-            self.curr_res_idx = 1
-            self.target_width, self.target_height = 1920, 1080
-            self.res_name = "Full HD"
-        elif res_preset and res_preset.lower() in ('hd', '720p'):
-            self.curr_res_idx = 2
-            self.target_width, self.target_height = 1280, 720
-            self.res_name = "HD 720p"
+        if (width is None) != (height is None):
+            raise ValueError('Provide both camera width and height')
+        if width is not None:
+            if int(width) <= 0 or int(height) <= 0:
+                raise ValueError('Camera dimensions must be positive')
+            self.target_width, self.target_height = int(width), int(height)
         else:
-            self.curr_res_idx = 0
-            self.target_width, self.target_height = 3840, 2160
-            self.res_name = "4K UHD"
+            preset = (res_preset or '4k').lower()
+            if preset not in RESOLUTION_PRESETS:
+                raise ValueError(f'Unknown camera resolution: {res_preset}')
+            self.target_width, self.target_height = RESOLUTION_PRESETS[preset]
+        dimensions = (self.target_width, self.target_height)
+        self.curr_res_idx = next((i for i, (_, w, h) in enumerate(RESOLUTION_LIST)
+                                  if (w, h) == dimensions), 0)
+        self.res_name = next((name for name, w, h in RESOLUTION_LIST
+                              if (w, h) == dimensions), f'{dimensions[0]}x{dimensions[1]}')
 
         self.actual_width = self.target_width
         self.actual_height = self.target_height
@@ -412,10 +405,6 @@ class RealTimeBrailleScanner:
         self._last_submitted_context = None
         self._last_error = None
         self._preview = LivePreview(max_width=1280)
-        self.last_spoken_text = ""
-        self.last_spoken_time = 0.0
-        self.last_seen_text = ""
-        self.is_speaking = False
 
         # ตัวตรวจจับ YOLO
         initial_mode = self.detector_mode
@@ -430,8 +419,6 @@ class RealTimeBrailleScanner:
             max_cells=max_cells,
             proposal_confidence=proposal_confidence,
         )
-        # self.tts = TextToSpeech()  # [COMMENTED OUT] ปิดระบบออกเสียงชั่วคราวเพื่อความสะดวกในการทดสอบ
-        self.tts = None
 
         # Threaded components
         self.camera = None
@@ -561,23 +548,6 @@ class RealTimeBrailleScanner:
         # แปะลงบนเฟรม
         image[vy:vy + vh, vx:vx + vw] = mini
 
-    def _speak_async(self, text, lang):
-        """ออกเสียงใน Background Thread (ปิดการทำงานชั่วคราวตามคำขอ)"""
-        # [COMMENTED OUT] ปิดระบบออกเสียงชั่วคราวเพื่อความสะดวกในการทดสอบอ่าน
-        return
-        # if self.is_speaking or not text.strip():
-        #     return
-        #
-        # def _worker():
-        #     self.is_speaking = True
-        #     try:
-        #         if self.tts:
-        #             self.tts.speak(text, lang=lang)
-        #     finally:
-        #         self.is_speaking = False
-        #
-        # threading.Thread(target=_worker, daemon=True).start()
-
     def _draw_top_hud(self, image, current_text, is_locked):
         """วาดแถบเมนูควบคุมและสถานะด้านบน (Top HUD)"""
         h, w = image.shape[:2]
@@ -590,7 +560,6 @@ class RealTimeBrailleScanner:
 
         # ข้อมูลสถานะ
         lang_text = "THAI [L]" if self.lang == 'thai' else "ENG [L]"
-        auto_text = "AUDIO: OFF (TESTING)"
 
         # Detector Mode badge
         mode_badge = 'YOLO'
@@ -627,7 +596,10 @@ class RealTimeBrailleScanner:
             zoom_color = (200, 200, 200)
 
         # Status badge
-        if is_locked and current_text:
+        if '�' in current_text:
+            status_text = "UNCERTAIN: ADJUST CAMERA / ROI"
+            status_color = (0, 200, 255)
+        elif is_locked and current_text:
             status_text = f"LOCKED: {current_text}"
             status_color = (0, 255, 120)  # Bright Green
         elif current_text:
@@ -647,7 +619,7 @@ class RealTimeBrailleScanner:
         cv2.putText(image, f"| {status_text}", (1025, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, status_color, 2, cv2.LINE_AA)
 
         # วาดคำแนะนำปุ่มกดด้านล่างขวา
-        tip = "[V/F] Res | [E] Sharp | [Z/X] Zoom | [SPACE] Speak | [P] Save | [Q] Quit"
+        tip = "[V/F] Res | [E] Sharp | [Z/X] Zoom | [P] Save | [Q] Quit"
         cv2.putText(image, tip, (w - 535, hud_h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 180, 180), 1, cv2.LINE_AA)
 
     def _on_mouse(self, event, x, y, flags, param):
@@ -687,7 +659,6 @@ class RealTimeBrailleScanner:
         print(f"  ระดับความคมชัด:      Level {lvl_num} [{lvl_name}]")
         print(f"  ภาษาเริ่มต้น:        {self.lang.upper()}")
         print(f"  อัตราการซูมเริ่มต้น:  {self.zoom_level:.1f}x")
-        print(f"  ระบบ Auto-Speak:    {'เปิดใช้งาน' if self.auto_speak else 'ปิดใช้งาน'}")
         print()
         print("  คีย์ลัดและควบคุม:")
         print("    [V] / [F]       - สลับความละเอียด (4K UHD <-> Full HD 1080p <-> HD 720p)")
@@ -696,9 +667,7 @@ class RealTimeBrailleScanner:
         print("    [X] / [-]       - ซูมออก (Zoom Out)")
         print("    [R] / [0]       - รีเซ็ตการซูม (Reset Zoom 1.0x)")
         print("    [Wheel Up/Down] - ซูมเข้า/ออกด้วยล้อเมาส์")
-        print("    [SPACE]         - สั่งอ่านออกเสียงข้อความปัจจุบัน")
         print("    [L]             - สลับภาษา (Thai <-> English)")
-        print("    [A]             - เปิด/ปิด Auto-TTS")
         print("    [P]             - ถ่ายภาพ Snapshot ลง output/")
         print("    [Q]/[ESC]       - ออกจากโปรแกรม")
         print("=" * 70)
@@ -797,8 +766,6 @@ class RealTimeBrailleScanner:
                 self.ai_fps = ai_res['ai_fps']
 
                 # 5. ตรวจสอบความนิ่งของคำ (Stability Buffer)
-                if decoded_text != self.last_seen_text:
-                    self.last_seen_text = decoded_text
                 if ai_res['result_id'] != self._last_stability_result_id:
                     self._last_stability_result_id = ai_res['result_id']
                     if ai_res['result_id'] >= 0 and not ai_res['error']:
@@ -808,7 +775,8 @@ class RealTimeBrailleScanner:
 
                 is_locked = False
                 if len(self.history) == self.stability_threshold:
-                    if all(t == decoded_text for t in self.history) and decoded_text.strip():
+                    if (all(t == decoded_text for t in self.history)
+                            and decoded_text.strip() and '�' not in decoded_text):
                         is_locked = True
 
                 # 6. วาด 2x3 Grid Overlay และแบนเนอร์แสดงผลลัพธ์
@@ -867,11 +835,6 @@ class RealTimeBrailleScanner:
                     self.history.clear()
                     print(f"  🌐 สลับภาษาเป็น: {self.lang.upper()}")
 
-                # [A] -> เปิด/ปิด Auto-TTS
-                elif key in (ord('a'), ord('A')):
-                    self.auto_speak = not self.auto_speak
-                    print(f"  🔊 Auto-TTS: {'เปิด' if self.auto_speak else 'ปิด'}")
-
                 # [P] -> บันทึก Snapshot ความละเอียดสูง
                 elif key in (ord('p'), ord('P')):
                     os.makedirs('output', exist_ok=True)
@@ -922,16 +885,8 @@ def main():
         help='อัตราการซูมเริ่มต้น (เช่น 1.0, 1.5, 2.0; default: 1.0)',
     )
     parser.add_argument(
-        '--no-auto-speak', action='store_true',
-        help='ปิดระบบออกเสียงอัตโนมัติ (ใช้กด SPACE เพื่อออกเสียงแทน)',
-    )
-    parser.add_argument(
         '--stability', type=int, default=6,
         help='จำนวนเฟรมที่ข้อความต้องนิ่งก่อนออกเสียงอัตโนมัติ (default: 6)',
-    )
-    parser.add_argument(
-        '--cooldown', type=float, default=3.0,
-        help='ระยะเวลาหน่วงก่อนอ่านคำซ้ำ (วินาที, default: 3.0)',
     )
     parser.add_argument(
         '--width', type=int, default=None,
@@ -963,9 +918,7 @@ def main():
     scanner = RealTimeBrailleScanner(
         camera_id=args.camera,
         lang=args.lang,
-        auto_speak=not args.no_auto_speak,
         stability_threshold=args.stability,
-        cooldown_seconds=args.cooldown,
         res_preset=args.res,
         width=args.width,
         height=args.height,

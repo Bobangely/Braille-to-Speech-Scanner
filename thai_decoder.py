@@ -5,7 +5,7 @@ import unicodedata
 
 from config_thai import (THAI_BRAILLE_TO_CHAR, THAI_MULTI_CELL, THAI_DIGIT_MAP,
                         THAI_CONSONANTS, THAI_TONE_MARKS, NUMBER_INDICATOR,
-                        COMPOUND_VOWELS, LEADING_VOWELS)
+                        COMPOUND_VOWELS)
 
 CONSONANTS = set(THAI_CONSONANTS.values()) | {
     value for value in THAI_MULTI_CELL.values() if len(value) == 1 and 'ก' <= value <= 'ฮ'
@@ -20,11 +20,24 @@ def _spacing(cell):
     return abs(cols[1] - cols[0]) if cols else 20.0
 
 
+def is_unread_cell(cell):
+    """A proposed cell with a failed crop read is unknown, not a blank space."""
+    return not cell['dots'] and cell.get('crop_status') == 'empty'
+
+
+def cell_read_warning(cell):
+    if is_unread_cell(cell):
+        return 'empty_crop'
+    if cell.get('row_ambiguous'):
+        return 'ambiguous_row_grid'
+    return None
+
+
 def _break_before(cells, index, adjacent=False):
     if index == 0:
         return False
     left, right = cells[index - 1:index + 1]
-    if not left['dots'] or not right['dots']:
+    if any(not cell['dots'] and not is_unread_cell(cell) for cell in (left, right)):
         return True
     if 'line_id' in left and 'line_id' in right and left['line_id'] != right['line_id']:
         return True
@@ -34,6 +47,8 @@ def _break_before(cells, index, adjacent=False):
     spacing = max(1.0, _spacing(right))
     if abs(right.get('y', 0) - left.get('y', 0)) > spacing * 1.5:
         return True
+    if 'x' not in left or 'x' not in right:
+        return False  # Ordered logical cells need no image coordinates.
     dx = right.get('x', 0) - left.get('x', 0)
     return dx < 0 or dx > spacing * (3.4 if adjacent else 6.5)
 
@@ -56,7 +71,9 @@ def tokenize_thai(cells):
         if boundary or not pattern:
             numeric = False
         span, char, warning = 1, '', None
-        if not pattern:
+        if cell_read_warning(cell):
+            char, warning, numeric = '�', cell_read_warning(cell), False
+        elif not pattern:
             char = ' '
         elif pattern == NUMBER_INDICATOR:
             numeric = True
@@ -64,7 +81,8 @@ def tokenize_thai(cells):
             char = THAI_DIGIT_MAP[pattern]
         else:
             numeric = False
-            if index + 1 < len(cells) and not _break_before(cells, index + 1, adjacent=True):
+            if (index + 1 < len(cells) and not cell_read_warning(cells[index + 1])
+                    and not _break_before(cells, index + 1, adjacent=True)):
                 char = THAI_MULTI_CELL.get((pattern, frozenset(cells[index + 1]['dots'])), '')
                 if char:
                     span = 2
@@ -123,7 +141,7 @@ def decode_thai(cells):
         elif token['break_before'] and output and output[-1] not in ' \n':
             output.append(' ')
         char = token['char']
-        if not char:
+        if not char or (char == ' ' and (not output or output[-1] in ' \n')):
             continue
         if char in COMPOUND_VOWELS:
             onset = _onset_index(output)
