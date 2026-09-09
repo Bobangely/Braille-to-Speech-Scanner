@@ -862,7 +862,7 @@ def main():
         description='Braille Reader — ระบบสแกนอักษรเบรลล์ Real-Time รองรับ 4K UHD / Full HD พร้อมปรับระดับความคมชัด & Digital Zoom',
     )
     parser.add_argument(
-        '--camera', type=int, default=0,
+        '--camera', '--source', type=int, default=0, dest='camera',
         help='ID ของกล้อง Webcam (default: 0)',
     )
     parser.add_argument(
