@@ -9,7 +9,8 @@ Braille Reader - Text to Speech (TTS) Module
 
 import os
 import sys
-import threading
+
+from decoder import normalize_thai_text
 
 
 class TextToSpeech:
@@ -56,6 +57,9 @@ class TextToSpeech:
         text = text.strip()
         lang_lower = lang.lower()
         is_thai = lang_lower in ('thai', 'th')
+
+        if is_thai:
+            text = normalize_thai_text(text)
 
         # เลือก method
         if method == 'auto':

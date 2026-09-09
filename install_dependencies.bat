@@ -46,7 +46,7 @@ if not exist ".venv" (
 
 REM 3. อัปเกรด pip และติดตั้ง Requirements
 echo  📥 กำลังติดตั้ง Dependencies จาก requirements.txt...
-echo  (opencv-python, numpy, Pillow, pyttsx3, gTTS)
+echo  (opencv-python, numpy, Pillow, pyttsx3, gTTS, ultralytics, PyYAML)
 echo.
 
 .venv\Scripts\python.exe -m pip install --upgrade pip
@@ -64,8 +64,10 @@ echo    🎉 ติดตั้ง Dependencies ทั้งหมดเรี�
 echo  ======================================================
 echo.
 echo  คุณสามารถเริ่มใช้งานได้ทันทีโดยดับเบิ้ลคลิก:
-echo    - Start_Scanner_FHD.bat (โหมด Full HD 1080p)
-echo    - Start_Scanner_4K.bat  (โหมด 4K Ultra HD)
-echo    - Test_Camera.bat       (ทดสอบกล้อง)
+echo    - Start_Scanner_YOLO.bat (โหมด AI Hybrid CV+YOLO - แนะนำ)
+echo    - Start_Scanner_FHD.bat  (โหมด Full HD 1080p)
+echo    - Start_Scanner_4K.bat   (โหมด 4K Ultra HD)
+echo    - Test_YOLO.bat          (ทดสอบโมเดล YOLO)
+echo    - Test_Camera.bat        (ทดสอบกล้อง)
 echo.
 pause

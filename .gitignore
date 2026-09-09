@@ -11,6 +11,8 @@ wheels/
 
 # Output artifacts
 output/*.png
+output/*.mp3
+output/*_stream/
 !output/.gitkeep
 
 # IDE / Editor
@@ -18,3 +20,9 @@ output/*.png
 .idea/
 *.swp
 .DS_Store
+
+# YOLO datasets & training runs
+datasets/
+runs/
+yolov8n.pt
+scratch/

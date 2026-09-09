@@ -15,10 +15,7 @@ echo    [Z] / [+]       : Zoom In
 echo    [X] / [-]       : Zoom Out
 echo    [R] / [0]       : Reset Zoom (1.0x)
 echo    [Mouse Wheel]   : Zoom In/Out
-echo    [SPACE]         : Speak Now
-echo    [C]             : Switch Color (Blue / Red / Green / Black)
 echo    [L]             : Switch Language (Thai / English)
-echo    [A]             : Toggle Auto-TTS
 echo    [P]             : Save Snapshot to output/
 echo    [Q]             : Quit
 echo.
@@ -34,8 +31,8 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 if exist ".venv\Scripts\python.exe" (
-    .venv\Scripts\python.exe camera_reader.py --camera 0 --res fhd --sharp 2 --color blue --lang thai
+    .venv\Scripts\python.exe camera_reader.py --camera 0 --res fhd --sharp 2 --lang thai
 ) else (
-    python camera_reader.py --camera 0 --res fhd --sharp 2 --color blue --lang thai
+    python camera_reader.py --camera 0 --res fhd --sharp 2 --lang thai
 )
 pause

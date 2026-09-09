@@ -21,8 +21,8 @@ echo  Press Q in the camera window to quit.
 echo.
 
 if exist ".venv\Scripts\python.exe" (
-    .venv\Scripts\python.exe test_camera.py
+    .venv\Scripts\python.exe tools\diagnostics\check_camera.py
 ) else (
-    python test_camera.py
+    python tools\diagnostics\check_camera.py
 )
 pause

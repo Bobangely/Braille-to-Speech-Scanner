@@ -1,137 +1,54 @@
-#  Braille-to-Speech Scanner (Color-Assisted OBR)
+# Thai Braille Reader — YOLO
 
-ระบบอ่านและออกเสียงอักษรเบรลล์ภาษาไทยและภาษาอังกฤษแบบสด (Optical Braille Recognition & Text-to-Speech)  
-โดยใช้เทคนิคการแต้มสีบนจุดนูนร่วมกับ Computer Vision (**OpenCV + Python**) รองรับกล้อง **4K Ultra HD & Full HD** พร้อมระบบ **Digital Zoom** และรันได้ทั้งบน PC / Windows และ Edge AI Board (**Dragon Q6A**)
+รีวิวก่อน merge: [บั๊กที่แก้ การเก็บโค้ด ผลตรวจ และข้อจำกัด](docs/PRE_MERGE_REVIEW_TH.md)
 
----
+branch `codex/yolo-cell-stream` ใช้ **YOLO เป็นตัวตรวจจับเดียว**: ตรวจจุด → crop เซลล์ → YOLO อ่าน crop → จับ marker → ประกอบข้อความไทย/อังกฤษ
 
-##  ฟีเจอร์เด่น (Key Features)
+ถอด CV/Hybrid และ fallback ตรวจสีออกจากเส้นทางใช้งานแล้ว `cv2` ยังใช้เปิดกล้องและจัดการภาพ โค้ด CV เก่าอยู่ใน `archive/legacy_cv/` เพื่ออ้างอิงเท่านั้น
 
-- 🇹🇭 **มาตรฐานอักษรเบรลล์ไทยสากล 100% (Thai Braille Grade 1)**
-  - พยัญชนะไทยครบ 44 ตัว (ก-ฮ) ทั้งแบบ 1 เซลล์ และ 2 เซลล์ (Prefix 6, 36, 356)
-  - สระครบทุกรูปแบบ (สระหน้า เ- แ- โ- ไ- ใ-, สระหลัง -ะ -า -ำ, สระบน/ล่าง -ิ -ี -ึ -ื -ุ -ู, ไม้หันอากาศ, ไม้ไต่คู้, การันต์)
-  - สระผสมสมบูรณ์แบบ (เ◌า, เ◌ีย, เ◌ือ, เ◌อ, เ◌ิ◌, ◌ัว)
-  - วรรณยุกต์ครบ 4 รูป (ไม้เอก, ไม้โท, ไม้ตรี, ไม้จัตวา)
-- 🇬🇧 **รองรับอักษรเบรลล์ภาษาอังกฤษ (English Braille Grade 1)**
-  - ตัวอักษร a-z, Capital Indicators (จุด 6), Number Indicators (#)
--  **รองรับความละเอียดกล้องระดับสูง (4K UHD & Full HD 1080p)**
-  - สลับความละเอียดสดขณะเปิดกล้องได้ทันที (กด `V` หรือ `F`)
-  - ใช้ MJPG FourCC Codec เพื่อปลดล็อกแบนด์วิธ USB ให้เฟรมเรตลื่นไหล
--  **ระบบ Digital Zoom In / Zoom Out (1.0x – 4.0x)**
-  - ขยายจุดเบรลล์ขนาดเล็กให้ตรวจจับได้ง่ายและแม่นยำ พร้อม Mini Viewfinder มุมขวาบน
-  - ซูมได้ทั้งผ่านคีย์บอร์ด (`Z`/`X`/`R`) และล้อหมุนเมาส์ (Mouse Wheel Zoom)
--  **ระบบ Multi-Level Sharpness Filter (5 ระดับ)**
-  - ปรับเร่งความคมชัดของขอบจุดเบรลล์ได้ทันที (กด `E` เพื่อวนเลือกระดับ OFF -> LOW -> MED -> HIGH -> ULTRA)
--  **ระบบสังเคราะห์เสียงพูด Real-Time (Text-to-Speech: TTS)**
-  - ออกเสียงได้ทั้งภาษาไทยและภาษาอังกฤษ มีระบบ Frame Stabilization & Auto-TTS Debounce ป้องกันเสียงอ่านซ้ำซ้อน
-  - รองรับทั้ง Offline Mode (pyttsx3 / SAPI5) และ Online Natural Voice (gTTS)
--  **ระบบ Virtual 2x3 Grid Template Overlay**
-  - ตีกรอบล้อมรอบเซลล์และแบ่ง 6 ช่อง พร้อมแสดงผลลัพธ์คำที่อ่านได้ลงบนภาพอย่างสวยงาม
--  **รองรับหลากหลายสีของจุดแต้ม**
-  - 🔵 Blue, 🔴 Red, 🟢 Green, ⚫ Black
--  **ชุดทดสอบความแม่นยำอัตโนมัติ 100% (39/39 Tests Passed)**
+## งานรอบปัจจุบัน
 
----
+สร้าง dataset เบรลล์ไทยสังเคราะห์ **3,000 ภาพ**: train 2,400 / validation 300 / test 300 อยู่ใน `datasets/thai_synthetic/seed_20260908/` พร้อม label จุดและข้อมูลเซลล์/บรรทัด ภาพฝึกไม่มีกรอบ debug ทับ
 
-##  โครงสร้างไฟล์ในโปรเจกต์
+**[รีวิวภาษาไทย สิ่งที่ทำ ผลตรวจ และวิธีฝึกต่อ](docs/SYNTHETIC_DATASET.md)**
 
-```
-braille-reader/
-├── Start_Scanner.bat    # ดับเบิ้ลคลิกเปิดโปรแกรม Scanner ทันที
-├── Start_Scanner_4K.bat # เปิดกล้องในโหมด 4K Ultra HD (3840x2160)
-├── Start_Scanner_FHD.bat# เปิดกล้องในโหมด Full HD 1080p (1920x1080)
-├── Test_Camera.bat      # ทดสอบและตรวจเช็คความละเอียดสูงสุดของกล้อง
-├── camera_reader.py     # Real-Time Scanner (4K, Zoom, Sharpness, Auto-TTS, Grid)
-├── main.py              # CLI Entry point (อ่านจากไฟล์ภาพ หรือเปิดกล้อง)
-├── detector.py          # Core CV Pipeline (HSV Segment, 2x3 Lattice Grid Fitting)
-├── decoder.py           # Context-Aware Syllable Decoder (EN & TH)
-├── config.py            # English Braille Mapping + Detection HSV Parameters
-├── config_thai.py       # Thai Braille Standard Mapping
-├── tts.py               # Text-to-Speech Controller (Offline & Online)
-├── generate_test.py     # สร้างชุดภาพทดสอบอักษรเบรลล์ 39 ภาพ
-├── test_accuracy.py     # รัน Benchmark ประเมินความแม่นยำอัตโนมัติ
-├── requirements.txt     # รายการ Python dependencies
-├── sample_images/       # ชุดภาพทดสอบดิบ (Input)
-└── output/              # ภาพ Debug / Annotated พร้อม Grid และ Snapshot
+ข้อมูลที่สร้างในเครื่องถูกแยกจาก source code ด้วย `.gitignore` หากเริ่มจาก clone ใหม่ ให้สร้างด้วยคำสั่งนี้:
+
+```powershell
+.venv\Scripts\python.exe tools\training\generate_yolo_training.py
 ```
 
----
+ตัวสร้างไม่เขียนทับ dataset เดิม การเพิ่มข้อมูลใช้ `--extend-from` และ seed ใหม่ โดยคง validation/test เดิมไว้ ดูตัวอย่างในเอกสารรีวิว
 
-## ⚡ วิธีการติดตั้งและใช้งาน
+## ฝึก YOLO
 
-### 1. ติดตั้ง Dependencies
-
-```bash
-pip install -r requirements.txt
+```powershell
+.venv\Scripts\python.exe tools\training\train_yolo.py --data datasets/thai_synthetic/seed_20260908/data.yaml --epochs 30 --batch 8 --imgsz 640 --device cpu --name thai_synthetic_round1
 ```
 
-### 2. วิธีเปิดใช้งาน Scanner 📹
+เก็บโมเดลทดลองใน `runs/detect/<ชื่อรอบ>/weights/` ไม่แทนที่ `models/braille_yolo.pt` อัตโนมัติ ใช้ `--weights` เพื่อฝึกต่อเป็นรอบใหม่ และ `--resume <last.pt>` เฉพาะรอบที่ถูกขัดจังหวะ
 
-#### วิธีที่ง่ายที่สุด (บน Windows):
-- **ดับเบิ้ลคลิก** `Start_Scanner.bat` หรือ `Start_Scanner_4K.bat` หรือ `Start_Scanner_FHD.bat`
+## ใช้งานกล้องและภาพเดี่ยว
 
-#### หรือรันผ่าน Terminal:
-```bash
-# 🇹🇭 เปิดกล้องสแกนภาษาไทย (4K UHD)
-python camera_reader.py --lang thai --color blue --res 4k
+เปิด `Start_Scanner_YOLO.bat` หรือ:
 
-# 🇬🇧 เปิดกล้องสแกนภาษาอังกฤษ (Full HD)
-python camera_reader.py --lang english --color blue --res fhd
+```powershell
+.venv\Scripts\python.exe camera_reader.py --lang thai --res fhd --sharp 0
+.venv\Scripts\python.exe yolo_detector.py path/to/image.png --lang thai --save --dump-stream
 ```
 
----
+ระบุ `--model <ไฟล์ best.pt>` เพื่อทดลองโมเดลใหม่ ปุ่ม `P` ในกล้องเก็บภาพดิบ `*_raw.png` ควบคู่ภาพผลลัพธ์สำหรับตรวจข้อมูลภายหลัง
 
-### 🎮 คีย์ลัดและควบคุมขณะเปิดกล้อง (Live Stream Hotkeys):
+## ตรวจสอบ
 
-| ปุ่ม / อุปกรณ์ | การทำงาน |
-|---|---|
-| **`[V]` / `[F]`** | **สลับความละเอียดกล้อง (4K UHD <-> Full HD 1080p <-> HD 720p)** |
-| **`[E]`** | **ปรับระดับความคมชัด (OFF -> LOW -> MED -> HIGH -> ULTRA)** |
-| **`[Z]` / `[+]` / ล้อเมาส์ขึ้น** | **Zoom In** — ซูมขยายภาพ (+0.2x ถึง 4.0x) |
-| **`[X]` / `[-]` / ล้อเมาส์ลง** | **Zoom Out** — ซูมออก (-0.2x) |
-| **`[R]` / `[0]` / ดับเบิ้ลคลิก** | **Reset Zoom** — รีเซ็ตการซูมกลับ 1.0x |
-| **`[SPACE]`** | **Speak Now** — สั่งออกเสียงข้อความปัจจุบันทันที |
-| **`[C]`** | สลับสีจุดแต้ม (Blue $\rightarrow$ Red $\rightarrow$ Green $\rightarrow$ Black) |
-| **`[L]`** | สลับภาษา (Thai $\leftrightarrow$ English) |
-| **`[A]`** | เปิด/ปิดระบบออกเสียงอัตโนมัติ (Toggle Auto-Speak) |
-| **`[P]`** | บันทึกภาพ Snapshot ความละเอียดสูงลง `output/` |
-| **`[Q]` / `[ESC]`** | ปิดกล้อง / ออกจากโปรแกรม |
-
----
-
-### 3. คำสั่งทดสอบกล้อง & ความแม่นยำ
-
-```bash
-#  ทดสอบและเช็คความละเอียดสูงสุดของกล้อง
-python test_camera.py
-
-#  สร้างชุดภาพทดสอบ 39 ภาพ (ทั้งคำเดี่ยว สระ วรรณยุกต์ และประโยค)
-python generate_test.py
-
-#  รันแบบทดสอบความแม่นยำอัตโนมัติ (100% Passing Benchmark)
-python test_accuracy.py
+```powershell
+.venv\Scripts\python.exe -m unittest discover -s tests -v
+.venv\Scripts\python.exe tools\training\validate_dataset.py datasets/thai_synthetic/seed_20260908
+.venv\Scripts\python.exe tools\diagnostics\benchmark_yolo_stream.py
 ```
 
----
+ผ่าน 46 tests และ YOLO weights หลักยังอ่านชุดสังเคราะห์มาตรฐานได้ 99/99 ภาพหลังรีวิวก่อน merge ทดลองฝึกสั้น 1 epoch บนชุดเล็กแล้ว ส่วนชุดหลักยังไม่ได้ฝึกเต็มรอบ
 
-## สถาปัตยกรรมระบบ (Pipeline Architecture)
+คะแนนนี้ยังไม่ยืนยันความแม่นยำกับหนังสือจริงหรือ FPS บน Redxa ระบบเสียงในหน้ากล้องยังปิดไว้ตามโค้ดเดิม
 
-```mermaid
-graph TD
-    A[กล้อง 4K/FHD Webcam หรือภาพถ่าย] --> B[MJPG Frame Stream & Sharpness Filter]
-    B --> C[Digital Zoom Cropping & Scaling]
-    C --> D[HSV Color Mask Segmentation]
-    D --> E[Morphological Cleanup & Contour Finding]
-    E --> F[2D Lattice & 2x3 Virtual Grid Fitting]
-    F --> G[Context-Aware Multi-Language Decoder]
-    G --> H[ภาพ Annotated พร้อม 2x3 Grid และคำแปล]
-    G --> I[Frame Stabilization & Text-to-Speech Engine]
-```
-
----
-
-## แผนการพัฒนาถัดไป (Roadmap for Dragon Q6A Edge AI)
-
-1. **Hardware Integration:** ต่อกล้อง USB / MIPI เข้ากับบอร์ด Dragon Q6A
-2. **Real-time Camera Stream:** พัฒนาโหมดสแกนแบบ Real-time FPS สูง
-3. **NPU Optimization:** แปลงโมเดลเพื่อเร่งความเร็วบน NPU ชิป Edge AI
+[การทำงานของ cell stream และข้อจำกัด](docs/YOLO_CELL_STREAM.md) · [ประวัติโค้ด CV ที่เลิกใช้](archive/legacy_cv/README.md)
