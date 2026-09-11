@@ -70,7 +70,7 @@ class ModelContractTests(unittest.TestCase):
                 with self.subTest(task=task, names=names), \
                         patch('ultralytics.YOLO', return_value=model), \
                         self.assertRaisesRegex(ValueError, 'braille_dot'):
-                    YOLOBrailleDetector(model_path=checkpoint)
+                    YOLOBrailleDetector(model_path=checkpoint, dot_color=None)
 
 
 class CameraFailureTests(unittest.TestCase):

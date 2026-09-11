@@ -172,7 +172,7 @@ class CellStreamTests(unittest.TestCase):
     def test_yolo_stream_keeps_crop_confirmation_and_never_calls_cv_detection(self):
         image, dots, _ = page([['6', '13456']])
         with patch.object(YOLOBrailleDetector, '_load_model'):
-            detector = YOLOBrailleDetector(mode='yolo', tile_size=0)
+            detector = YOLOBrailleDetector(mode='yolo', tile_size=0, dot_color=None)
         detector.model = Mock(side_effect=lambda source, **kwargs: [object() for _ in source]
                               if isinstance(source, list) else [object()])
         # Overview contains a full letter; the crop model rejects all dots.
@@ -186,7 +186,7 @@ class CellStreamTests(unittest.TestCase):
 
     def test_explicit_yolo_reports_missing_weights(self):
         with patch.object(YOLOBrailleDetector, '_load_model'):
-            detector = YOLOBrailleDetector(mode='yolo')
+            detector = YOLOBrailleDetector(mode='yolo', dot_color=None)
         with self.assertRaisesRegex(RuntimeError, 'weights'):
             detector.detect(np.zeros((100, 100, 3), np.uint8))
 

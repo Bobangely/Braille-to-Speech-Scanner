@@ -1,8 +1,8 @@
-"""YOLO-guided line/cell crops, isolated dot reads, and ordered cell streaming.
+"""Shared Braille geometry, ordered cells, and the YOLO crop-reading path.
 
-The supplied weights detect dots, not whole cells. Geometry proposes crop boxes
-from those YOLO dots. A second YOLO pass reads each crop; no colour-mask union or
-global CV cell clustering is used. Coordinates and line IDs survive every stage.
+YOLO weights detect dots; CellStream proposes and rereads individual crops.
+The painted-dot reader reuses geometry and slot assignment with color evidence.
+Coordinates and line IDs survive every stage.
 """
 
 from itertools import islice
@@ -233,7 +233,7 @@ def crop_cell(image, cell, canvas_size=320):
 
 
 def read_cell(cell, crop_dots, inverse):
-    """Assign only this crop's YOLO detections to this cell's six slots."""
+    """Map isolated dot evidence through its transform to this cell's six slots."""
     slots = np.asarray(list(cell['grid']['slots'].values()))
     accepted = {}
     detections = outside_grid = duplicate_slots = 0
@@ -294,6 +294,8 @@ def pair_markers(cells, lang='thai'):
         distance = following['reading_x']-current['reading_x']
         adjacent = (current['line_id'] == following['line_id']
                     and 0 < distance <= 1.5*max(current['cell_pitch'], following['cell_pitch']))
+        adjacent = adjacent and distance <= min(current.get('adjacency_limit', float('inf')),
+                                               following.get('adjacency_limit', float('inf')))
         if (lang.lower() in ('thai', 'th') and adjacent
                 and not current.get('row_ambiguous') and not following.get('row_ambiguous')):
             # Never blindly turn a genuine dot-3 vowel into prefix-6. This repair

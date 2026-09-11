@@ -1,4 +1,4 @@
-"""YOLO-only Braille dot detection, isolated cell reads, and annotation."""
+"""Painted-dot Braille reading with a retained YOLO path for model evaluation."""
 
 import os
 from pathlib import Path
@@ -12,11 +12,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dot_fusion import tile_windows, merge_dots
 from yolo_cell_stream import CellStream, pair_markers
+from colored_braille import ColoredCellStream, DOT_COLORS
+from colored_roi import ColoredRoiReader
 
 
 class YOLOBrailleDetector:
     """
-    ตัวตรวจจับอักษรเบรลล์ด้วย YOLO และการอ่าน crop รายเซลล์
+    ตัวอ่านเบรลล์ที่แต้มสี พร้อมเส้นทาง YOLO สำหรับประเมินโมเดล
     พร้อมฟังก์ชันสำหรับใช้งานในกล้อง Real-time (camera_reader.py)
     """
 
@@ -25,7 +27,7 @@ class YOLOBrailleDetector:
     def __init__(self, model_path=None, confidence=0.35, mode='yolo',
                  imgsz=1280, tile_size=1280, tile_overlap=0.2, max_tiles=16,
                  max_det=3000, yolo_pipeline='stream', crop_batch=8, max_cells=256,
-                 proposal_confidence=None):
+                 proposal_confidence=None, dot_color='blue', roi_mode='off'):
         """
         Parameters
         ----------
@@ -35,6 +37,8 @@ class YOLOBrailleDetector:
             Confidence threshold (default: 0.35)
         mode : str
             โหมดการตรวจจับ: 'yolo' เท่านั้น
+        dot_color : str | None
+            สีที่อ่าน (ค่าเริ่มต้น blue); None ใช้เส้นทาง YOLO เดิมสำหรับประเมินโมเดล
         """
         self.confidence = float(confidence)
         if not 0 < self.confidence <= 1:
@@ -62,13 +66,22 @@ class YOLOBrailleDetector:
         self.model = None
         self.model_path = model_path
         self._font_cache = {}
+        self.dot_color = dot_color
+        self._colored_stream = ColoredCellStream(dot_color, max_cells) if dot_color is not None else None
+        self._color_readers = {color: ColoredCellStream(color, max_cells) for color in DOT_COLORS}
+        if roi_mode not in ('off', 'yolo') or (roi_mode == 'yolo' and dot_color is None):
+            raise ValueError('ROI mode must be off or yolo with a selected dot color')
+        self.roi_mode = roi_mode
+        self._roi_reader = ColoredRoiReader(self._predict_roi_dots) if roi_mode == 'yolo' else None
+        self.reader_name = f'COLOR {dot_color.upper()}' if dot_color is not None else 'YOLO'
 
         # YOLO Inference Resolution — เพิ่มจาก 416 เป็น 1280
         # เพื่อให้ YOLO มองเห็นจุดเบรลล์ขนาดเล็กได้ดีขึ้น (ไม่ย่อภาพจนจุดหายไป)
         self.yolo_imgsz = int(imgsz)
 
         # โหลดโมเดล YOLO
-        self._load_model(model_path)
+        if self._colored_stream is None or self._roi_reader is not None:
+            self._load_model(model_path)
 
     def _load_model(self, model_path):
         """Load a local single-class dot detector; fail before scanning on mismatch."""
@@ -89,16 +102,30 @@ class YOLOBrailleDetector:
         """ตรวจสอบว่า YOLO พร้อมใช้งานหรือไม่"""
         return self.model is not None
 
-    def detect(self, image, lang='thai'):
+    def detect(self, image, lang='thai', dot_color=None, context=None):
         """
         ตรวจจับจุดเบรลล์ตามโหมดปัจจุบัน
         Returns:
             cells : list of dict (dots, center, x, y, grid)
         debug_info : dict (dots, method, crop and overview diagnostics)
         """
+        if self._colored_stream is not None:
+            color = self.dot_color if dot_color is None else dot_color
+            if color not in self._color_readers:
+                raise ValueError(f'Unsupported dot color: {color}')
+            reader = self._color_readers[color]
+            if self._roi_reader is not None:
+                return self._roi_reader.detect(image, reader, lang, context)
+            return reader.detect(image, lang)
         if self.model is None:
             raise RuntimeError('YOLO weights are unavailable. Provide a local model file.')
         return self._detect_cell_stream(image, lang)
+
+    def _predict_roi_dots(self, image):
+        # One overview call; ROI mode does not run tile or per-cell model passes.
+        results = self.model(image, conf=self.proposal_confidence, iou=.2,
+                             imgsz=self.yolo_imgsz, max_det=self.max_det, verbose=False)
+        return self._extract_yolo_boxes(results, image.shape, self.proposal_confidence)
 
     def _predict_crop_batch(self, crops):
         results = self.model(crops, verbose=False, conf=self.confidence,
@@ -221,7 +248,8 @@ class YOLOBrailleDetector:
         self._font_cache[cache_key] = font
         return font
 
-    def annotate_with_text(self, image, dots, cells, decoded_text="", verbose_results=None, lang="thai"):
+    def annotate_with_text(self, image, dots, cells, decoded_text="", verbose_results=None, lang="thai",
+                           reader_name=None):
         """
         วาด Overlays ครบถ้วน:
         1. Bounding Boxes / Refined Contours
@@ -323,7 +351,7 @@ class YOLOBrailleDetector:
         draw.line([(0, h), (w, h)], fill=(70, 85, 105), width=2)
 
         # Mode Badge
-        mode_badge = 'MODE: YOLO CELL STREAM'
+        mode_badge = f"MODE: {reader_name or getattr(self, 'reader_name', 'YOLO')} CELL STREAM"
         mode_color = (0, 210, 255)
 
         if decoded_text:
@@ -349,8 +377,10 @@ class YOLOBrailleDetector:
 # =============================================================================
 if __name__ == '__main__':
     import argparse
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
 
-    parser = argparse.ArgumentParser(description='YOLO Braille Dot Detector')
+    parser = argparse.ArgumentParser(description='Painted Braille Reader')
     parser.add_argument('image', type=str, help='Path ของภาพ')
     parser.add_argument('--model', type=str, default=None, help='Path ของ YOLO model (.pt)')
     parser.add_argument('--mode', type=str, default='yolo', choices=['yolo'], help='โหมดการตรวจจับ')
@@ -364,6 +394,8 @@ if __name__ == '__main__':
     parser.add_argument('--max-tiles', type=int, default=16, help='Maximum extra tile predictions')
     parser.add_argument('--max-det', type=int, default=3000, help='Maximum dots per prediction')
     parser.add_argument('--lang', type=str, default='thai', help='ภาษา (thai/english)')
+    parser.add_argument('--dot-color', choices=DOT_COLORS, default='blue', help='Read only painted dots')
+    parser.add_argument('--roi', choices=['off', 'yolo'], default='off', help='Optional YOLO-dot ROI')
     parser.add_argument('--save', action='store_true', help='บันทึกภาพผลลัพธ์')
     parser.add_argument('--no-show', action='store_true', help='ไม่เปิดหน้าต่างแสดงภาพ GUI')
     parser.add_argument('--dump-stream', action='store_true', help='Export cell crops and JSON to output/<image>_stream/')
@@ -381,7 +413,8 @@ if __name__ == '__main__':
                                   tile_size=args.tile_size, max_tiles=args.max_tiles,
                                   max_det=args.max_det, yolo_pipeline=args.yolo_pipeline,
                                   crop_batch=args.crop_batch, max_cells=args.max_cells,
-                                  proposal_confidence=args.proposal_conf)
+                                  proposal_confidence=args.proposal_conf, dot_color=args.dot_color,
+                                  roi_mode=args.roi)
     cells, debug_info = detector.detect(image, lang=args.lang)
 
     from decoder import decode_cells, decode_cells_verbose
@@ -395,7 +428,7 @@ if __name__ == '__main__':
                                  detector=detector)
         print(f'  Cell stream report: {manifest}')
 
-    print(f"\n  🎯 Mode:          {detector.mode.upper()}")
+    print(f"\n  🎯 Reader:        {detector.reader_name}")
     print(f"  🔍 Method Used:   {debug_info.get('method')}")
     print(f"  ⚪ Dots detected: {len(debug_info.get('dots', []))}")
     print(f"  📦 Cells found:   {len(cells)}")
@@ -416,8 +449,8 @@ if __name__ == '__main__':
         print(f"  💾 Saved to: {out_path}")
 
     if not args.no_show:
-        cv2.namedWindow('Braille YOLO Detector', cv2.WINDOW_NORMAL)
-        cv2.imshow('Braille YOLO Detector', annotated)
+        cv2.namedWindow('Painted Braille Reader', cv2.WINDOW_NORMAL)
+        cv2.imshow('Painted Braille Reader', annotated)
         print("  ⌨️ กดปุ่มใดก็ได้เพื่อปิดหน้าต่าง...")
         cv2.waitKey(0)
         cv2.destroyAllWindows()

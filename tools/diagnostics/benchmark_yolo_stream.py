@@ -22,7 +22,7 @@ def main():
     args = parser.parse_args()
     if any(not 0 < scale <= 2 for scale in args.scales):
         parser.error('scales must be in (0, 2]')
-    detector = YOLOBrailleDetector(model_path=args.model, tile_size=0)
+    detector = YOLOBrailleDetector(model_path=args.model, tile_size=0, dot_color=None)
     records = []
     cases = [(text, [patterns], 95, 128, 0) for text, patterns in CASES]
     cases += [('ญา\nภ้', [['6', '13456', '16'], ['6', '1456', '256']], pitch, height, angle)

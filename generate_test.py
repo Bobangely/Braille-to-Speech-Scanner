@@ -184,7 +184,7 @@ def generate_test_suite(output_dir='sample_images/standard', annotated_dir='outp
     ]
 
     generated = []
-    detector = YOLOBrailleDetector() if save_annotated else None
+    detector = YOLOBrailleDetector(dot_color=None) if save_annotated else None
 
     def _process_cases(cases, lang):
         for filename, text, color, noise in cases:

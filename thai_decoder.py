@@ -43,6 +43,8 @@ def _break_before(cells, index, adjacent=False):
         return True
     if all('reading_x' in cell and 'cell_pitch' in cell for cell in (left, right)):
         dx = right['reading_x'] - left['reading_x']
+        if dx > min(left.get('adjacency_limit', float('inf')), right.get('adjacency_limit', float('inf'))):
+            return True
         return dx <= 0 or dx > 1.5 * max(left['cell_pitch'], right['cell_pitch'])
     spacing = max(1.0, _spacing(right))
     if abs(right.get('y', 0) - left.get('y', 0)) > spacing * 1.5:

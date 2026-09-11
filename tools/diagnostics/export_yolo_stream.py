@@ -1,4 +1,4 @@
-"""Export the exact crop inputs and per-cell decisions for a YOLO stream run."""
+"""Export exact stream inputs, diagnostic crops, and per-cell decisions."""
 import json
 import hashlib
 from collections import Counter
@@ -32,8 +32,8 @@ def text_trace(text):
 
 def export_stream(image, cells, debug_info, output_dir, lang='thai', source=None,
                   captured_image=None, metadata=None, detector=None):
-    if debug_info.get('method') != 'yolo_cell_stream':
-        raise ValueError('Crop export requires --mode yolo --yolo-pipeline stream')
+    if debug_info.get('method') not in ('yolo_cell_stream', 'colored_cell_stream'):
+        raise ValueError('Crop export requires a Braille cell stream result')
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
     if not cv2.imwrite(str(destination/'inference_input.png'), image):
@@ -66,6 +66,7 @@ def export_stream(image, cells, debug_info, output_dir, lang='thai', source=None
     report = dict(source=str(source) if source else None, language=lang,
                   image_shape=image.shape, text=decode_cells(cells, lang), lines=lines,
                   input_file='inference_input.png',
+                  crop_role='diagnostic_view' if debug_info['method'] == 'colored_cell_stream' else 'model_input',
                   camera_roi_file='camera_roi.png' if captured_image is not None else None,
                   input_sha256=hashlib.sha256(image.tobytes()).hexdigest(),
                   text_trace=text_trace(decode_cells(cells, lang)),
@@ -76,14 +77,19 @@ def export_stream(image, cells, debug_info, output_dir, lang='thai', source=None
                   cells=records)
     if detector is not None:
         font = detector._get_font(size=18, bold=True)
-        model_path = Path(detector.model_path)
-        training_args = (getattr(detector.model, 'ckpt', None) or {}).get('train_args', {})
-        report['model'] = dict(path=str(model_path), sha256=hashlib.sha256(model_path.read_bytes()).hexdigest(),
-            overview_imgsz=detector.yolo_imgsz, crop_imgsz=320,
-            read_confidence=detector.confidence, proposal_confidence=detector.proposal_confidence,
-            tile_size=detector.tile_size,
-            training_args={key: training_args.get(key) for key in
-                           ('data', 'model', 'imgsz', 'epochs', 'name', 'project')})
+        color = debug_info.get('color', getattr(detector, 'dot_color', None))
+        report['reader'] = dict(name=f'COLOR {color.upper()}' if color else 'YOLO',
+                                dot_color=color, roi_mode=getattr(detector, 'roi_mode', 'off'))
+        report['model'] = None
+        if detector.model is not None:
+            model_path = Path(detector.model_path)
+            training_args = (getattr(detector.model, 'ckpt', None) or {}).get('train_args', {})
+            report['model'] = dict(path=str(model_path), sha256=hashlib.sha256(model_path.read_bytes()).hexdigest(),
+                overview_imgsz=detector.yolo_imgsz, crop_imgsz=320,
+                read_confidence=detector.confidence, proposal_confidence=detector.proposal_confidence,
+                tile_size=detector.tile_size,
+                training_args={key: training_args.get(key) for key in
+                               ('data', 'model', 'imgsz', 'epochs', 'name', 'project')})
         report['rendering'] = dict(engine='Pillow', font_path=str(getattr(font, 'path', 'Pillow default')))
     path = destination/'manifest.json'
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=_json_value), encoding='utf-8')

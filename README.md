@@ -1,12 +1,18 @@
-# Thai Braille Reader — YOLO
+# Thai Braille Reader — Painted Dots
 
 รีวิวก่อน merge: [บั๊กที่แก้ การเก็บโค้ด ผลตรวจ และข้อจำกัด](docs/PRE_MERGE_REVIEW_TH.md)
 
-branch `codex/yolo-cell-stream` ใช้ **YOLO เป็นตัวตรวจจับเดียว**: ตรวจจุด → crop เซลล์ → YOLO อ่าน crop → จับ marker → ประกอบข้อความไทย/อังกฤษ
+เส้นทางกล้องและภาพเดี่ยวอ่าน **เฉพาะจุดที่แต้มสี** โดยค่าเริ่มต้นเป็นสีน้ำเงิน: ตรวจสี → กรอง noise → จัดกริดเซลล์ → ตำแหน่งจุด 1–6 → รวม marker → ข้อความไทย/อังกฤษ
 
-ถอด CV/Hybrid และ fallback ตรวจสีออกจากเส้นทางใช้งานแล้ว `cv2` ยังใช้เปิดกล้องและจัดการภาพ โค้ด CV เก่าอยู่ใน `archive/legacy_cv/` เพื่ออ้างอิงเท่านั้น
+จุดนูนที่ไม่มีสีไม่ถูกนำมาสร้างเซลล์หรือ decode ตัวอ่านสีไม่โหลด/รัน YOLO ส่วนเส้นทาง YOLO เดิมยังเก็บไว้สำหรับประเมินและฝึกโมเดล โดยเรียก `YOLOBrailleDetector(dot_color=None)` อย่างชัดเจน ไม่ใช่ค่าเริ่มต้นของกล้อง
 
-## งานรอบปัจจุบัน
+## ตัวอ่านเฉพาะสี
+
+[สาเหตุที่แก้ อัลกอริทึม ข้อจำกัด และผลทดสอบ](docs/COLORED_BRAILLE_ONLY_TH.md)
+
+เลือกสีด้วย `--dot-color blue`, `red`, `green` หรือ `auto` สำหรับหลายสี สีดำ/เทาไม่มี chromatic evidence เพียงพอที่จะแยกจากเงาของกระดาษในเส้นทางนี้
+
+## งาน Dataset / YOLO
 
 สร้าง dataset เบรลล์ไทยสังเคราะห์ **3,000 ภาพ**: train 2,400 / validation 300 / test 300 อยู่ใน `datasets/thai_synthetic/seed_20260908/` พร้อม label จุดและข้อมูลเซลล์/บรรทัด ภาพฝึกไม่มีกรอบ debug ทับ
 
@@ -26,18 +32,18 @@ branch `codex/yolo-cell-stream` ใช้ **YOLO เป็นตัวตรว�
 .venv\Scripts\python.exe tools\training\train_yolo.py --data datasets/thai_synthetic/seed_20260908/data.yaml --epochs 30 --batch 8 --imgsz 640 --device cpu --name thai_synthetic_round1
 ```
 
-เก็บโมเดลทดลองใน `runs/detect/<ชื่อรอบ>/weights/` ไม่แทนที่ `models/braille_yolo.pt` อัตโนมัติ ใช้ `--weights` เพื่อฝึกต่อเป็นรอบใหม่ และ `--resume <last.pt>` เฉพาะรอบที่ถูกขัดจังหวะ
+เก็บโมเดลทดลองใน `runs/detect/<ชื่อรอบ>/weights/` โดยไม่เขียนทับ production ใช้ `--weights` สำหรับฝึกรอบใหม่หรือ `--resume` สำหรับงานที่หยุดกลางคัน ประเมิน candidate ด้วย `tools/diagnostics/benchmark_yolo_stream.py --model <best.pt>` ตัวอ่านสีไม่ได้ใช้ weights เหล่านี้
 
 ## ใช้งานกล้องและภาพเดี่ยว
 
 เปิด `Start_Scanner_YOLO.bat` หรือ:
 
 ```powershell
-.venv\Scripts\python.exe camera_reader.py --lang thai --res fhd --sharp 0
-.venv\Scripts\python.exe yolo_detector.py path/to/image.png --lang thai --save --dump-stream
+.venv\Scripts\python.exe camera_reader.py --lang thai --res fhd --sharp 0 --dot-color blue
+.venv\Scripts\python.exe yolo_detector.py path/to/image.png --lang thai --dot-color blue --save --dump-stream
 ```
 
-ระบุ `--model <ไฟล์ best.pt>` เพื่อทดลองโมเดลใหม่ ปุ่ม `P` ในกล้องเก็บภาพดิบ `*_raw.png` ควบคู่ภาพผลลัพธ์สำหรับตรวจข้อมูลภายหลัง
+กด `P` บันทึก snapshot หรือ `D` บันทึกภาพที่ตัวอ่านใช้จริงพร้อม trace รายเซลล์ กล้องยังรองรับ zoom, sharpness และสลับความละเอียด `--dump-stream` สร้างภาพ crop สำหรับตรวจสอบและ JSON โดยระบุว่าสีเป็นแหล่งของจุด
 
 ## ตรวจสอบ
 
@@ -47,8 +53,8 @@ branch `codex/yolo-cell-stream` ใช้ **YOLO เป็นตัวตรว�
 .venv\Scripts\python.exe tools\diagnostics\benchmark_yolo_stream.py
 ```
 
-ผ่าน 46 tests และ YOLO weights หลักยังอ่านชุดสังเคราะห์มาตรฐานได้ 99/99 ภาพหลังรีวิวก่อน merge ทดลองฝึกสั้น 1 epoch บนชุดเล็กแล้ว ส่วนชุดหลักยังไม่ได้ฝึกเต็มรอบ
+ตรวจอัตโนมัติทั้งตัวอ่านสีและเส้นทางเดิม ส่วน benchmark YOLO เป็น regression ของโมเดลและภาพสังเคราะห์ ไม่ใช่ตัวเลขความแม่นยำของหนังสือจริงหรือของตัวอ่านสี
 
-คะแนนนี้ยังไม่ยืนยันความแม่นยำกับหนังสือจริงหรือ FPS บน Redxa ระบบเสียงในหน้ากล้องยังปิดไว้ตามโค้ดเดิม
+ยังต้องทดสอบกับภาพดิบจากกล้องจริงในสภาพแสงและการแต้มสีที่หลากหลาย พิกัด/รูปแบบสีใน tests ไม่ได้ใช้เป็นค่าตายตัวใน algorithm
 
 [การทำงานของ cell stream และข้อจำกัด](docs/YOLO_CELL_STREAM.md) · [ประวัติโค้ด CV ที่เลิกใช้](archive/legacy_cv/README.md)
