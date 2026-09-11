@@ -98,7 +98,7 @@ class CameraFailureTests(unittest.TestCase):
             camera.running = False
             return False, None
 
-        camera.cap = SimpleNamespace(isOpened=lambda: True, read=failed_read)
+        camera.cap = SimpleNamespace(isOpened=lambda: True, read=failed_read, release=lambda: None)
         with patch('camera_reader.time.sleep'):
             camera._capture_loop()
         self.assertEqual(camera.read_latest(with_id=True), (False, None, 0))
@@ -107,7 +107,9 @@ class CameraFailureTests(unittest.TestCase):
         with patch.object(ThreadedCameraCapture, '_init_camera'):
             camera = ThreadedCameraCapture()
         camera.frame, camera.ret, camera.running = object(), True, True
-        camera.cap = SimpleNamespace(isOpened=lambda: False)
+        camera.cap = SimpleNamespace(isOpened=lambda: False, release=lambda: None)
+        camera.RETRY_AFTER = 0
+        camera.MAX_RECONNECTS = 0
         camera._capture_loop()
         self.assertEqual(camera.read_latest(with_id=True), (False, None, 0))
 

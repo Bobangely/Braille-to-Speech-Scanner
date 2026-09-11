@@ -391,7 +391,8 @@ if __name__ == '__main__':
         from tools.diagnostics.export_yolo_stream import export_stream
         from pathlib import Path
         destination = Path(__file__).resolve().parent/'output'/(Path(args.image).stem+'_stream')
-        manifest = export_stream(image, cells, debug_info, destination, args.lang, source=args.image)
+        manifest = export_stream(image, cells, debug_info, destination, args.lang, source=args.image,
+                                 detector=detector)
         print(f'  Cell stream report: {manifest}')
 
     print(f"\n  🎯 Mode:          {detector.mode.upper()}")

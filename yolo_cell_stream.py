@@ -12,6 +12,10 @@ import cv2
 import numpy as np
 
 
+class UnreadableBrailleFrame(ValueError):
+    """The image cannot provide a reliable cell grid; retry with a new frame."""
+
+
 def _clusters(values, tolerance):
     """Bounded cluster span, avoiding transitive chains between rows."""
     groups = []
@@ -81,7 +85,7 @@ def _line_rows(rows, centers, spacing):
     for band in bands:
         extent = int(round((band[-1][0]-band[0][0])/row_pitch)) + 1
         if extent > 3 and extent % 3:
-            raise ValueError('Ambiguous Braille line boundaries: include complete '
+            raise UnreadableBrailleFrame('Ambiguous Braille line boundaries: include complete '
                              'three-row cells or isolate a line in the camera ROI')
         current = []
         for item in band:
@@ -232,19 +236,26 @@ def read_cell(cell, crop_dots, inverse):
     """Assign only this crop's YOLO detections to this cell's six slots."""
     slots = np.asarray(list(cell['grid']['slots'].values()))
     accepted = {}
+    detections = outside_grid = duplicate_slots = 0
     for dot in crop_dots:
+        detections += 1
         source = cv2.perspectiveTransform(np.float32([[dot['center']]]), inverse)[0, 0]
         distances = np.linalg.norm(slots-source, axis=1)
         index = int(np.argmin(distances))
         if distances[index] > .38*cell['dot_spacing']:
+            outside_grid += 1
             continue
-        if index in accepted and accepted[index]['confidence'] >= dot['confidence']:
-            continue
+        if index in accepted:
+            duplicate_slots += 1
+            if accepted[index]['confidence'] >= dot['confidence']:
+                continue
         accepted[index] = dict(dot, center=tuple(map(float, source)),
                                area=(cell['dot_spacing']*.5)**2, bbox=None)
     result = dict(cell, overview_dots=cell['dots'], dots=frozenset(i+1 for i in accepted),
                   read_pattern=frozenset(i+1 for i in accepted),
                   crop_status='read' if accepted else 'empty',
+                  crop_diagnostics=dict(detections=detections, matched_slots=len(accepted),
+                      outside_grid=outside_grid, duplicate_slots=duplicate_slots),
                   read_dots=list(accepted.values()))
     result['crop_disagreement'] = result['dots'] != result['overview_dots']
     return result
@@ -259,7 +270,7 @@ class CellStream:
     def iter_cells(self, image, overview_dots):
         planned = plan_cells(overview_dots, image.shape)
         if len(planned) > self.max_cells:
-            raise ValueError(f'{len(planned)} cell candidates exceed limit {self.max_cells}; narrow the camera ROI')
+            raise UnreadableBrailleFrame(f'{len(planned)} cell candidates exceed limit {self.max_cells}; narrow the camera ROI')
         iterator = iter(planned)
         while batch := list(islice(iterator, self.batch_size)):
             crops = [crop_cell(image, cell) for cell in batch]
