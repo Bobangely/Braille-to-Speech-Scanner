@@ -454,7 +454,9 @@ class SessionRecoveryTests(unittest.TestCase):
                 outputs.append(options['decoded_text'])
                 return image.copy()
 
-        values = [1, 1, 2, 2, 1, 2, 0, 0, 0]
+        # The UI renders the previous completed result before poll waits for
+        # this frame: one extra frame displays the sixth confirmed success.
+        values = [1, 1, 2, 2, 1, 2] + [0] * 7
         camera = FakeSessionCamera([(True, np.full_like(FRAME, value), i+1)
                                     for i, value in enumerate(values)])
         scanner = self.scanner()

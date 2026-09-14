@@ -3,6 +3,7 @@
 import cv2
 import numpy as np
 
+from cell_tracking import CellGridTracker
 from yolo_cell_stream import UnreadableBrailleFrame, plan_cells, read_cell, pair_markers
 
 
@@ -19,6 +20,7 @@ class ColoredCellStream:
             raise ValueError('Invalid colored-dot or cell limits')
         self.color, self.max_cells = color, max_cells
         self.min_area, self.max_area = min_area, max_area
+        self._grid_tracker = CellGridTracker()
 
     def find_dots(self, image):
         if (not isinstance(image, np.ndarray) or image.dtype != np.uint8 or
@@ -47,20 +49,51 @@ class ColoredCellStream:
         if len(dots) >= 4:
             floor = max(self.min_area, .12*float(np.median([dot['area'] for dot in dots])))
             dots = [dot for dot in dots if dot['area'] >= floor]
-        return dots, dict(color=self.color, color_components=count-1,
+        return dots, dict(mask=mask, color=self.color, color_components=count-1,
                           colored_dots=len(dots), rejected_color_components=count-1-len(dots),
                           color_config=dict(hue_ranges=HUE_RANGES.get(self.color, ((0, 179),)),
                               saturation_min=60, value_min=15, min_area=self.min_area,
                               max_area=self.max_area))
 
-    def detect(self, image, lang='thai'):
-        dots, diagnostics = self.find_dots(image)
+    def detect(self, image, lang='thai', *, context=None, roi=None):
+        # ROI changes never change the tracker's coordinate system. Measure
+        # color in the crop, then plan/track/read in full source coordinates.
+        if roi is None:
+            dots, diagnostics = self.find_dots(image)
+        else:
+            x1, y1, x2, y2 = roi
+            dots, diagnostics = self.find_dots(image[y1:y2, x1:x2])
+            dots = [dict(dot, center=(dot['center'][0]+x1, dot['center'][1]+y1),
+                         bbox=tuple(v+(x1 if i % 2 == 0 else y1) for i, v in enumerate(dot['bbox'])))
+                    for dot in dots]
+            mask = np.zeros(image.shape[:2], np.uint8)
+            mask[y1:y2, x1:x2] = diagnostics['mask']
+            diagnostics['mask'] = mask
         if len(dots) > 6 * self.max_cells:
             raise UnreadableBrailleFrame('Too many colored dots; narrow the camera ROI')
         # FILTER precedes geometry: gray cells cannot create rows, candidates, or '?'.
-        planned = plan_cells(dots, image.shape)
+        planning_error = None
+        try:
+            planned = plan_cells(dots, image.shape)
+        except UnreadableBrailleFrame as exc:
+            if context is None:
+                raise
+            planned, planning_error = [], exc
         if len(planned) > self.max_cells:
             raise UnreadableBrailleFrame(f'{len(planned)} colored cells exceed limit {self.max_cells}')
+        if context is not None:
+            candidate_count = len(planned)
+            planned, tracking = self._grid_tracker.update(planned, dots, image, (context, lang, self.color),
+                                                         diagnostics.get('mask'))
+            dots = self._grid_tracker.current_dots
+            if planning_error is not None and not planned:
+                raise planning_error
+            diagnostics.update(grid_tracking=tracking, grid_pending=tracking == 'pending',
+                               refined_colored_dots=len(dots),
+                               grid_candidate_count=candidate_count,
+                               grid_planning_error=str(planning_error) if planning_error else None)
+        else:
+            self._grid_tracker.reset()  # Image CLI remains stateless.
         cells, symbols = [], []
 
         def read_colored_cells():

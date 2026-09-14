@@ -13,6 +13,7 @@ wheels/
 output/*.png
 output/*.mp3
 output/*_stream/
+output/diagnostic_*/
 !output/.gitkeep
 
 # IDE / Editor

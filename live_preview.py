@@ -2,7 +2,8 @@
 
 import cv2
 import numpy as np
-from frame_motion import estimate_motion, full_size_motion, tracking_gray
+from frame_motion import cell_motion_mask, estimate_motion, full_size_motion, tracking_gray
+from grid_stability import GridStabilizer
 
 
 def scaled_geometry(dots, cells, sx, sy):
@@ -36,31 +37,50 @@ class LivePreview:
         self._key = None
         self.motion_valid = True
         self._reference = None
+        self._motion_mask = None
+        self._grids = GridStabilizer()
+        self._waiting_key = None
+        self._grid_key = None
 
     def render(self, frame, detector, result, lang):
         height, width = frame.shape[:2]
         scale = min(1.0, self.max_width / width)
         size = (max(1, round(width * scale)), max(1, round(height * scale)))
         preview = cv2.resize(frame, size, interpolation=cv2.INTER_AREA) if scale < 1 else frame
-        key = (result['result_id'], frame.shape, size, lang, detector.mode, result.get('reader_name'))
+        grid_key = (result['result_id'], frame.shape, lang, result.get('reader_name'), result.get('context'))
+        key = (grid_key, size, detector.mode, result['decoded_text'], bool(result['verbose_results']))
         if key != self._key:
-            dots, cells = scaled_geometry(result['dots'], result['cells'], size[0]/width, size[1]/height)
+            reference = result.get('camera_roi')
+            if grid_key != self._grid_key:
+                if result['cells'] and all(c.get('grid_tracked') for c in result['cells']):
+                    # Recognition already used this geometry. A second smoother
+                    # here would display different slots from those actually read.
+                    self._stable_cells = result['cells']
+                    self._grids.reset()
+                else:
+                    self._stable_cells = self._grids.update(result['cells'], reference,
+                        (result.get('context'), frame.shape, lang, result.get('reader_name')))
+                self._grid_key = grid_key
+            dots, cells = scaled_geometry(result['dots'], self._stable_cells, size[0]/width, size[1]/height)
             self._overlay = detector.annotate_with_text(np.zeros_like(preview), dots, cells,
                 decoded_text=result['decoded_text'], verbose_results=result['verbose_results'],
                 lang=lang, reader_name=result.get('reader_name'))
             self._mask = np.any(self._overlay > 0, axis=2).astype(np.uint8) * 255
-            reference = result.get('camera_roi')
             self._reference = (tracking_gray(reference) if result['cells'] and
                 isinstance(reference, np.ndarray) and reference.shape == frame.shape else None)
-            if self._reference is not None:
+            self._motion_mask = (cell_motion_mask(self._stable_cells, frame.shape, self._reference.shape)
+                                 if self._reference is not None else None)
+            waiting_key = (size, lang, detector.mode, result.get('reader_name'))
+            if self._reference is not None and waiting_key != self._waiting_key:
                 self._waiting = detector.annotate_with_text(np.zeros_like(preview), [], [],
                     decoded_text='', lang=lang, reader_name=result.get('reader_name'))
                 self._waiting_mask = np.any(self._waiting > 0, axis=2).astype(np.uint8) * 255
+                self._waiting_key = waiting_key
             self._key = key
         self.motion_valid = True
         overlay, mask = self._overlay, self._mask
         if self._reference is not None:
-            motion = estimate_motion(self._reference, tracking_gray(frame))
+            motion = estimate_motion(self._reference, tracking_gray(frame), self._motion_mask)
             self.motion_valid = motion is not None
             if motion is None:
                 overlay, mask = self._waiting, self._waiting_mask

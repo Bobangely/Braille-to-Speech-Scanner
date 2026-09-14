@@ -65,7 +65,13 @@ def _cell_pitch(column_centers, anchors, spacing):
     def score(pitch):
         offsets = (column_centers - anchors[0]) % pitch
         residual = np.minimum(np.minimum(offsets, pitch-offsets), np.abs(offsets-spacing))
-        return (float(np.mean(np.minimum(residual / spacing, 1)**2)), -pitch)
+        # A complete two-column cell anchors its LEFT column, not either column.
+        # Otherwise a fractional pitch can score well by treating another full
+        # cell's left column as a right column, flipping sparse cells by one dot.
+        anchor_delta = np.asarray(anchors) - anchors[0]
+        anchor_error = np.abs(anchor_delta - np.round(anchor_delta/pitch)*pitch)
+        return (float(np.mean(np.minimum(residual / spacing, 1)**2) +
+                      np.mean(np.minimum(anchor_error / spacing, 1)**2)), -pitch)
     return min(candidates, key=score)
 
 
@@ -74,6 +80,24 @@ def _line_rows(rows, centers, spacing):
     gaps = np.diff(centers)
     nearby = gaps[(gaps >= .65*spacing) & (gaps <= 1.5*spacing)]
     row_pitch = float(np.median(nearby)) if len(nearby) else spacing
+    # Clearly separated text bands must fit their own row centroids. A partial
+    # line elsewhere in the image cannot disable the three-row fit below.
+    breaks = np.flatnonzero(gaps > 3*spacing) + 1
+    if len(breaks):
+        lines = []
+        boundaries = [0, *breaks, len(rows)]
+        for start, end in zip(boundaries, boundaries[1:]):
+            band, _ = _line_rows(rows[start:end], centers[start:end], spacing)
+            lines.extend(band)
+        return lines, row_pitch
+    # A single observed three-row line can have uneven painted centroids.
+    # Limit this relaxation to that complete line: relaxing every inter-row
+    # gap would join sparse neighbouring lines and lose their phase.
+    if len(rows) == 3:
+        single_pitch = float((centers[-1] - centers[0]) / 2)
+        if (.65*spacing <= single_pitch <= 1.6*spacing and
+                np.all(np.abs(gaps / single_pitch - 1) <= .25)):
+            return [[(center, row) for row, center in zip(rows, centers)]], single_pitch
     bands = []
     for row, center in zip(rows, centers):
         gap = (center-bands[-1][-1][0])/row_pitch if bands else None

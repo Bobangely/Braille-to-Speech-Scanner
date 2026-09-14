@@ -447,6 +447,8 @@ class AsyncBrailleWorker:
                         decoded_text = decode_cells(cells, lang=frame_lang)
                         verbose_results = decode_cells_verbose(cells, lang=frame_lang)
                     warnings = [str(item['warning']) for item in verbose_results if item.get('warning')]
+                    if debug_info.get('grid_pending'):
+                        warnings.append('unstable_grid')
                     if warnings or '�' in decoded_text:
                         status, reason = 'uncertain', ', '.join(dict.fromkeys(warnings)) or 'incomplete_symbol'
                     elif not decoded_text.strip():
@@ -487,7 +489,8 @@ class AsyncBrailleWorker:
                         'overview_detections', 'tile_count', 'tile_budget_exceeded', 'color',
                         'colored_dots', 'color_components', 'rejected_color_components', 'color_config',
                         'candidate_source', 'read_source', 'yolo_inference',
-                        'roi_source', 'roi_box', 'roi_status') if key in debug_info}
+                        'roi_source', 'roi_box', 'roi_status', 'grid_tracking', 'grid_pending',
+                        'grid_candidate_count', 'grid_planning_error', 'refined_colored_dots') if key in debug_info}
         finally:
             with self._output_lock:
                 self.busy_since = None
@@ -860,12 +863,18 @@ class RealTimeBrailleScanner:
         if result['result_id'] != self._last_stability_result_id:
             self._last_stability_result_id = result['result_id']
             if result.get('status') == 'ok' and decoded_text and '�' not in decoded_text:
+                if self.history and self.history[-1] != decoded_text:
+                    self.history.clear()
                 self.history.append(decoded_text)
             else:
                 self.history.clear()
         is_locked = (len(self.history) >= self.stability_threshold and bool(decoded_text.strip())
                      and all(t == decoded_text for t in self.history))
-        preview_result = dict(result, reader_name=f'COLOR {self.dot_color.upper()}')
+        # Diagnostics keep the raw result; the live text/character labels only
+        # publish after confirmation across distinct inference results.
+        preview_result = dict(result, reader_name=f'COLOR {self.dot_color.upper()}',
+            decoded_text=decoded_text if is_locked else '',
+            verbose_results=result['verbose_results'] if is_locked else [])
         if result.get('source_shape') != enhanced_frame.shape:
             preview_result = dict(preview_result, result_id=-1, cells=[], dots=[], decoded_text='', verbose_results=[])
         try:
@@ -878,7 +887,7 @@ class RealTimeBrailleScanner:
                 round(enhanced_frame.shape[0]*annotated.shape[1]/enhanced_frame.shape[1]))
             self._preview_crop_box = crop_box
             self._draw_mini_viewfinder(annotated, frame, crop_box)
-            self._draw_top_hud(annotated, decoded_text, is_locked)
+            self._draw_top_hud(annotated, decoded_text if is_locked else '', is_locked)
         except Exception:
             # Do not repeatedly render the same broken result on every display tick.
             self._rejected_result_id = result['result_id']
@@ -893,12 +902,16 @@ class RealTimeBrailleScanner:
             message = 'SCAN ERROR - retrying next frame; see console'
         elif status == 'unreadable':
             message = 'UNREADABLE FRAME - adjust focus / lighting / ROI'
+        elif result.get('debug_info', {}).get('grid_pending'):
+            message = 'TRACKING - confirming changed cell layout'
         elif status == 'uncertain':
             counts = Counter(token['warning'] for token in result['verbose_results']
                              if token.get('warning') and not token.get('consumed'))
             other = sum(counts.values()) - counts['empty_crop'] - counts['ambiguous_row_grid']
             message = (f"UNCERTAIN - empty crops: {counts['empty_crop']} | "
                        f"row grid: {counts['ambiguous_row_grid']} | other: {other} | [D] trace")
+        elif decoded_text and not is_locked:
+            message = f'CONFIRMING - {len(self.history)}/{self.stability_threshold} matching results'
         else:
             message = ''
         if message:

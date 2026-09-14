@@ -116,7 +116,7 @@ class YOLOBrailleDetector:
             reader = self._color_readers[color]
             if self._roi_reader is not None:
                 return self._roi_reader.detect(image, reader, lang, context)
-            return reader.detect(image, lang)
+            return reader.detect(image, lang, context=context)
         if self.model is None:
             raise RuntimeError('YOLO weights are unavailable. Provide a local model file.')
         return self._detect_cell_stream(image, lang)
@@ -338,14 +338,14 @@ class YOLOBrailleDetector:
                     grid = cell.get('grid')
                     if grid:
                         x_min, y_min = grid['bbox'][0], grid['bbox'][1]
-                        char_text = f"C{idx}: {item['char']}"
+                        char_text = f"C{cell.get('track_id', idx)}: {item['char']}"
                         draw.text((x_min + 2, y_min - 25), char_text, fill=(255, 190, 0), font=font_mid)
         else:
             for idx, cell in enumerate(cells, 1):
                 grid = cell.get('grid')
                 if grid:
                     x_min, y_min = grid['bbox'][0], grid['bbox'][1]
-                    draw.text((x_min + 2, y_min - 22), f"C{idx}", fill=(255, 190, 0), font=font_small)
+                    draw.text((x_min + 2, y_min - 22), f"C{cell.get('track_id', idx)}", fill=(255, 190, 0), font=font_small)
 
         # 4. Bottom Banner
         draw.line([(0, h), (w, h)], fill=(70, 85, 105), width=2)

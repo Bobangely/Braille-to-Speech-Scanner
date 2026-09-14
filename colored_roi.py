@@ -52,6 +52,7 @@ class ColoredRoiReader:
 
     def reset(self):
         self.reference = self.reference_shape = self.box = None
+        self.reference_mask = None
         self.context = None
         self.detected_at = -float('inf')
 
@@ -67,7 +68,7 @@ class ColoredRoiReader:
         box, source, predicted = None, 'none', False
         fresh = now - self.detected_at < self.refresh_seconds
         if self.box is not None and fresh:
-            motion = estimate_motion(self.reference, gray)
+            motion = estimate_motion(self.reference, gray, self.reference_mask)
             if motion is not None:
                 motion = full_size_motion(motion, image.shape, gray.shape)
                 x1, y1, x2, y2 = self.box
@@ -89,6 +90,10 @@ class ColoredRoiReader:
                 padding = max(8., 3 * diameter)
                 box = tuple(np.concatenate((points.min(axis=0) - padding, points.max(axis=0) + padding)))
                 self.box, self.reference, self.reference_shape = box, gray, image.shape
+                self.reference_mask = np.zeros_like(gray)
+                scale = np.array([gray.shape[1]/image.shape[1], gray.shape[0]/image.shape[0]])
+                low, high = np.floor(np.array(box[:2])*scale).astype(int), np.ceil(np.array(box[2:])*scale).astype(int)
+                cv2.rectangle(self.reference_mask, tuple(low), tuple(high), 255, -1)
                 source = 'yolo_dot_envelope'
         if box is None:
             return [], dict(method='colored_cell_stream', dots=[], color=reader.color,
@@ -100,8 +105,7 @@ class ColoredRoiReader:
         if x2 <= x1 or y2 <= y1:
             self.reset()
             raise UnreadableBrailleFrame('Tracked ROI is outside the camera frame')
-        cells, debug = reader.detect(image[y1:y2, x1:x2], lang)
-        cells = translate_cells(cells, x1, y1)
+        cells, debug = reader.detect(image, lang, context=context, roi=(x1, y1, x2, y2))
         debug.update(dots=[dot for cell in cells for dot in cell['read_dots']],
             roi_source=source, roi_box=(x1, y1, x2, y2), roi_status='read',
             candidate_source='yolo_roi', yolo_inference=predicted)

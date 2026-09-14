@@ -37,8 +37,8 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 if exist ".venv\Scripts\python.exe" (
-    .venv\Scripts\python.exe camera_reader.py --camera 0 --res 4k --sharp 2 --lang thai
+    .venv\Scripts\python.exe camera_reader.py --camera 0 --res 4k --sharp 0 --lang thai
 ) else (
-    python camera_reader.py --camera 0 --res 4k --sharp 2 --lang thai
+    python camera_reader.py --camera 0 --res 4k --sharp 0 --lang thai
 )
 pause

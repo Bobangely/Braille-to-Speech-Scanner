@@ -12,14 +12,30 @@ def tracking_gray(image, max_width=640):
     return cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
 
 
-def estimate_motion(reference, current):
+def cell_motion_mask(cells, image_shape, small_shape):
+    """Select Braille features instead of unrelated desk/background corners."""
+    mask = np.zeros(small_shape[:2], np.uint8)
+    scale = np.array([small_shape[1]/image_shape[1], small_shape[0]/image_shape[0]])
+    for cell in cells:
+        grid = cell.get('grid')
+        if not grid:
+            continue
+        x1, y1, x2, y2 = grid['bbox']
+        padding = cell.get('dot_spacing', max(1, (x2-x1)/2)) * .5
+        low = np.floor((np.array([x1, y1])-padding)*scale).astype(int)
+        high = np.ceil((np.array([x2, y2])+padding)*scale).astype(int)
+        cv2.rectangle(mask, tuple(low), tuple(high), 255, -1)
+    return mask
+
+
+def estimate_motion(reference, current, mask=None):
     """Return reference-to-current affine motion in small-image coordinates."""
     if reference.shape != current.shape:
         return None
     if np.array_equal(reference, current):
         return np.eye(3, dtype=np.float64)
     points = cv2.goodFeaturesToTrack(reference, maxCorners=100, qualityLevel=.02,
-                                   minDistance=8, blockSize=5)
+                                   minDistance=8, blockSize=5, mask=mask)
     if points is None or len(points) < 3:
         return None
     sparse = len(points) < 8
@@ -66,6 +82,8 @@ def estimate_motion(reference, current):
     size = (current.shape[1], current.shape[0])
     warped = cv2.warpAffine(reference, affine, size)
     support = cv2.warpAffine(np.full_like(reference, 255), affine, size) > 250
+    if mask is not None:
+        support &= cv2.warpAffine(mask, affine, size) > 250
     ink = support & ((warped < 200) | (current < 200))
     if np.count_nonzero(ink) < 32:
         return None
