@@ -721,7 +721,7 @@ class RealTimeBrailleScanner:
 
     def _draw_top_hud(self, image, current_text, is_locked):
         """วาดแถบเมนูควบคุมและสถานะด้านบน (Top HUD)"""
-        h, w = image.shape[:2]
+        w = image.shape[1]
         hud_h = 42
 
         # พื้นหลังแถบ HUD ด้านบน (Semi-transparent dark bar)
@@ -733,7 +733,7 @@ class RealTimeBrailleScanner:
         lang_text = "THAI [L]" if self.lang == 'thai' else "ENG [L]"
 
         # Detector Mode badge
-        mode_badge = f'COLOR {self.dot_color.upper()} [C]'
+        mode_badge = f'{self.dot_color.upper()} [C]'
         mode_color = (0, 210, 255)
 
         # Resolution badge
@@ -845,8 +845,9 @@ class RealTimeBrailleScanner:
         result = self.ai_worker.get_latest_results(include_frame=True)
         self.ai_fps = result['ai_fps']
         slow = result.get('busy_seconds', 0) >= 5
+        stale = result.get('result_age', 0) > 1.0
         if (result.get('context') != context or result['lang'] != self.lang or
-                result['result_id'] == self._rejected_result_id or slow or result.get('result_age', 0) > 1.0):
+                result['result_id'] == self._rejected_result_id or slow or stale):
             result = dict(result, result_id=-1, cells=[], dots=[], decoded_text='',
                           verbose_results=[], error=None, status='waiting', reason=None)
             self.history.clear()
@@ -866,12 +867,13 @@ class RealTimeBrailleScanner:
                      and all(t == decoded_text for t in self.history))
         preview_result = dict(result, reader_name=f'COLOR {self.dot_color.upper()}')
         if result.get('source_shape') != enhanced_frame.shape:
-            preview_result = dict(result, result_id=-1, cells=[], dots=[], decoded_text='', verbose_results=[])
+            preview_result = dict(preview_result, result_id=-1, cells=[], dots=[], decoded_text='', verbose_results=[])
         try:
             annotated = self._preview.render(enhanced_frame, self.detector, preview_result, self.lang)
             if not self._preview.motion_valid:
                 self.history.clear()
                 is_locked = False
+                decoded_text = ''
             self._preview_image_size = (annotated.shape[1],
                 round(enhanced_frame.shape[0]*annotated.shape[1]/enhanced_frame.shape[1]))
             self._preview_crop_box = crop_box
@@ -885,6 +887,8 @@ class RealTimeBrailleScanner:
         status = result.get('status')
         if slow:
             message = 'AI BUSY - waiting for inference; camera remains live'
+        elif stale or not self._preview.motion_valid:
+            message = 'TRACKING - waiting for a fresh readable frame'
         elif result['error']:
             message = 'SCAN ERROR - retrying next frame; see console'
         elif status == 'unreadable':
@@ -918,7 +922,7 @@ class RealTimeBrailleScanner:
             return False
         if key in (ord('c'), ord('C')):
             self.cycle_dot_color()
-        if key in (ord('v'), ord('V'), ord('f'), ord('F')):
+        elif key in (ord('v'), ord('V'), ord('f'), ord('F')):
             self.cycle_resolution()
             self._context_generation += 1
         elif key in (ord('e'), ord('E')):

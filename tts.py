@@ -28,7 +28,7 @@ class TextToSpeech:
             self._offline_engine = pyttsx3.init()
             self._offline_engine.setProperty('rate', 150)    # ความเร็วในการพูด
             self._offline_engine.setProperty('volume', 1.0)  # ระดับเสียง (0.0 - 1.0)
-        except Exception as e:
+        except Exception:
             self._offline_engine = None
 
     def speak(self, text, lang='english', method='auto', save_file=None):
@@ -145,7 +145,7 @@ class TextToSpeech:
                     pass
 
             return True
-        except Exception as e:
+        except Exception:
             return False
 
     def _play_audio(self, audio_file):

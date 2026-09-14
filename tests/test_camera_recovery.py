@@ -462,7 +462,7 @@ class SessionRecoveryTests(unittest.TestCase):
         worker_threads = []
 
         def poll(delay):
-            result = await_condition(lambda: (r if
+            await_condition(lambda: (r if
                 (r := scanner.ai_worker.get_latest_results())['frame_id'] == camera.reads else None))
             worker_threads.append(scanner.ai_worker.thread)
             return ord('q') if camera.reads == len(values) else 255
@@ -495,7 +495,7 @@ class SessionRecoveryTests(unittest.TestCase):
                       source_shape=FRAME.shape, decoded_text='a', dots=[], verbose_results=[],
                       cells=[dict(dots=frozenset({1}), x=20, y=20)])  # missing center
 
-        def latest():
+        def latest(include_frame=False):
             return dict(result, context=scanner._last_submitted_context)
 
         scanner.ai_worker.get_latest_results.side_effect = latest

@@ -55,6 +55,8 @@ class ColoredCellStream:
 
     def detect(self, image, lang='thai'):
         dots, diagnostics = self.find_dots(image)
+        if len(dots) > 6 * self.max_cells:
+            raise UnreadableBrailleFrame('Too many colored dots; narrow the camera ROI')
         # FILTER precedes geometry: gray cells cannot create rows, candidates, or '?'.
         planned = plan_cells(dots, image.shape)
         if len(planned) > self.max_cells:

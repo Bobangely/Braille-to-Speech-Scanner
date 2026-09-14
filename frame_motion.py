@@ -20,12 +20,13 @@ def estimate_motion(reference, current):
         return np.eye(3, dtype=np.float64)
     points = cv2.goodFeaturesToTrack(reference, maxCorners=100, qualityLevel=.02,
                                    minDistance=8, blockSize=5)
-    if points is None or len(points) < 8:
+    if points is None or len(points) < 3:
         return None
+    sparse = len(points) < 8
     options = dict(winSize=(21, 21), maxLevel=3,
                    criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 20, .03))
     forward, status, error = cv2.calcOpticalFlowPyrLK(reference, current, points, None, **options)
-    if forward is None or status is None:
+    if forward is None or status is None or error is None or not np.isfinite(forward).all():
         return None
     backward, reverse_status, _ = cv2.calcOpticalFlowPyrLK(current, reference, forward, None, **options)
     if backward is None or reverse_status is None:
@@ -33,13 +34,27 @@ def estimate_motion(reference, current):
     valid = (status.ravel() == 1) & (reverse_status.ravel() == 1)
     valid &= np.linalg.norm(points - backward, axis=2).ravel() < 1.5
     valid &= error.ravel() < 25
-    if np.count_nonzero(valid) < 8 or np.mean(valid) < .6:
-        return None
-    source, target = points[valid, 0], forward[valid, 0]
-    affine, inliers = cv2.estimateAffinePartial2D(source, target, method=cv2.RANSAC,
-                                                ransacReprojThreshold=2, maxIters=500)
-    if affine is None or inliers is None or np.mean(inliers) < .75:
-        return None
+    if sparse:
+        # Short words cannot supply eight corners. Accept translation only when
+        # every observed corner agrees; do not fit rotation/scale to scant data.
+        if not np.all(valid):
+            return None
+        source, target = points[:, 0], forward[:, 0]
+        if np.linalg.svd(source - source.mean(axis=0), compute_uv=False)[1] < 1:
+            return None  # A single row provides insufficient spatial evidence.
+        displacement = target - source
+        shift = np.median(displacement, axis=0)
+        if np.linalg.norm(shift) > 8 or np.max(np.linalg.norm(displacement - shift, axis=1)) > .75:
+            return None
+        affine = np.array([[1., 0., shift[0]], [0., 1., shift[1]]])
+    else:
+        if np.count_nonzero(valid) < 8 or np.mean(valid) < .6:
+            return None
+        source, target = points[valid, 0], forward[valid, 0]
+        affine, inliers = cv2.estimateAffinePartial2D(source, target, method=cv2.RANSAC,
+                                                    ransacReprojThreshold=2, maxIters=500)
+        if affine is None or not np.isfinite(affine).all() or inliers is None or np.mean(inliers) < .75:
+            return None
     # This tracker intentionally handles small handheld movements, not scene changes.
     scale = float(np.hypot(affine[0, 0], affine[1, 0]))
     angle = abs(float(np.degrees(np.arctan2(affine[1, 0], affine[0, 0]))))
@@ -54,7 +69,8 @@ def estimate_motion(reference, current):
     ink = support & ((warped < 200) | (current < 200))
     if np.count_nonzero(ink) < 32:
         return None
-    if np.mean(np.abs(warped.astype(float)[ink] - current[ink])) > 30:
+    # With few dots, one changed dot may mean a different character.
+    if np.mean(np.abs(warped.astype(float)[ink] - current[ink])) > (20 if sparse else 30):
         return None
     return np.vstack((affine, [0., 0., 1.]))
 

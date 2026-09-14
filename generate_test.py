@@ -68,7 +68,7 @@ def generate_braille_image(
     # คำนวณ X offset ของแต่ละ cell (None = word space → เพิ่ม word_gap)
     cell_x_positions = []
     x_cursor = margin
-    for i, dots in enumerate(cells):
+    for dots in cells:
         if dots is None:
             # space: เพิ่ม gap พิเศษ (ไม่วาดจุด)
             x_cursor += word_gap

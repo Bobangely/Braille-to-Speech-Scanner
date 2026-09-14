@@ -100,23 +100,23 @@ class ColoredOnlyTests(unittest.TestCase):
         self.assertEqual(len(cells), 2)
         self.assertNotIn('ญ', decode_cells(cells, 'thai'))
 
-    def test_color_selection_and_multiple_ink_colors_in_one_cell(self):
+    def test_blue_and_both_red_hue_ranges_are_selected(self):
         base, dots, expected = page([['123456']])
-        colors = [(255, 0, 0), (0, 0, 210), (0, 150, 0)]
-        for color_index, color in enumerate(colors):
+        for hue, name in ((120, 'blue'), (0, 'red'), (179, 'red')):
+            color = tuple(map(int, cv2.cvtColor(np.uint8([[[hue, 255, 210]]]),
+                                                cv2.COLOR_HSV2BGR)[0, 0]))
             image = base.copy()
             for dot in dots:
                 cv2.circle(image, tuple(map(round, dot['center'])), 8, color, -1)
-            name = ('blue', 'red', 'green')[color_index]
             cells, _ = ColoredCellStream(name).detect(image)
             self.assertEqual([cell['dots'] for cell in cells], expected)
-            if name != 'blue':
-                self.assertEqual(ColoredCellStream('blue').detect(image)[0], [])
-        image = base.copy()
-        for index, dot in enumerate(dots):
-            cv2.circle(image, tuple(map(round, dot['center'])), 8, colors[index % 3], -1)
-        cells, _ = ColoredCellStream('auto').detect(image)
-        self.assertEqual([cell['dots'] for cell in cells], expected)
+            other = 'red' if name == 'blue' else 'blue'
+            self.assertEqual(ColoredCellStream(other).detect(image)[0], [])
+
+    def test_only_blue_and_red_are_supported(self):
+        for name in ('green', 'black', 'auto'):
+            with self.subTest(color=name), self.assertRaisesRegex(ValueError, 'Unsupported'):
+                ColoredCellStream(name)
 
     def test_colored_reader_does_not_load_or_classify_with_yolo(self):
         image, _, expected = page([['123456', '1245']])

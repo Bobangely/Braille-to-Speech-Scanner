@@ -46,7 +46,8 @@ class LivePreview:
         if key != self._key:
             dots, cells = scaled_geometry(result['dots'], result['cells'], size[0]/width, size[1]/height)
             self._overlay = detector.annotate_with_text(np.zeros_like(preview), dots, cells,
-                decoded_text=result['decoded_text'], lang=lang, reader_name=result.get('reader_name'))
+                decoded_text=result['decoded_text'], verbose_results=result['verbose_results'],
+                lang=lang, reader_name=result.get('reader_name'))
             self._mask = np.any(self._overlay > 0, axis=2).astype(np.uint8) * 255
             reference = result.get('camera_roi')
             self._reference = (tracking_gray(reference) if result['cells'] and
@@ -69,7 +70,8 @@ class LivePreview:
                 overlay, mask = self._overlay.copy(), self._mask.copy()
                 overlay[:size[1]] = cv2.warpAffine(self._overlay[:size[1]], transform, size)
                 mask[:size[1]] = cv2.warpAffine(self._mask[:size[1]], transform, size, flags=cv2.INTER_NEAREST)
-        canvas = np.zeros_like(self._overlay)
+        # Waiting text can have a shorter footer than a multiline result.
+        canvas = np.zeros_like(overlay)
         canvas[:size[1]] = preview
         cv2.copyTo(overlay, mask, canvas)
         return canvas

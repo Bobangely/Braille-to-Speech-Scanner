@@ -15,15 +15,18 @@ def translate_cells(cells, x, y):
         return (float(value[0] + x), float(value[1] + y))
 
     def box(value):
-        return tuple(float(v + (x if i % 2 == 0 else y)) for i, v in enumerate(value))
+        return tuple(int(round(v + (x if i % 2 == 0 else y))) for i, v in enumerate(value))
 
     translated = []
     for cell in cells:
         grid = cell['grid']
+        axis = np.subtract(grid['slots'][4], grid['slots'][1])
+        reading_shift = float(np.dot(axis, (x, y)) / np.linalg.norm(axis))
         dots = [dict(dot, center=point(dot['center']),
                      bbox=box(dot['bbox']) if dot.get('bbox') is not None else None)
                 for dot in cell['read_dots']]
         translated.append(dict(cell, center=point(cell['center']), x=cell['x'] + x, y=cell['y'] + y,
+            reading_x=cell['reading_x'] + reading_shift,
             crop_quad=[point(p) for p in cell['crop_quad']], read_dots=dots,
             grid=dict(grid, bbox=box(grid['bbox']),
                 expected_cols=[v + x for v in grid['expected_cols']],
@@ -41,6 +44,8 @@ class ColoredRoiReader:
     """
 
     def __init__(self, predict_dots, refresh_seconds=.35):
+        if not np.isfinite(refresh_seconds) or refresh_seconds <= 0:
+            raise ValueError('ROI refresh interval must be positive')
         self.predict_dots = predict_dots
         self.refresh_seconds = refresh_seconds
         self.reset()
@@ -60,7 +65,8 @@ class ColoredRoiReader:
         gray = tracking_gray(image)
         now = time.monotonic()
         box, source, predicted = None, 'none', False
-        if self.box is not None and now - self.detected_at < self.refresh_seconds:
+        fresh = now - self.detected_at < self.refresh_seconds
+        if self.box is not None and fresh:
             motion = estimate_motion(self.reference, gray)
             if motion is not None:
                 motion = full_size_motion(motion, image.shape, gray.shape)
@@ -69,18 +75,20 @@ class ColoredRoiReader:
                 corners = cv2.perspectiveTransform(corners, motion)[0]
                 box = (*corners.min(axis=0), *corners.max(axis=0))
                 source = 'tracked_yolo_dots'
-        if box is None:
+        if box is None and not (self.box is None and fresh):
             # Invalidate before inference; an exception must not keep an old ROI alive.
             self.box = None
+            self.detected_at = -float('inf')
             dots = self.predict_dots(image)
             predicted = True
+            self.reference_shape = image.shape
+            self.detected_at = time.monotonic()
             if len(dots) >= 2:
                 points = np.asarray([dot['center'] for dot in dots], dtype=float)
                 diameter = float(np.median([np.sqrt(max(1, dot['area'])) for dot in dots]))
                 padding = max(8., 3 * diameter)
-                box = (*points.min(axis=0) - padding, *points.max(axis=0) + padding)
+                box = tuple(np.concatenate((points.min(axis=0) - padding, points.max(axis=0) + padding)))
                 self.box, self.reference, self.reference_shape = box, gray, image.shape
-                self.detected_at = time.monotonic()
                 source = 'yolo_dot_envelope'
         if box is None:
             return [], dict(method='colored_cell_stream', dots=[], color=reader.color,

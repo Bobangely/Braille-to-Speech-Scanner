@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 import cv2
 import numpy as np
 
-from yolo_cell_stream import plan_cells, crop_cell, read_cell, pair_markers, CellStream
+from yolo_cell_stream import plan_cells, pair_markers, CellStream
 from thai_decoder import tokenize_thai, decode_thai
 from decoder import decode_cells
 from yolo_detector import YOLOBrailleDetector
