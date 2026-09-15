@@ -4,12 +4,75 @@ import cv2
 import numpy as np
 
 from cell_tracking import CellGridTracker
-from yolo_cell_stream import UnreadableBrailleFrame, plan_cells, read_cell, pair_markers
+from yolo_cell_stream import UnreadableBrailleFrame, plan_cells, read_cell, pair_markers, _spacing
 
 
 DOT_COLORS = ('blue', 'red')
 # OpenCV HSV hue is 0..179. Neutral paper/shadows are excluded by saturation.
 HUE_RANGES = {'blue': ((100, 145),), 'red': ((0, 15), (165, 179))}
+
+
+def split_color_components(dots, mask, *, max_dots=1536):
+    """Separate two ink lobes joined by a thin neck before grid acquisition.
+
+    Both cores must exist in the current mask, at a measured dot spacing.
+    A solid wide mark has one core and must never invent a second dot.
+    """
+    if len(dots) > max_dots:
+        return dots  # Preserve the detector's frame budget before pairwise fitting.
+    reference = [d for d in dots if
+        max(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1]) <=
+        3*min(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1])]
+    if len(reference) < 4:
+        return dots
+    typical = float(np.median([d['area'] for d in reference]))
+    if not any(dot['area'] >= 1.5*typical for dot in dots):
+        return dots
+    points = np.asarray([d['center'] for d in reference])
+    areas = np.asarray([d['area'] for d in reference])
+    spacing = _spacing(points, np.sqrt(areas))
+    if spacing is None or spacing < 2:
+        return dots
+    refined = []
+    for dot in dots:
+        if dot['area'] < 1.5*typical:
+            refined.append(dot)
+            continue
+        x1, y1, x2, y2 = dot['bbox']
+        patch = np.pad(mask[y1:y2, x1:x2], 1)
+        # Do not include a different component enclosed by an irregular bbox.
+        if cv2.connectedComponents(patch)[0] != 2:
+            refined.append(dot)
+            continue
+        distance = cv2.distanceTransform(patch, cv2.DIST_L2, 5)
+        cores = (distance >= .55*float(distance.max())).astype(np.uint8)
+        count, _, stats, centers = cv2.connectedComponentsWithStats(cores)
+        if (count != 3 or min(stats[1:, cv2.CC_STAT_AREA]) < .1*typical or
+                not .7*spacing <= np.linalg.norm(centers[1]-centers[2]) <= 1.5*spacing):
+            refined.append(dot)
+            continue
+        yy, xx = np.nonzero(patch)
+        pixels = np.column_stack((xx, yy))
+        nearest = np.linalg.norm(pixels[:, None]-centers[None, 1:], axis=2).argmin(axis=1)
+        # Paint size can differ between lines. Judge the two pieces against
+        # neighbouring marks, not only the whole page's median ink area.
+        nearby = np.linalg.norm(points-dot['center'], axis=1)
+        neighbours = areas[(nearby > 0) & (nearby < 4*spacing)]
+        local_area = float(np.median(neighbours)) if len(neighbours) >= 3 else typical
+        parts = []
+        for index in range(2):
+            part = pixels[nearest == index] + (x1-1, y1-1)
+            if not .35*local_area <= len(part) <= 1.6*local_area:
+                break
+            low, high = part.min(axis=0), part.max(axis=0)+1
+            width, height = high-low
+            if max(width, height) > 3*min(width, height) or len(part)/(width*height) < .2:
+                break
+            parts.append(dict(dot, center=tuple(part.mean(axis=0)), area=float(len(part)),
+                bbox=tuple(map(int, (*low, *high))), color_pixels=len(part),
+                split_from_bbox=dot['bbox']))
+        refined.extend(parts if len(parts) == 2 else [dot])
+    return refined
 
 
 class ColoredCellStream:
@@ -39,18 +102,28 @@ class ColoredCellStream:
         dots = []
         for index in range(1, count):
             x, y, width, height, area = map(int, stats[index])
-            if (not self.min_area <= area <= self.max_area or
-                    max(width, height) > 3*min(width, height) or area/(width*height) < .2):
+            if not self.min_area <= area <= self.max_area or area/(width*height) < .2:
                 continue
             dots.append(dict(center=tuple(map(float, centers[index])), area=float(area),
                              bbox=(x, y, x+width, y+height), confidence=1.0,
                              source='color', color_pixels=area))
         # Reject small speckles relative to actual ink marks while retaining partial dots.
-        if len(dots) >= 4:
-            floor = max(self.min_area, .12*float(np.median([dot['area'] for dot in dots])))
+        normal_areas = [d['area'] for d in dots if
+            max(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1]) <=
+            3*min(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1])]
+        if len(normal_areas) >= 4:
+            floor = max(self.min_area, .12*float(np.median(normal_areas)))
             dots = [dot for dot in dots if dot['area'] >= floor]
+        # A joined pair can be wider than one dot. Apply the original aspect
+        # limit AFTER attempting a pixel-supported split; unsplit lines stay out.
+        dots = split_color_components(dots, mask, max_dots=6*self.max_cells)
+        dots = [d for d in dots if max(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1]) <=
+                3*min(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1])]
+        split_count = sum('split_from_bbox' in d for d in dots)//2
+        accepted_components = len(dots)-split_count
         return dots, dict(mask=mask, color=self.color, color_components=count-1,
-                          colored_dots=len(dots), rejected_color_components=count-1-len(dots),
+                          colored_dots=len(dots), rejected_color_components=count-1-accepted_components,
+                          split_color_components=split_count,
                           color_config=dict(hue_ranges=HUE_RANGES.get(self.color, ((0, 179),)),
                               saturation_min=60, value_min=15, min_area=self.min_area,
                               max_area=self.max_area))

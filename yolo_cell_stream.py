@@ -121,7 +121,43 @@ def _line_rows(rows, centers, spacing):
     return lines, row_pitch
 
 
-def plan_cells(dots, image_shape):
+def _row_clusters(values, spacing):
+    rows = []
+    for fragment in _clusters(values, .45*spacing):
+        combined = rows[-1]+fragment if rows else fragment
+        if (rows and np.median(values[fragment])-np.median(values[rows[-1]]) < .35*spacing
+                and np.ptp(values[combined]) <= .7*spacing):
+            rows[-1] = combined
+        else:
+            rows.append(fragment)
+    return rows
+
+
+def _band_angle(points, spacing, angle):
+    """Fit three parallel dot rows using long-baseline evidence from one band."""
+    cosine, sine = math.cos(angle), math.sin(angle)
+    uv = points @ np.array([[cosine, -sine], [sine, cosine]])
+    extent = np.ptp(uv[:, 1])
+    if len(points) < 6 or not 1.3*spacing <= extent <= 3.4*spacing:
+        return angle
+    x, y = uv[:, 0]-np.mean(uv[:, 0]), uv[:, 1]
+    row = np.clip(np.rint(2*(y-y.min())/extent), 0, 2)
+    for _ in range(4):
+        if len(np.unique(row)) != 3:
+            return angle
+        design = np.column_stack((np.ones(len(x)), x, row))
+        (offset, slope, pitch), _, rank, _ = np.linalg.lstsq(design, y, rcond=None)
+        if rank != 3 or not .65*spacing <= pitch <= 1.6*spacing:
+            return angle
+        updated = np.clip(np.rint((y-offset-slope*x)/pitch), 0, 2)
+        if np.array_equal(updated, row):
+            residual = np.abs(y-(offset+slope*x+pitch*row))
+            return angle+math.atan(slope) if residual.max() <= .38*spacing else angle
+        row = updated
+    return angle
+
+
+def plan_cells(dots, image_shape, *, _basis=None):
     """Split rows into lines of at most three rows BEFORE assigning any cell.
 
     Line crops are clipped at separators, even when the inter-line gap is less
@@ -131,14 +167,48 @@ def plan_cells(dots, image_shape):
         return []
     points = np.asarray([d['center'] for d in dots], dtype=float)
     diameters = np.sqrt([max(0, dot.get('area', 0)) for dot in dots])
-    spacing = _spacing(points, diameters)
+    spacing = _spacing(points, diameters) if _basis is None else _basis[0]
     if spacing is None or spacing < 2:
         return []  # an isolated dot has no observable 2x3 reference grid
-    angle = _angle(points, spacing)
+    angle = _angle(points, spacing) if _basis is None else _basis[1]
     cosine, sine = math.cos(angle), math.sin(angle)
     rotation = np.array([[cosine, -sine], [sine, cosine]])
     rectified = points @ rotation
-    rows = _clusters(rectified[:, 1], .45 * spacing)
+    # A mounted camera does not make a curved page's lines parallel. Separate
+    # clearly distant text bands BEFORE fitting their individual angle/rows.
+    # Smaller gaps keep the existing joint line-phase checks for sparse lines.
+    order = np.argsort(rectified[:, 1])
+    breaks = np.flatnonzero(np.diff(rectified[order, 1]) > 3*spacing)+1
+    if len(breaks) and _basis is None:
+        cells, line_offset = [], 0
+        for band in np.split(order, breaks):
+            # Retain the shared pitch and orientation unless a local angle
+            # gives a complete, better-fitting three-row reference grid.
+            band_points = points[band]
+            local_angle = _angle(band_points, spacing)
+            def fit(candidate):
+                values = band_points @ np.array([-math.sin(candidate), math.cos(candidate)])
+                groups = _row_clusters(values, spacing)
+                if len(groups) != 3:
+                    return float('inf')
+                centers = np.array([np.median(values[g]) for g in groups])
+                dy = (centers[-1]-centers[0])/2
+                if not .65*spacing <= dy <= 1.6*spacing or np.max(np.abs(np.diff(centers)/dy-1)) > .25:
+                    return float('inf')
+                return sum(np.sum((values[g]-c)**2) for g,c in zip(groups, centers))/len(values)
+            best_angle = angle
+            if not np.isfinite(fit(angle)):
+                candidates = [angle, local_angle, _band_angle(band_points, spacing, angle)]
+                best_angle = min(candidates, key=fit)
+            local = plan_cells([dots[i] for i in band], image_shape, _basis=(spacing, best_angle))
+            for cell in local:
+                cell['source_dot_ids'] = [int(band[i]) for i in cell['source_dot_ids']]
+                cell['line_id'] += line_offset
+            cells.extend(local)
+            if local:
+                line_offset = local[-1]['line_id']+1
+        return cells
+    rows = _row_clusters(rectified[:, 1], spacing)
     row_centers = [float(np.median(rectified[row, 1])) for row in rows]
     lines, row_pitch = _line_rows(rows, row_centers, spacing)
 

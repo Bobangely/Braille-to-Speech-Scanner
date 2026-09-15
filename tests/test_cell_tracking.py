@@ -49,6 +49,21 @@ class CellTrackingTests(unittest.TestCase):
         self.assertEqual(debug['line_count'], 2)
         self.assertEqual([c['dots'] for c in cells], expected)
 
+    def test_one_uneven_row_does_not_become_two_rows_at_cold_start(self):
+        image, dots, expected = page([['123456']*8])
+        image[:] = 245
+        last_x = max(dot['center'][0] for dot in dots)
+        for dot in dots:
+            x, y = dot['center']
+            if y < 80:
+                y += 20*(x-60)/(last_x-60)
+            else:
+                y += 10  # Keep distinct dot rows separated despite the uneven top row.
+            cv2.circle(image, (round(x), round(y)), 8, (255, 0, 0), -1)
+        cells, debug = self.reader.detect(image)
+        self.assertEqual(debug['line_count'], 1)
+        self.assertEqual([c['dots'] for c in cells], expected)
+
     def test_stationary_camera_does_not_drift(self):
         first, _ = self.reader.detect(self.image, context='camera')
         for _ in range(15):

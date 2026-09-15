@@ -2,35 +2,7 @@
 Braille Reader - Real-time Webcam Scanner
 ===========================================
 ระบบสแกนอักษรเบรลล์ที่แต้มสีแบบสดผ่านกล้อง Webcam
-รองรับความละเอียดสูง 4K UHD และ Full HD (FHD) พร้อมระบบปรับระดับความคมชัด (Multi-level Sharpness) & Digital Zoom
 
-ฟีเจอร์เด่น:
-- สลับความละเอียดแบบสดได้ทันทีระหว่าง 4K UHD (3840x2160), Full HD 1080p (1920x1080) และ HD 720p (กดปุ่ม V หรือ F)
-- ปรับระดับความคมชัดของภาพได้ 5 ระดับ (OFF -> LOW -> MED -> HIGH -> ULTRA) ผ่านปุ่ม E
-- ใช้ MJPG FourCC Codec เพื่อปลดล็อก Bandwidth สูงสุดของกล้อง 4K/FHD USB
-- ระบบ Digital Zoom In / Zoom Out (1.0x - 4.0x) สำหรับขยายอักษรเบรลล์ขนาดเล็ก
-- สแกนเฟรมวิดีโอแบบสดพร้อม 2x3 Virtual Grid Overlay และแถบคำแปลภาษาไทย/อังกฤษ
-- ระบบ Frame Stabilization ตรวจจับความนิ่งของคำก่อนตัดสินใจ
-- สลับภาษา (ไทย/อังกฤษ) ได้ทันทีผ่านคีย์ลัด
-- บันทึกภาพ Snapshot พร้อมคำแปลลงโฟลเดอร์ output/
-
-คีย์ลัด (Hotkeys):
-  [V] / [F]     : สลับความละเอียดกล้อง (4K UHD <-> Full HD 1080p <-> HD 720p)
-  [E]           : ปรับระดับความคมชัด (Sharpness: OFF -> LOW -> MED -> HIGH -> ULTRA)
-  [Z] / [+] / [=] : ซูมเข้า (Zoom In +0.2x)
-  [X] / [-] / [_] : ซูมออก (Zoom Out -0.2x)
-  [R] / [0]     : รีเซ็ตการซูม (Reset Zoom 1.0x)
-  [L]           : สลับภาษา (Thai <-> English)
-  [C]           : สลับสีจุดที่อ่าน (น้ำเงิน <-> แดง)
-  [P]           : ถ่ายภาพ Snapshot บันทึกลง output/
-  [D]           : บันทึกภาพที่ตัวอ่านใช้จริง พร้อมเหตุผลรายเซลล์และรหัส Unicode
-  [Q] / [ESC]   : ออกจากโปรแกรม
-
-การใช้เมาส์ (Mouse Controls):
-  • หมุนล้อเมาส์ขึ้น (Scroll Up)   : ซูมเข้า (Zoom In เล็งตรงตำแหน่งเมาส์)
-  • หมุนล้อเมาส์ลง (Scroll Down) : ซูมออก (Zoom Out)
-  • คลิกซ้ายบนภาพ                : เลื่อนจุดโฟกัส (Pan) ไปยังจุดที่คลิก
-  • ดับเบิ้ลคลิก หรือ คลิกกลาง     : รีเซ็ตการซูมกลับ 1.0x
 """
 
 import argparse
@@ -490,7 +462,8 @@ class AsyncBrailleWorker:
                         'colored_dots', 'color_components', 'rejected_color_components', 'color_config',
                         'candidate_source', 'read_source', 'yolo_inference',
                         'roi_source', 'roi_box', 'roi_status', 'grid_tracking', 'grid_pending',
-                        'grid_candidate_count', 'grid_planning_error', 'refined_colored_dots') if key in debug_info}
+                        'grid_candidate_count', 'grid_planning_error', 'refined_colored_dots',
+                        'split_color_components') if key in debug_info}
         finally:
             with self._output_lock:
                 self.busy_since = None
@@ -538,6 +511,7 @@ class RealTimeBrailleScanner:
         model_path=None,
         dot_color='blue',
         roi_mode='off',
+        scan_roi=None,
     ):
         self.camera_id = camera_id
         self.lang = lang.lower()
@@ -547,6 +521,13 @@ class RealTimeBrailleScanner:
         if dot_color not in DOT_COLORS:
             raise ValueError('Camera dot color must be blue or red')
         self.dot_color = dot_color
+        if scan_roi is not None:
+            if (len(scan_roi) != 4 or not np.isfinite(scan_roi).all() or
+                    not (0 <= scan_roi[0] < scan_roi[2] <= 1 and
+                         0 <= scan_roi[1] < scan_roi[3] <= 1)):
+                raise ValueError('scan_roi must be normalized x1 y1 x2 y2 within 0..1')
+            scan_roi = tuple(map(float, scan_roi))
+        self.scan_roi = scan_roi
 
         # กำหนดระดับความคมชัดเริ่มต้น (0 ถึง 4)
         self.sharpness_idx = max(0, min(len(SHARPNESS_LEVELS) - 1, int(sharpness_level)))
@@ -619,7 +600,7 @@ class RealTimeBrailleScanner:
         self.sharpness_idx = (self.sharpness_idx + 1) % len(SHARPNESS_LEVELS)
         lvl_num, lvl_name, _ = SHARPNESS_LEVELS[self.sharpness_idx]
         self.history.clear()
-        print(f"  ✨ ปรับระดับความคมชัด (Sharpness): Level {lvl_num} [{lvl_name}]")
+        print(f"   ปรับระดับความคมชัด (Sharpness): Level {lvl_num} [{lvl_name}]")
 
     def cycle_dot_color(self):
         self.dot_color = DOT_COLORS[(DOT_COLORS.index(self.dot_color) + 1) % len(DOT_COLORS)]
@@ -642,7 +623,7 @@ class RealTimeBrailleScanner:
 
         self.res_name = name
         self.history.clear()
-        print(f"  📹 ขอเปลี่ยนความละเอียดกล้องเป็น: {name} ({target_w}x{target_h}); กำลังรอเฟรมใหม่")
+        print(f"   ขอเปลี่ยนความละเอียดกล้องเป็น: {name} ({target_w}x{target_h}); กำลังรอเฟรมใหม่")
 
     def zoom_in(self, step=0.2, center_norm=None):
         """ขยายภาพ (Zoom In)"""
@@ -655,7 +636,7 @@ class RealTimeBrailleScanner:
                     max(0.1, min(0.9, center_norm[1])),
                 ]
             self.history.clear()
-            print(f"  🔍 ZOOM IN: {self.zoom_level:.1f}x")
+            print(f"   ZOOM IN: {self.zoom_level:.1f}x")
 
     def zoom_out(self, step=0.2):
         """ลดการขยาย (Zoom Out)"""
@@ -665,7 +646,7 @@ class RealTimeBrailleScanner:
             if self.zoom_level <= 1.001:
                 self.zoom_center = [0.5, 0.5]
             self.history.clear()
-            print(f"  🔍 ZOOM OUT: {self.zoom_level:.1f}x")
+            print(f"   ZOOM OUT: {self.zoom_level:.1f}x")
 
     def reset_zoom(self):
         """รีเซ็ตการซูมกลับเป็น 1.0x"""
@@ -673,25 +654,30 @@ class RealTimeBrailleScanner:
             self.zoom_level = 1.0
             self.zoom_center = [0.5, 0.5]
             self.history.clear()
-            print("  🔍 RESET ZOOM: 1.0x")
+            print("   RESET ZOOM: 1.0x")
 
     def _apply_zoom(self, frame):
         """
         ตัดภาพตามอัตราซูมและตำแหน่ง zoom_center โดยรักษาพิกเซลต้นฉบับสำหรับ YOLO
         """
-        if self.zoom_level <= 1.001:
+        if self.zoom_level <= 1.001 and self.scan_roi is None:
             return frame, None
 
         h, w = frame.shape[:2]
-        crop_w = max(1, int(w / self.zoom_level))
-        crop_h = max(1, int(h / self.zoom_level))
+        bx1, by1, bx2, by2 = (0, 0, w, h)
+        if self.scan_roi is not None:
+            left, top, right, bottom = self.scan_roi
+            bx1, by1 = int(left*w), int(top*h)
+            bx2, by2 = min(w, max(bx1+1, int(np.ceil(right*w)))), min(h, max(by1+1, int(np.ceil(bottom*h))))
+        crop_w = max(1, int((bx2-bx1) / self.zoom_level))
+        crop_h = max(1, int((by2-by1) / self.zoom_level))
 
         cx = int(self.zoom_center[0] * w)
         cy = int(self.zoom_center[1] * h)
 
         # คำนวณขอบเขต Crop
-        x1 = max(0, min(w - crop_w, cx - crop_w // 2))
-        y1 = max(0, min(h - crop_h, cy - crop_h // 2))
+        x1 = max(bx1, min(bx2 - crop_w, cx - crop_w // 2))
+        y1 = max(by1, min(by2 - crop_h, cy - crop_h // 2))
         x2 = x1 + crop_w
         y2 = y1 + crop_h
 
@@ -1130,7 +1116,7 @@ def main():
     )
     parser.add_argument(
         '--stability', type=int, default=6,
-        help='จำนวนเฟรมที่ข้อความต้องนิ่งก่อนออกเสียงอัตโนมัติ (default: 6)',
+        help='จำนวนผลอ่านใหม่ที่ตรงกันก่อนแสดงข้อความยืนยัน (default: 6)',
     )
     parser.add_argument(
         '--width', type=int, default=None,
@@ -1159,6 +1145,8 @@ def main():
     parser.add_argument('--model', default=None, help='Local YOLO weights')
     parser.add_argument('--dot-color', choices=DOT_COLORS, default='blue', help='Read only painted dots of this color')
     parser.add_argument('--roi', choices=['off', 'yolo'], default='off', help='Optional YOLO-dot ROI with tracking')
+    parser.add_argument('--scan-roi', nargs=4, type=float, metavar=('X1', 'Y1', 'X2', 'Y2'),
+                        help='Fixed scan area in normalized camera coordinates 0..1; zoom stays inside it')
     args = parser.parse_args()
 
     scanner = RealTimeBrailleScanner(
@@ -1181,6 +1169,7 @@ def main():
         model_path=args.model,
         dot_color=args.dot_color,
         roi_mode=args.roi,
+        scan_roi=args.scan_roi,
     )
     scanner.run()
 
