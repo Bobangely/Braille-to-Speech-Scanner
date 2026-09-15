@@ -3,7 +3,7 @@
 import re
 import unicodedata
 
-from config_thai import (THAI_BRAILLE_TO_CHAR, THAI_MULTI_CELL, THAI_DIGIT_MAP,
+from config_thai import (THAI_BRAILLE_TO_CHAR, THAI_MULTI_CELL, THAI_READING_MULTI_CELL, THAI_DIGIT_MAP,
                         THAI_CONSONANTS, THAI_TONE_MARKS, NUMBER_INDICATOR,
                         COMPOUND_VOWELS)
 
@@ -85,7 +85,7 @@ def tokenize_thai(cells):
             numeric = False
             if (index + 1 < len(cells) and not cell_read_warning(cells[index + 1])
                     and not _break_before(cells, index + 1, adjacent=True)):
-                char = THAI_MULTI_CELL.get((pattern, frozenset(cells[index + 1]['dots'])), '')
+                char = THAI_READING_MULTI_CELL.get((pattern, frozenset(cells[index + 1]['dots'])), '')
                 if char:
                     span = 2
                     if pattern == frozenset({3, 5, 6}) and index > 0 and not boundary:

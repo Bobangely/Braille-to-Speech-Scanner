@@ -38,6 +38,13 @@ THAI_MULTI_CELL.update({(dots(a), dots(b)): char for a, b, char in [
     ('156', '2', 'ใ'), ('1235', '2', 'ฤ'), ('123', '2', 'ฦ'),
     ('56', '23', 'ฯ'), ('4', '12', '฿'), ('5', '16', 'ๅ'),
 ]})
+# The book uses Thai-prefixed punctuation (Liblouis tables/th-g1.utb).
+# Keep the existing synthetic vocabulary stable; extend the reading table only.
+THAI_READING_MULTI_CELL = dict(THAI_MULTI_CELL)
+THAI_READING_MULTI_CELL.update({(dots('456'), dots(body)): char for body, char in {
+    '2': ',', '23': ';', '25': ':', '256': '.', '235': '!', '236': '?',
+}.items()})
+
 LEADING_VOWELS = {'เ', 'แ', 'โ', 'ไ', 'ใ'}
 COMPOUND_VOWELS = {'เ◌า', 'เ◌อ', 'เ◌ีย', 'เ◌ือ', '◌ัว'}
 COMBINING_VOWELS = set(THAI_VOWELS.values()) - LEADING_VOWELS - COMPOUND_VOWELS

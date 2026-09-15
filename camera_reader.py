@@ -34,6 +34,34 @@ from decoder import decode_cells, decode_cells_verbose
 logger = logging.getLogger(__name__)
 
 
+def _uncertainty_notice(result):
+    tokens = result.get('verbose_results', [])
+    warnings = []
+    for i, t in enumerate(tokens):
+        w = t.get('warning')
+        if not w or t.get('consumed'):
+            continue
+        c_name = f'C{i+1}'
+        dots = t.get('dots', [])
+        dots_str = ''.join(map(str, dots)) if dots else 'empty'
+        
+        w_text = w
+        if w == 'unknown_or_incomplete_symbol':
+            w_text = 'unknown/incomplete symbol'
+        elif w == 'empty_crop':
+            w_text = 'empty crop'
+            
+        warnings.append(f"{c_name} [{dots_str}]: {w_text}")
+        
+    if not warnings:
+        return 'text assembly incomplete'
+        
+    msg = warnings[0]
+    if len(warnings) > 1:
+        msg += f' (+{len(warnings)-1} more)'
+    return msg
+
+
 def _valid_frame(frame):
     return (isinstance(frame, np.ndarray) and frame.dtype == np.uint8 and
             frame.ndim == 3 and frame.shape[2] == 3 and frame.size > 0)
@@ -891,11 +919,7 @@ class RealTimeBrailleScanner:
         elif result.get('debug_info', {}).get('grid_pending'):
             message = 'TRACKING - confirming changed cell layout'
         elif status == 'uncertain':
-            counts = Counter(token['warning'] for token in result['verbose_results']
-                             if token.get('warning') and not token.get('consumed'))
-            other = sum(counts.values()) - counts['empty_crop'] - counts['ambiguous_row_grid']
-            message = (f"UNCERTAIN - empty crops: {counts['empty_crop']} | "
-                       f"row grid: {counts['ambiguous_row_grid']} | other: {other} | [D] trace")
+            message = _uncertainty_notice(result)
         elif decoded_text and not is_locked:
             message = f'CONFIRMING - {len(self.history)}/{self.stability_threshold} matching results'
         else:
@@ -944,14 +968,17 @@ class RealTimeBrailleScanner:
             if inference_frame is None:
                 raise ValueError('No completed inference frame available for diagnosis')
             from tools.diagnostics.export_yolo_stream import export_stream
-            destination = os.path.join('output', f"diagnostic_{time.time_ns()}")
+            os.makedirs('output', exist_ok=True)
+            existing = [d for d in os.listdir('output') if d.startswith('diag_') and d[5:].isdigit()]
+            next_num = max((int(d[5:]) for d in existing), default=0) + 1
+            destination = os.path.join('output', f"diag_{next_num:03d}")
             manifest = export_stream(inference_frame, result['cells'],
                 dict(result['debug_info'], method=result['debug_info'].get('method',
                     'colored_cell_stream' if getattr(self.detector, 'dot_color', None) else 'yolo_cell_stream')), destination,
                 lang=result['lang'], source=f"camera:{self.camera_id}", captured_image=camera_roi,
                 metadata={key: result[key] for key in ('frame_id', 'result_id', 'status', 'reason',
                     'stage', 'error', 'context', 'sharpness_strength', 'decoded_text')}, detector=self.detector)
-            print(f"  🔎 Diagnostic frame {result['frame_id']}: {manifest.resolve()}")
+            print(f"  🔎 Diagnostic #{next_num:03d} (frame {result['frame_id']}): {manifest.resolve()}")
         elif key in (ord('p'), ord('P')):
             if enhanced_frame is None:
                 raise ValueError('No live frame available for snapshot')

@@ -377,7 +377,7 @@ class CellStream:
 
 def pair_markers(cells, lang='thai'):
     """One-cell lookahead: emit marker+body together, never across a line or gap."""
-    from config_thai import THAI_MULTI_CELL
+    from config_thai import THAI_READING_MULTI_CELL
     iterator = iter(cells)
     current = next(iterator, None)
     while current is not None:
@@ -396,7 +396,7 @@ def pair_markers(cells, lang='thai'):
             # is restricted to a leading marker whose column phase is ambiguous.
             if (current['dots'] == frozenset({3}) and current['column_ambiguous']
                     and current['line_cell_index'] == 0
-                    and (frozenset({6}), following['dots']) in THAI_MULTI_CELL):
+                    and (frozenset({6}), following['dots']) in THAI_READING_MULTI_CELL):
                 current = dict(current, dots=frozenset({6}), marker_repair='leading_3_to_6')
                 slots = current['grid']['slots']
                 shift = np.asarray(slots[4])-slots[1]
@@ -417,7 +417,7 @@ def pair_markers(cells, lang='thai'):
                     current['cell_pitch'] = measured_pitch
                     following = dict(following, cell_pitch=measured_pitch)
                 # crop_quad and read_pattern retain the actual stage-2 input/read.
-            symbol = THAI_MULTI_CELL.get((current['dots'], following['dots']))
+            symbol = THAI_READING_MULTI_CELL.get((current['dots'], following['dots']))
             if symbol:
                 current = dict(current, symbol=symbol, symbol_span=2)
                 following = dict(following, symbol_continuation=True)
