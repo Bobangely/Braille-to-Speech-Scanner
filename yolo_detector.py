@@ -1,6 +1,7 @@
 """Painted-dot Braille reading with a retained YOLO path for model evaluation."""
 
 import os
+import math
 from pathlib import Path
 import sys
 import cv2
@@ -248,8 +249,87 @@ class YOLOBrailleDetector:
         self._font_cache[cache_key] = font
         return font
 
+    @staticmethod
+    def _draw_cell_hud(canvas, cells):
+        """Draw measured cell patterns at existing slot coordinates; never infer dots."""
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        ink, active, inactive = (34, 29, 23), (195, 218, 103), (156, 147, 132)
+        height, width = canvas.shape[:2]
+
+        def plate(text, cx, top, scale):
+            (tw, th), baseline = cv2.getTextSize(text, font, scale, 1)
+            x = max(0, min(width-tw-4, round(cx-tw/2)-2))
+            y = max(0, min(height-th-baseline-4, round(top)))
+            cv2.rectangle(canvas, (x, y), (x+tw+4, y+th+baseline+3), ink, -1)
+            cv2.putText(canvas, text, (x+2, y+th+1), font, scale,
+                        (239, 237, 226), 1, cv2.LINE_AA)
+            return th+baseline+4
+
+        for index, cell in enumerate(cells):
+            grid = cell.get('grid')
+            if not grid or not grid.get('slots'):
+                continue
+            slots = {int(key): value for key, value in grid['slots'].items()}
+            # Use the rotated/perspective-aware slots, not a reconstructed 2x3 box.
+            distances = [math.hypot(slots[a][0]-slots[b][0], slots[a][1]-slots[b][1])
+                         for a, b in ((1, 2), (2, 3), (4, 5), (5, 6), (1, 4))
+                         if a in slots and b in slots]
+            spacing = min(distances, default=12.)
+            radius = max(2, min(10, round(spacing*.29)))
+            number_scale = min(.45, max(.15, (2*radius-2)/22))
+            (nw, nh), _ = cv2.getTextSize('6', font, number_scale, 1)
+            x1, y1, x2, y2 = map(round, grid['bbox'])
+            warning = cell.get('row_ambiguous') or cell.get('crop_status') == 'empty'
+            edge = (99, 179, 235) if warning else active
+            cv2.rectangle(canvas, (x1, y1), (x2, y2), edge, 1, cv2.LINE_AA)
+            for dot_id, point in slots.items():
+                center = tuple(map(round, point))
+                is_active = dot_id in cell['dots']
+                cv2.circle(canvas, center, radius, active if is_active else ink, -1, cv2.LINE_AA)
+                if not is_active:
+                    cv2.circle(canvas, center, radius, inactive, 1, cv2.LINE_AA)
+                cv2.putText(canvas, str(dot_id), (center[0]-nw//2, center[1]+nh//2),
+                            font, number_scale, ink if is_active else inactive, 1, cv2.LINE_AA)
+
+            cx = (x1+x2)/2
+            budget = max(8., min(width, (x2-x1)*1.6))
+            for neighbor in cells[max(0, index-1):index] + cells[index+1:index+2]:
+                if neighbor.get('line_id') == cell.get('line_id') and neighbor.get('grid'):
+                    bx1, _, bx2, _ = neighbor['grid']['bbox']
+                    distance = abs((bx1+bx2)/2-cx)
+                    if distance > 0:
+                        budget = min(budget, max(8., distance-3))
+            label = f"C{cell.get('track_id', index+1)}"
+            scale = min(.42, max(.23, spacing*.024))
+            label_width = cv2.getTextSize(label, font, scale, 1)[0][0]
+            label_scale = min(scale, scale*max(4, budget-4)/max(1, label_width))
+            (_, th), baseline = cv2.getTextSize(label, font, label_scale, 1)
+            label_top = y1-th-baseline-6
+            plate(label, cx, label_top, label_scale)
+
+            pattern = '[' + ','.join(map(str, sorted(cell['dots']))) + ']'
+            pattern_scale = min(.34, max(.23, spacing*.022))
+            # Wrap dense patterns within the cell's horizontal lane rather than
+            # drawing over its neighbor. The underlying pattern is never shortened.
+            lines = [pattern]
+            if cv2.getTextSize(pattern, font, pattern_scale, 1)[0][0]+4 > budget and len(cell['dots']) > 3:
+                parts = list(map(str, sorted(cell['dots'])))
+                middle = (len(parts)+1)//2
+                lines = ['['+','.join(parts[:middle])+',', ','.join(parts[middle:])+']']
+            max_width = max(cv2.getTextSize(line, font, pattern_scale, 1)[0][0] for line in lines)
+            pattern_scale = min(pattern_scale, pattern_scale*max(4, budget-4)/max(1, max_width))
+            line_sizes = [cv2.getTextSize(line, font, pattern_scale, 1) for line in lines]
+            block_height = sum(size[0][1]+size[1]+4 for size in line_sizes)
+            top = y2+3
+            if top+block_height > height:
+                # Keep the entire pattern together when zoom puts a cell at the
+                # bottom edge; clamping each line separately would erase a line.
+                top = max(0, label_top-block_height-2)
+            for line in lines:
+                top += plate(line, cx, top, pattern_scale)
+
     def annotate_with_text(self, image, dots, cells, decoded_text="", verbose_results=None, lang="thai",
-                           reader_name=None):
+                           reader_name=None, details=True, footer=True, cell_hud=False):
         """
         วาด Overlays ครบถ้วน:
         1. Bounding Boxes / Refined Contours
@@ -260,13 +340,13 @@ class YOLOBrailleDetector:
         text_lines = decoded_text.splitlines()[:3]
         if len(decoded_text.splitlines()) > 3:
             text_lines[-1] += ' …'
-        banner_h = 80 + 32*max(0, len(text_lines)-1)
+        banner_h = (80 + 32*max(0, len(text_lines)-1)) if footer else 0
         canvas = np.zeros((h + banner_h, w, 3), dtype=np.uint8)
         canvas[:h, :w] = image.copy()
         canvas[h:, :] = (28, 22, 16)  # Dark navy slate
 
         # 1. วาด 2x3 Grid รอบแต่ละ Cell
-        for idx, cell in enumerate(cells, 1):
+        for idx, cell in enumerate(() if cell_hud else cells, 1):
             grid = cell.get('grid')
             if not grid:
                 continue
@@ -279,6 +359,9 @@ class YOLOBrailleDetector:
             row_mid2 = int((rows[1] + rows[2]) / 2.0)
 
             # กรอบ Cell (สีส้มอมทอง)
+            if not details:
+                cv2.rectangle(canvas, (x_min, y_min), (x_max, y_max), (190, 155, 45), 1)
+                continue
             cv2.rectangle(canvas, (x_min, y_min), (x_max, y_max), (255, 200, 0), 2)
             cv2.line(canvas, (col_mid, y_min), (col_mid, y_max), (200, 160, 0), 1)
             cv2.line(canvas, (x_min, row_mid1), (x_max, row_mid1), (200, 160, 0), 1)
@@ -300,12 +383,18 @@ class YOLOBrailleDetector:
         # 2. วาดไฮไลท์รอบจุดที่ตรวจพบ
         for dot in dots:
             cx, cy = dot['center']
+            if cell_hud and not details:
+                continue
+            if not details:
+                cv2.circle(canvas, (round(cx), round(cy)), 2, (190, 155, 45), -1)
+                continue
             conf = dot.get('confidence')
             bbox = dot.get('bbox')
             radius = int(np.sqrt(dot['area'] / np.pi))
 
-            cv2.circle(canvas, (int(cx), int(cy)), radius + 3, (0, 255, 0), 2)
-            cv2.circle(canvas, (int(cx), int(cy)), 2, (0, 0, 255), -1)
+            if not cell_hud:
+                cv2.circle(canvas, (int(cx), int(cy)), radius + 3, (0, 255, 0), 2)
+                cv2.circle(canvas, (int(cx), int(cy)), 2, (0, 0, 255), -1)
 
             # Bounding Box
             if bbox:
@@ -320,6 +409,12 @@ class YOLOBrailleDetector:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1, cv2.LINE_AA
                     )
 
+        if cell_hud:
+            self._draw_cell_hud(canvas, cells)
+
+        if not details and not footer:
+            return canvas
+
         # 3. วาดข้อความผลลัพธ์และตัวอักษรด้วย PIL
         pil_img = Image.fromarray(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(pil_img)
@@ -329,7 +424,7 @@ class YOLOBrailleDetector:
         font_small = self._get_font(size=14, bold=False)
 
         # ตัวอักษรเหนือ Cell
-        if verbose_results:
+        if details and verbose_results:
             for idx, item in enumerate(verbose_results, 1):
                 if item.get('consumed'):
                     continue
@@ -338,14 +433,18 @@ class YOLOBrailleDetector:
                     grid = cell.get('grid')
                     if grid:
                         x_min, y_min = grid['bbox'][0], grid['bbox'][1]
-                        char_text = f"C{cell.get('track_id', idx)}: {item['char']}"
-                        draw.text((x_min + 2, y_min - 25), char_text, fill=(255, 190, 0), font=font_mid)
-        else:
+                        char_text = item['char'] if cell_hud else f"C{cell.get('track_id', idx)}: {item['char']}"
+                        draw.text((x_min + 2, y_min - (40 if cell_hud else 25)),
+                                  char_text, fill=(255, 190, 0), font=font_mid)
+        elif details and not cell_hud:
             for idx, cell in enumerate(cells, 1):
                 grid = cell.get('grid')
                 if grid:
                     x_min, y_min = grid['bbox'][0], grid['bbox'][1]
                     draw.text((x_min + 2, y_min - 22), f"C{cell.get('track_id', idx)}", fill=(255, 190, 0), font=font_small)
+
+        if not footer:
+            return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
         # 4. Bottom Banner
         draw.line([(0, h), (w, h)], fill=(70, 85, 105), width=2)
@@ -428,11 +527,11 @@ if __name__ == '__main__':
                                  detector=detector)
         print(f'  Cell stream report: {manifest}')
 
-    print(f"\n  🎯 Reader:        {detector.reader_name}")
-    print(f"  🔍 Method Used:   {debug_info.get('method')}")
-    print(f"  ⚪ Dots detected: {len(debug_info.get('dots', []))}")
-    print(f"  📦 Cells found:   {len(cells)}")
-    print(f"  📝 Decoded text:  \"{decoded}\"")
+    print(f"\n   Reader:        {detector.reader_name}")
+    print(f"   Method Used:   {debug_info.get('method')}")
+    print(f"   Dots detected: {len(debug_info.get('dots', []))}")
+    print(f"   Cells found:   {len(cells)}")
+    print(f"   Decoded text:  \"{decoded}\"")
 
     annotated = detector.annotate_with_text(
         image, debug_info.get('dots', []), cells,
@@ -446,11 +545,11 @@ if __name__ == '__main__':
         out_path = os.path.join(output_dir, f'{stem}_{detector.mode}.png')
         if not cv2.imwrite(out_path, annotated):
             raise OSError(f'Cannot save annotation: {out_path}')
-        print(f"  💾 Saved to: {out_path}")
+        print(f"   Saved to: {out_path}")
 
     if not args.no_show:
         cv2.namedWindow('Painted Braille Reader', cv2.WINDOW_NORMAL)
         cv2.imshow('Painted Braille Reader', annotated)
-        print("  ⌨️ กดปุ่มใดก็ได้เพื่อปิดหน้าต่าง...")
+        print("   กดปุ่มใดก็ได้เพื่อปิดหน้าต่าง...")
         cv2.waitKey(0)
         cv2.destroyAllWindows()

@@ -32,8 +32,10 @@ def scaled_geometry(dots, cells, sx, sy):
 
 
 class LivePreview:
-    def __init__(self, max_width=1280):
+    def __init__(self, max_width=1280, dashboard=False):
         self.max_width = max_width
+        self.dashboard = dashboard
+        self.details = False
         self._key = None
         self.motion_valid = True
         self._reference = None
@@ -48,7 +50,9 @@ class LivePreview:
         size = (max(1, round(width * scale)), max(1, round(height * scale)))
         preview = cv2.resize(frame, size, interpolation=cv2.INTER_AREA) if scale < 1 else frame
         grid_key = (result['result_id'], frame.shape, lang, result.get('reader_name'), result.get('context'))
-        key = (grid_key, size, detector.mode, result['decoded_text'], bool(result['verbose_results']))
+        key = (grid_key, size, detector.mode, result['decoded_text'], bool(result['verbose_results']),
+               self.dashboard, self.details)
+        style = dict(details=self.details, footer=False, cell_hud=True) if self.dashboard else {}
         if key != self._key:
             reference = result.get('camera_roi')
             if grid_key != self._grid_key:
@@ -64,16 +68,16 @@ class LivePreview:
             dots, cells = scaled_geometry(result['dots'], self._stable_cells, size[0]/width, size[1]/height)
             self._overlay = detector.annotate_with_text(np.zeros_like(preview), dots, cells,
                 decoded_text=result['decoded_text'], verbose_results=result['verbose_results'],
-                lang=lang, reader_name=result.get('reader_name'))
+                lang=lang, reader_name=result.get('reader_name'), **style)
             self._mask = np.any(self._overlay > 0, axis=2).astype(np.uint8) * 255
             self._reference = (tracking_gray(reference) if result['cells'] and
                 isinstance(reference, np.ndarray) and reference.shape == frame.shape else None)
             self._motion_mask = (cell_motion_mask(self._stable_cells, frame.shape, self._reference.shape)
                                  if self._reference is not None else None)
-            waiting_key = (size, lang, detector.mode, result.get('reader_name'))
+            waiting_key = (size, lang, detector.mode, result.get('reader_name'), self.dashboard, self.details)
             if self._reference is not None and waiting_key != self._waiting_key:
                 self._waiting = detector.annotate_with_text(np.zeros_like(preview), [], [],
-                    decoded_text='', lang=lang, reader_name=result.get('reader_name'))
+                    decoded_text='', lang=lang, reader_name=result.get('reader_name'), **style)
                 self._waiting_mask = np.any(self._waiting > 0, axis=2).astype(np.uint8) * 255
                 self._waiting_key = waiting_key
             self._key = key

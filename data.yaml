@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['braille_dot']
+
+roboflow:
+  workspace: b0b-eagle
+  project: data-for-braille-training
+  version: 5
+  license: Private
+  url: https://app.roboflow.com/b0b-eagle/data-for-braille-training/5

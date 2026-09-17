@@ -59,6 +59,9 @@ def tokenize_thai(cells):
     """One record per physical cell, with shared spans for multi-cell symbols.
 
     Prefixes cannot consume a cell across a line, blank cell, or large gap.
+    Complete adjacent multi-cell symbols take precedence over single-cell signs,
+    including prefix 356 versus karan. Without a word lexicon, an unseparated
+    karan followed by ท/ข cannot be distinguished from ธ/ฃ by dots alone.
     Continuations have an empty display label and consumed=True, preserving the
     existing per-cell overlay API while showing a two-cell letter only once.
     """
@@ -88,8 +91,8 @@ def tokenize_thai(cells):
                 char = THAI_READING_MULTI_CELL.get((pattern, frozenset(cells[index + 1]['dots'])), '')
                 if char:
                     span = 2
-                    if pattern == frozenset({3, 5, 6}) and index > 0 and not boundary:
-                        warning = 'ambiguous_prefix_or_karan'
+                    # Match pair_markers' complete-pair precedence. Being inside
+                    # a word alone is not evidence of a failed cell recognition.
             if not char:
                 char = THAI_BRAILLE_TO_CHAR.get(pattern, '�')
                 if char == '�':

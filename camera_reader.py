@@ -16,7 +16,7 @@ from collections import Counter, deque
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw
+from scanner_ui import ScannerUI
 from yolo_cell_stream import UnreadableBrailleFrame
 
 # ปรับ encoding สำหรับ Windows console
@@ -36,12 +36,16 @@ logger = logging.getLogger(__name__)
 
 def _uncertainty_notice(result):
     tokens = result.get('verbose_results', [])
+    cells = result.get('cells', [])
     warnings = []
     for i, t in enumerate(tokens):
         w = t.get('warning')
         if not w or t.get('consumed'):
             continue
-        c_name = f'C{i+1}'
+        # The grid uses persistent track IDs, which can have gaps after a loss.
+        # Keep this notice on the same cell rather than its current list index.
+        cell_id = cells[i].get('track_id', i + 1) if i < len(cells) else i + 1
+        c_name = f'C{cell_id}'
         dots = t.get('dots', [])
         dots_str = ''.join(map(str, dots)) if dots else 'empty'
         
@@ -595,7 +599,11 @@ class RealTimeBrailleScanner:
         self._context_generation = 0
         self._rejected_result_id = None
         self._last_ui_error = (None, 0.0)
-        self._preview = LivePreview(max_width=1280)
+        self._preview = LivePreview(max_width=1280, dashboard=True)
+        self.show_details = False
+        self._ui_pending_key = None
+        self._window_name = None
+        self._window_checked_at = 0.
 
         # ตัวตรวจจับ YOLO
         initial_mode = self.detector_mode
@@ -612,6 +620,8 @@ class RealTimeBrailleScanner:
             dot_color=dot_color,
             roi_mode=roi_mode,
         )
+        self._ui = ScannerUI(lambda size, bold: self.detector._get_font(size, bold)
+                             if hasattr(self.detector, '_get_font') else None)
 
         # Threaded components
         self.camera = None
@@ -736,93 +746,52 @@ class RealTimeBrailleScanner:
                     cv2.FONT_HERSHEY_SIMPLEX, .38, (0, 255, 255), 1, cv2.LINE_AA)
         image[vy:vy+vh, vx:vx+vw] = mini
 
+    def _compose_dashboard(self, preview, result, current_text='', is_locked=False):
+        cells = result.get('cells', [])
+        status = ('Error' if result.get('error') else
+                  'Check image' if result.get('status') in ('uncertain', 'unreadable') else
+                  'Detected' if is_locked else 'Scanning' if cells else 'Ready')
+        state = dict(text=current_text if is_locked else '', lang=self.lang,
+            color=self.dot_color, sharp=SHARPNESS_LEVELS[self.sharpness_idx][1].split()[0],
+            details=self.show_details, zoom=self.zoom_level, status=status,
+            resolution=f'{self.actual_width} x {self.actual_height}',
+            mode=('YOLO ROI / ' if getattr(self.detector, 'roi_mode', 'off') == 'yolo'
+                  else 'COLOR / ') + self.dot_color.upper(),
+            cells=len(cells), dots=len(result.get('dots', [])),
+            lines=len({cell.get('line_id', 0) for cell in cells}),
+            confirmed=len(self.history) if is_locked or current_text else 0,
+            required=self.stability_threshold)
+        return self._ui.compose(preview, state)
+
     def _draw_top_hud(self, image, current_text, is_locked):
-        """วาดแถบเมนูควบคุมและสถานะด้านบน (Top HUD)"""
-        w = image.shape[1]
-        hud_h = 42
+        """Refresh cached metrics outside the camera pixels."""
+        if image.shape[1::-1] == self._ui.size:
+            self._ui.header(image, (self.display_fps, self.ai_fps))
 
-        # พื้นหลังแถบ HUD ด้านบน (Semi-transparent dark bar)
-        hud = image[:hud_h]
-        cv2.addWeighted(np.full_like(hud, 20), 0.75, hud, 0.25, 0, hud)
-        cv2.line(image, (0, hud_h), (w, hud_h), (60, 80, 100), 1)
-
-        # ข้อมูลสถานะ
-        lang_text = "THAI [L]" if self.lang == 'thai' else "ENG [L]"
-
-        # Detector Mode badge
-        mode_badge = f'{self.dot_color.upper()} [C]'
-        mode_color = (0, 210, 255)
-
-        # Resolution badge
-        if self.actual_width >= 3840:
-            res_badge = f"RES: 4K [{self.actual_width}x{self.actual_height}] [V/F]"
-            res_color = (0, 255, 120)  # Bright green
-        elif self.actual_width >= 1920:
-            res_badge = f"RES: FHD [1080p] [V/F]"
-            res_color = (100, 230, 255)  # Cyan
-        else:
-            res_badge = f"RES: {self.actual_width}x{self.actual_height} [V/F]"
-            res_color = (180, 180, 180)
-
-        # Sharpness badge
-        lvl_num, lvl_name, _ = SHARPNESS_LEVELS[self.sharpness_idx]
-        if lvl_num == 0:
-            sharp_text = "SHARP: OFF [E]"
-            sharp_color = (170, 170, 170)
-        else:
-            sharp_text = f"SHARP: LV.{lvl_num} ({lvl_name.split()[0]}) [E]"
-            sharp_color = (255, 140, 255)  # Magenta/Pink
-
-        fps_text = f"FPS: {self.display_fps:.1f} | READ: {self.ai_fps:.1f}"
-
-        # Zoom badge
-        if self.zoom_level > 1.001:
-            zoom_text = f"ZOOM: {self.zoom_level:.1f}x [Z/X/R]"
-            zoom_color = (0, 255, 255)  # Yellow
-        else:
-            zoom_text = "ZOOM: 1.0x [Z/X]"
-            zoom_color = (200, 200, 200)
-
-        # Status badge
-        if '�' in current_text:
-            status_text = "UNCERTAIN: ADJUST CAMERA / ROI"
-            status_color = (0, 200, 255)
-        elif is_locked and current_text:
-            status_text = f"LOCKED: {current_text}"
-            status_color = (0, 255, 120)  # Bright Green
-        elif current_text:
-            status_text = "DETECTING..."
-            status_color = (0, 200, 255)  # Orange/Yellow
-        else:
-            status_text = "SCANNING..."
-            status_color = (180, 180, 180)  # Gray
-
-        # วาดข้อความ HUD
-        cv2.putText(image, fps_text, (10, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1, cv2.LINE_AA)
-        cv2.putText(image, f"| {mode_badge}", (150, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, mode_color, 2, cv2.LINE_AA)
-        cv2.putText(image, f"| {res_badge}", (280, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, res_color, 1, cv2.LINE_AA)
-        cv2.putText(image, f"| {sharp_text}", (490, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, sharp_color, 1, cv2.LINE_AA)
-        cv2.putText(image, f"| {zoom_text}", (660, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, zoom_color, 1 if self.zoom_level <= 1.001 else 2, cv2.LINE_AA)
-        cv2.putText(image, f"| {lang_text}", (925, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 220, 255), 1, cv2.LINE_AA)
-        if status_text.isascii():
-            cv2.putText(image, f"| {status_text}", (1025, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, status_color, 2, cv2.LINE_AA)
-        elif w > 1025:
-            # Reuse the detector's Thai font. Only convert the small HUD strip.
-            strip = Image.fromarray(cv2.cvtColor(image[:hud_h, 1025:], cv2.COLOR_BGR2RGB))
-            ImageDraw.Draw(strip).text((0, 5), f"| {status_text}",
-                                      font=self.detector._get_font(size=18, bold=True),
-                                      fill=status_color[::-1])
-            image[:hud_h, 1025:] = cv2.cvtColor(np.asarray(strip), cv2.COLOR_RGB2BGR)
-
-        # วาดคำแนะนำปุ่มกดด้านล่างขวา
-        tip = "[V/F] Res | [E] Sharp | [Z/X] Zoom | [P] Save | [D] Trace | [Q] Quit"
-        cv2.putText(image, tip, (w - 535, hud_h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 180, 180), 1, cv2.LINE_AA)
+    def _update_viewport(self):
+        if self._window_name and time.monotonic() - self._window_checked_at >= .25:
+            self._window_checked_at = time.monotonic()
+            try:
+                _, _, width, height = cv2.getWindowImageRect(self._window_name)
+                self._ui.resize(width, height)
+            except cv2.error:
+                pass  # Some HighGUI backends do not expose a drawable rectangle.
 
     def _on_mouse(self, event, x, y, flags, param):
         """Event handler สำหรับการควบคุม Zoom และ Pan ด้วยเมาส์"""
-        w, h = getattr(self, '_preview_image_size', (self.actual_width, self.actual_height))
-        if y >= h:
+        if event == cv2.EVENT_LBUTTONDOWN:
+            key = self._ui.hit_key(x, y)
+            if key is not None:
+                self._ui_pending_key = key  # Dispatch through the existing keyboard path.
+                return
+        if event == cv2.EVENT_MOUSEWHEEL and self._ui._inside(self._ui.result_card, x, y):
+            self._ui.scroll(-1 if flags > 0 else 1)
             return
+        box = self._ui.preview_rect
+        if box is None or not self._ui._inside(box, x, y):
+            return
+        w, h = getattr(self, '_preview_image_size', (self.actual_width, self.actual_height))
+        x, y = (x-box[0])*w/(box[2]-box[0]), (y-box[1])*h/(box[3]-box[1])
         crop = getattr(self, '_preview_crop_box', None)
         if crop is None:
             crop = (0, 0, self.actual_width, self.actual_height)
@@ -892,6 +861,7 @@ class RealTimeBrailleScanner:
         if result.get('source_shape') != enhanced_frame.shape:
             preview_result = dict(preview_result, result_id=-1, cells=[], dots=[], decoded_text='', verbose_results=[])
         try:
+            self._preview.details = self.show_details
             annotated = self._preview.render(enhanced_frame, self.detector, preview_result, self.lang)
             if not self._preview.motion_valid:
                 self.history.clear()
@@ -901,11 +871,13 @@ class RealTimeBrailleScanner:
                 round(enhanced_frame.shape[0]*annotated.shape[1]/enhanced_frame.shape[1]))
             self._preview_crop_box = crop_box
             self._draw_mini_viewfinder(annotated, frame, crop_box)
+            annotated = self._compose_dashboard(annotated[:self._preview_image_size[1]],
+                preview_result, decoded_text, is_locked)
             self._draw_top_hud(annotated, decoded_text if is_locked else '', is_locked)
         except Exception:
             # Do not repeatedly render the same broken result on every display tick.
             self._rejected_result_id = result['result_id']
-            self._preview = LivePreview(max_width=1280)
+            self._preview = LivePreview(max_width=1280, dashboard=True)
             raise
         status = result.get('status')
         if slow:
@@ -928,10 +900,13 @@ class RealTimeBrailleScanner:
             self._draw_notice(annotated, message)
         return annotated, enhanced_frame
 
-    @staticmethod
-    def _draw_notice(image, message):
-        cv2.putText(image, message, (10, min(60, image.shape[0]-5)),
-                    cv2.FONT_HERSHEY_SIMPLEX, .5, (0, 160, 255), 1, cv2.LINE_AA)
+    def _draw_notice(self, image, message):
+        if image.shape[1::-1] == self._ui.size and hasattr(self._ui, 'notice_box'):
+            self._ui.notice(image, message)
+        else:
+            # Last-resort presentation if the dashboard itself failed.
+            cv2.putText(image, message, (10, min(60, image.shape[0]-5)),
+                        cv2.FONT_HERSHEY_SIMPLEX, .5, (0, 160, 255), 1, cv2.LINE_AA)
 
     def _report_ui_error(self, stage, exc):
         signature = (stage, type(exc), str(exc))
@@ -943,7 +918,11 @@ class RealTimeBrailleScanner:
     def _handle_key(self, key, enhanced_frame, annotated):
         if key in (ord('q'), ord('Q'), 27):
             return False
-        if key in (ord('c'), ord('C')):
+        if key in (ord('h'), ord('H')):
+            self.show_details = not self.show_details
+        elif key in (ord('['), ord(']')):
+            self._ui.scroll(-1 if key == ord('[') else 1)
+        elif key in (ord('c'), ord('C')):
             self.cycle_dot_color()
         elif key in (ord('v'), ord('V'), ord('f'), ord('F')):
             self.cycle_resolution()
@@ -1029,14 +1008,15 @@ class RealTimeBrailleScanner:
         print()
 
         # 1. เริ่มต้น Threaded Camera Grabber
-        window_name = "Painted Braille Scanner [Async Preview | 4K/FHD/Zoom]"
+        window_name = "Braille Scanner"
         window_created = False
         self.history.clear()
         self._context_generation += 1
         self._last_submitted_frame_id = -1
         self._last_stability_result_id = 0
         self._rejected_result_id = None
-        self._preview = LivePreview(max_width=1280)
+        self._preview = LivePreview(max_width=1280, dashboard=True)
+        self._ui_pending_key = None
         try:
             self.camera = ThreadedCameraCapture(camera_id=self.camera_id,
                 target_width=self.target_width, target_height=self.target_height, target_fps=60)
@@ -1049,16 +1029,16 @@ class RealTimeBrailleScanner:
                 raise RuntimeError('Inference worker could not start')
             if not self.camera.start():
                 raise RuntimeError('Camera capture thread could not start')
-            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL | cv2.WINDOW_FREERATIO)
             window_created = True
-            disp_w = min(1600, self.actual_width)
-            disp_h = int(disp_w * self.actual_height/max(1, self.actual_width))
-            cv2.resizeWindow(window_name, disp_w, disp_h)
+            self._window_name = window_name
+            cv2.resizeWindow(window_name, 1440, 900)
             cv2.setMouseCallback(window_name, self._on_mouse)
             self._prev_frame_time = time.monotonic()
             waiting, action_error = False, None
 
             while True:
+                self._update_viewport()
                 enhanced_frame, frame = None, None
                 try:
                     ret, frame, frame_id = self.camera.read_latest(with_id=True)
@@ -1071,13 +1051,12 @@ class RealTimeBrailleScanner:
                             self.history.clear()
                             waiting = True
                         status, detail = self.camera.get_status()
-                        annotated = np.zeros((240, 960, 3), np.uint8)
+                        annotated = self._compose_dashboard(None, {})
                         message = ('CAMERA UNAVAILABLE - check connection; Q to quit' if status == 'unavailable'
                                    else 'CAMERA WAITING - retrying capture; Q to quit')
                         self._draw_notice(annotated, message)
-                        if detail:
-                            cv2.putText(annotated, detail[:115], (10, 95),
-                                cv2.FONT_HERSHEY_SIMPLEX, .45, (180, 180, 180), 1, cv2.LINE_AA)
+                        if detail and self.show_details:
+                            self._draw_notice(annotated, message + ': ' + detail)
                 except Exception as exc:
                     self._report_ui_error('frame processing / preview', exc)
                     self.history.clear()
@@ -1087,6 +1066,10 @@ class RealTimeBrailleScanner:
                                                       max(1, round(frame.shape[0]*scale))))
                     else:
                         annotated = np.zeros((240, 960, 3), np.uint8)
+                    try:
+                        annotated = self._compose_dashboard(annotated, dict(error=True))
+                    except Exception:
+                        logger.exception('Dashboard fallback failed')
                     self._draw_notice(annotated, 'FRAME ERROR - skipping frame; see console')
                 if action_error:
                     self._draw_notice(annotated, action_error)
@@ -1096,6 +1079,9 @@ class RealTimeBrailleScanner:
                 if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
                     break
                 try:
+                    if key == 255 and self._ui_pending_key is not None:
+                        key = self._ui_pending_key
+                    self._ui_pending_key = None
                     if not self._handle_key(key, enhanced_frame, annotated):
                         break
                     if key != 255:
@@ -1104,6 +1090,7 @@ class RealTimeBrailleScanner:
                     self._report_ui_error('keyboard action', exc)
                     action_error = 'ACTION FAILED - camera remains live; see console'
         finally:
+            self._window_name = None
             for owner, method in ((self.ai_worker, 'stop'), (self.camera, 'release')):
                 if owner is not None:
                     try:
