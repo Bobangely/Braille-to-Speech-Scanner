@@ -56,6 +56,25 @@ class ScannerUITests(unittest.TestCase):
         self.assertEqual(state, self.state)
         self.assertEqual(''.join(self.ui._lines), state['text'].replace('\n', ''))
 
+    def test_compact_layout_gives_more_image_area_and_keeps_every_control(self):
+        for width, height in ((1920, 1080), (3840, 2160)):
+            with self.subTest(size=(width, height)):
+                self.ui.resize(width, height)
+                self.ui.compose(np.zeros((720, 1280, 3), np.uint8), self.state)
+                x1, y1, x2, y2 = self.ui.preview_rect
+                # Previous dashboard image was 1355 x 762 at the bounded 1080p canvas.
+                self.assertGreater((x2-x1)*(y2-y1), 1355*762*1.2)
+                self.assertEqual(self.ui.result_card[2]-self.ui.result_card[0], 320)
+                self.assertEqual(self.ui.header_h, 110)
+                controls = {key for _, key in self.ui.buttons}
+                self.assertTrue({ord(k) for k in 'clvexzrpd hq'.replace(' ', '')} <= controls)
+                left, top, right, bottom = self.ui.control_card
+                for box, key in self.ui.buttons:
+                    if key in (ord('['), ord(']')):
+                        continue
+                    self.assertTrue(left <= box[0] < box[2] <= right)
+                    self.assertTrue(top <= box[1] < box[3] <= bottom)
+
     def test_scroll_can_reach_last_line_without_losing_combining_marks(self):
         text = '\n'.join(f'{i} ศักดิ์ วัฒนธรรม' for i in range(50))
         self.ui.compose(None, dict(self.state, text=text))
@@ -102,6 +121,30 @@ class ScannerUITests(unittest.TestCase):
         self.assertTrue(scanner.show_details)
         self.assertEqual(list(scanner.history), ['ก']*6)
         self.assertEqual(scanner._context_generation, context)
+
+    def test_compact_buttons_dispatch_existing_actions_and_snapshot_pixels(self):
+        scanner = RealTimeBrailleScanner(res_preset='480p')
+        frame = np.full((240, 320, 3), 100, np.uint8)
+        annotated = scanner._compose_dashboard(frame, {})
+        for key, method in [('c', 'cycle_dot_color'), ('v', 'cycle_resolution'),
+                            ('e', 'cycle_sharpness'), ('z', 'zoom_in'),
+                            ('x', 'zoom_out'), ('r', 'reset_zoom')]:
+            box, _ = next(item for item in scanner._ui.buttons if item[1] == ord(key))
+            scanner._on_mouse(cv2.EVENT_LBUTTONDOWN, (box[0]+box[2])/2, (box[1]+box[3])/2, 0, None)
+            with self.subTest(key=key), patch.object(scanner, method) as action:
+                self.assertTrue(scanner._handle_key(scanner._ui_pending_key, frame, annotated))
+                action.assert_called_once()
+        with patch('camera_reader.os.makedirs'), patch('camera_reader.cv2.imwrite', return_value=True) as save:
+            scanner._handle_key(ord('p'), frame, annotated)
+            self.assertEqual(save.call_count, 2)
+            self.assertIs(save.call_args_list[0].args[1], frame)
+            self.assertIs(save.call_args_list[1].args[1], annotated)
+        scanner._handle_key(ord('l'), frame, annotated)
+        self.assertEqual(scanner.lang, 'english')
+        scanner._handle_key(ord('l'), frame, annotated)
+        self.assertEqual(scanner.lang, 'thai')
+        self.assertFalse(scanner._handle_key(ord('q'), frame, annotated))
+        self.assertFalse(scanner._handle_key(27, frame, annotated))
 
     def test_compact_overlay_is_presentation_only_and_cli_keeps_full_footer(self):
         image, _, _ = page([['1245', '16']])

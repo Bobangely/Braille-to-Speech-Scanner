@@ -49,25 +49,25 @@ class ScannerUI:
         w, h = self.size
         self.scale = min(1.25, w / 1050, h / 720)
         s = self.scale
-        m, gap = max(4, round(18*s)), max(4, round(14*s))
-        self.header_h = round(116*s)
+        m, gap = max(4, round(10*s)), max(4, round(8*s))
+        self.header_h = round(88*s)
         top, bottom = self.header_h + gap, h - m
         if w / max(h, 1) >= 1.25:
-            sidebar = round(320*s)
+            sidebar = round(256*s)
             left = w - m - sidebar
             self.preview_card = (m, top, left-gap, bottom)
-            split = bottom - round(290*s)
+            split = bottom - round(248*s)
             self.result_card = (left, top, w-m, split-gap)
             self.control_card = (left, split, w-m, bottom)
         else:
-            split = max(top + round(160*s), bottom - round(292*s))
+            split = max(top + round(160*s), bottom - round(250*s))
             self.preview_card = (m, top, w-m, split-gap)
             middle = round(w*.54)
             self.result_card = (m, split, middle-gap//2, bottom)
             self.control_card = (middle+gap//2, split, w-m, bottom)
         x1, y1, x2, y2 = self.preview_card
-        self.video_box = (x1+1, y1+round(42*s), x2-1, y2-round(65*s))
-        self.notice_box = (x1+1, y2-round(63*s), x2-1, y2-1)
+        self.video_box = (x1+1, y1+round(30*s), x2-1, y2-round(46*s))
+        self.notice_box = (x1+1, y2-round(44*s), x2-1, y2-1)
 
     @staticmethod
     def _inside(box, x, y):
@@ -104,9 +104,15 @@ class ScannerUI:
     def _button(self, draw, box, label, key, active=False):
         draw.rounded_rectangle(box, radius=round(7*self.scale), fill='#253e47' if active else '#222d3d',
                                outline='#4ba9ab' if active else BORDER)
-        font = self._font(14)
         x1, y1, x2, y2 = box
-        draw.text(((x1+x2-font.getlength(label))/2, y1+7*self.scale), label, font=font, fill=TEXT)
+        font = self._font(12)
+        for size in (11, 10, 9):
+            if font.getlength(label) <= x2-x1-8*self.scale:
+                break
+            font = self._font(size)
+        bounds = font.getbbox(label)
+        draw.text(((x1+x2-font.getlength(label))/2,
+                   (y1+y2-(bounds[3]-bounds[1]))/2-bounds[1]), label, font=font, fill=TEXT)
         self.buttons.append((box, key))
 
     def _build_body(self, state):
@@ -118,38 +124,38 @@ class ScannerUI:
             draw.rounded_rectangle(box, radius=round(12*s), fill=CARD, outline=BORDER)
         self.buttons = []
         x, y, right, bottom = self.preview_card
-        self._label(draw, (x+16*s, y+12*s), 'LIVE PREVIEW', 13, MUTED, True)
+        self._label(draw, (x+10*s, y+7*s), 'LIVE PREVIEW', 12, MUTED, True)
         summary = f"{state.get('cells', 0)} cells  /  {state.get('dots', 0)} dots  /  {state.get('lines', 0)} lines"
-        self._label(draw, (right-self._font(13).getlength(summary)-16*s, y+12*s), summary, 13, MUTED)
+        self._label(draw, (right-self._font(12).getlength(summary)-10*s, y+7*s), summary, 12, MUTED)
         draw.rectangle(self.video_box, fill='#080d14')
 
         x, y, right, bottom = self.result_card
-        self._label(draw, (x+16*s, y+14*s), 'DETECTION RESULT', 13, MUTED, True)
-        self._label(draw, (x+16*s, y+43*s), 'ข้อความที่ยืนยันแล้ว' if state.get('lang') == 'thai' else 'Confirmed text', 15)
+        self._label(draw, (x+10*s, y+10*s), 'DETECTION RESULT', 12, MUTED, True)
+        self._label(draw, (x+10*s, y+34*s), 'ข้อความที่ยืนยันแล้ว' if state.get('lang') == 'thai' else 'Confirmed text', 13)
         text = state.get('text', '')
         if text != self._text:
             self.scroll_offset, self._text = 0, text
-        lines = self._wrapped(text, right-x-32*s, 23) if text else []
-        capacity = max(1, int((bottom-y-136*s) / (33*s)))
+        lines = self._wrapped(text, right-x-20*s, 20) if text else []
+        capacity = max(1, int((bottom-y-111*s) / (29*s)))
         self.max_scroll = max(0, len(lines)-capacity)
         self.scroll_offset = min(self.scroll_offset, self.max_scroll)
         if lines:
             for i, line in enumerate(lines[self.scroll_offset:self.scroll_offset+capacity]):
-                self._label(draw, (x+16*s, y+(78+33*i)*s), line, 23)
+                self._label(draw, (x+10*s, y+(62+29*i)*s), line, 20)
         else:
-            self._label(draw, (x+16*s, y+84*s), 'รอผลอ่านที่นิ่ง' if state.get('lang') == 'thai' else 'Waiting for a stable result', 19, MUTED)
+            self._label(draw, (x+10*s, y+62*s), 'รอผลอ่านที่นิ่ง' if state.get('lang') == 'thai' else 'Waiting for a stable result', 16, MUTED)
         count, total = state.get('confirmed', 0), max(1, state.get('required', 6))
-        progress_y = bottom-30*s
-        draw.rounded_rectangle((x+16*s, progress_y, right-16*s, progress_y+4*s), radius=2, fill=BORDER)
+        progress_y = bottom-17*s
+        draw.rounded_rectangle((x+10*s, progress_y, right-10*s, progress_y+4*s), radius=2, fill=BORDER)
         if count:
-            draw.rounded_rectangle((x+16*s, progress_y, x+16*s+(right-x-32*s)*min(count/total, 1), progress_y+4*s), radius=2, fill=ACCENT)
-        self._label(draw, (x+16*s, bottom-59*s), f'Confirmation  {count}/{total}', 13, MUTED)
+            draw.rounded_rectangle((x+10*s, progress_y, x+10*s+(right-x-20*s)*min(count/total, 1), progress_y+4*s), radius=2, fill=ACCENT)
+        self._label(draw, (x+10*s, bottom-42*s), f'Confirmation  {count}/{total}', 12, MUTED)
         if self.max_scroll:
-            self._button(draw, (right-89*s, bottom-66*s, right-56*s, bottom-36*s), '^', ord('['))
-            self._button(draw, (right-50*s, bottom-66*s, right-17*s, bottom-36*s), 'v', ord(']'))
+            self._button(draw, (right-72*s, bottom-45*s, right-45*s, bottom-23*s), '^', ord('['))
+            self._button(draw, (right-37*s, bottom-45*s, right-10*s, bottom-23*s), 'v', ord(']'))
 
         x, y, right, bottom = self.control_card
-        self._label(draw, (x+16*s, y+14*s), 'CONTROLS', 13, MUTED, True)
+        self._label(draw, (x+10*s, y+10*s), 'CONTROLS', 12, MUTED, True)
         color = state.get('color', 'blue').capitalize()
         language = 'Thai' if state.get('lang') == 'thai' else 'English'
         controls = [(f'{color}  [C]', 'c'), (f'{language}  [L]', 'l'),
@@ -157,12 +163,12 @@ class ScannerUI:
                     ('Zoom -  [X]', 'x'), ('Zoom +  [Z]', 'z'),
                     ('Reset zoom  [R]', 'r'), ('Save image  [P]', 'p'),
                     ('Diagnostic  [D]', 'd'), ('Details  [H]', 'h')]
-        gap, left, bw = 8*s, x+14*s, (right-x-36*s)/2
+        gap, left, bw = 6*s, x+10*s, (right-x-26*s)/2
         for i, (label, key) in enumerate(controls):
-            bx, by = left+(i % 2)*(bw+gap), y+(43+(i//2)*37)*s
-            self._button(draw, (bx, by, bx+bw, by+31*s), label, ord(key), key == 'h' and state.get('details', False))
-        self._label(draw, (left, y+233*s), 'Wheel: zoom / click: pan', 12, MUTED)
-        self._button(draw, (left, bottom-35*s, right-14*s, bottom-9*s), 'Close scanner  [Q / Esc]', ord('q'))
+            bx, by = left+(i % 2)*(bw+gap), y+(34+(i//2)*31)*s
+            self._button(draw, (bx, by, bx+bw, by+26*s), label, ord(key), key == 'h' and state.get('details', False))
+        self._label(draw, (left, y+191*s), 'Wheel: zoom / click: pan', 11, MUTED)
+        self._button(draw, (left, bottom-34*s, right-10*s, bottom-8*s), 'Close scanner  [Q / Esc]', ord('q'))
         self._body = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
 
     def compose(self, preview, state):
@@ -196,16 +202,16 @@ class ScannerUI:
         if key != self._header_key:
             strip = Image.new('RGB', (self.size[0], self.header_h), BG)
             draw = ImageDraw.Draw(strip)
-            self._label(draw, (22*s, 12*s), 'BRAILLE / SCANNER', 23, TEXT, True)
-            self._label(draw, (23*s, 43*s), 'อ่านอักษรเบรลล์จากจุดสี' if state.get('lang') == 'thai' else 'Painted Braille recognition', 13, MUTED)
+            self._label(draw, (12*s, 6*s), 'BRAILLE / SCANNER', 20, TEXT, True)
+            self._label(draw, (13*s, 32*s), 'อ่านอักษรเบรลล์จากจุดสี' if state.get('lang') == 'thai' else 'Painted Braille recognition', 11, MUTED)
             color = STATUS.get(status, MUTED)
-            draw.rounded_rectangle((self.size[0]-180*s, 16*s, self.size[0]-22*s, 52*s), radius=18*s, fill=CARD, outline=color)
-            draw.ellipse((self.size[0]-164*s, 30*s, self.size[0]-156*s, 38*s), fill=color)
-            self._label(draw, (self.size[0]-146*s, 24*s), status.upper(), 13, color, True)
-            gap = (self.size[0]-44*s)/5
+            draw.rounded_rectangle((self.size[0]-165*s, 9*s, self.size[0]-12*s, 38*s), radius=14*s, fill=CARD, outline=color)
+            draw.ellipse((self.size[0]-152*s, 20*s, self.size[0]-146*s, 26*s), fill=color)
+            self._label(draw, (self.size[0]-136*s, 15*s), status.upper(), 12, color, True)
+            gap = (self.size[0]-24*s)/5
             for i, (label, value) in enumerate(zip(('PREVIEW', 'READ RATE', 'RESOLUTION', 'MODE', 'ZOOM'), metrics)):
-                self._label(draw, (22*s+i*gap, 75*s), label, 10, MUTED)
-                self._label(draw, (22*s+i*gap, 91*s), value, 15, TEXT, True)
+                self._label(draw, (12*s+i*gap, 54*s), label, 9, MUTED)
+                self._label(draw, (12*s+i*gap, 68*s), value, 13, TEXT, True)
             self._header = cv2.cvtColor(np.asarray(strip), cv2.COLOR_RGB2BGR)
             self._header_key = key
         canvas[:self.header_h] = self._header
@@ -238,11 +244,11 @@ class ScannerUI:
             image = Image.new('RGB', (x2-x1, y2-y1), CARD)
             draw = ImageDraw.Draw(image)
             color, s = STATUS.get(status, MUTED), self.scale
-            font = self._font(14)
-            while message and font.getlength(message) > x2-x1-32*s:
+            font = self._font(12)
+            while message and font.getlength(message) > x2-x1-20*s:
                 message = message[:-2].rstrip('…') + '…'
-            self._label(draw, (15*s, 8*s), message, 14, color)
-            self._label(draw, (15*s, 34*s), 'Filled: active / Ring: inactive    [H] Details  [D] Trace', 11, MUTED)
+            self._label(draw, (10*s, 3*s), message, 12, color)
+            self._label(draw, (10*s, 24*s), 'Green: active / Small ring: inactive    [H] Dot numbers / Details  [D] Trace', 10, MUTED)
             self._notice = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
             self._notice_key = key
         x1, y1, x2, y2 = self.notice_box

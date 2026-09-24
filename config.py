@@ -44,7 +44,7 @@ BRAILLE_TO_CHAR = {
     frozenset({1, 3, 4, 5, 6}): 'y',
     frozenset({1, 3, 5, 6}): 'z',
     # สัญลักษณ์พิเศษ
-    frozenset({3, 4, 5, 6}): '#',   # number indicator
+    frozenset({3, 4, 5, 6}): '#',   
     frozenset({6}):          ',',
     frozenset({2, 6}):       '!',
     frozenset({2, 3, 6}):    '?',

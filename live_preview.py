@@ -50,7 +50,9 @@ class LivePreview:
         size = (max(1, round(width * scale)), max(1, round(height * scale)))
         preview = cv2.resize(frame, size, interpolation=cv2.INTER_AREA) if scale < 1 else frame
         grid_key = (result['result_id'], frame.shape, lang, result.get('reader_name'), result.get('context'))
-        key = (grid_key, size, detector.mode, result['decoded_text'], bool(result['verbose_results']),
+        token_key = tuple((item.get('char', ''), item.get('warning'), bool(item.get('consumed')))
+                          for item in result['verbose_results'])
+        key = (grid_key, size, detector.mode, result['decoded_text'], token_key,
                self.dashboard, self.details)
         style = dict(details=self.details, footer=False, cell_hud=True) if self.dashboard else {}
         if key != self._key:

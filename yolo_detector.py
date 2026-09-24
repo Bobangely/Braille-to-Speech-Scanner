@@ -2,6 +2,7 @@
 
 import os
 import math
+import unicodedata
 from pathlib import Path
 import sys
 import cv2
@@ -249,20 +250,68 @@ class YOLOBrailleDetector:
         self._font_cache[cache_key] = font
         return font
 
-    @staticmethod
-    def _draw_cell_hud(canvas, cells):
-        """Draw measured cell patterns at existing slot coordinates; never infer dots."""
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        ink, active, inactive = (34, 29, 23), (195, 218, 103), (156, 147, 132)
-        height, width = canvas.shape[:2]
+    def _cell_hud_header(self, label, char, spacing, budget, height, warning, muted=False):
+        """Cache transparent glyphs, shared across consecutive inference overlays."""
+        from scanner_ui import CARD, TEXT
 
-        def plate(text, cx, top, scale):
+        char_size = max(20, min(26, round(spacing*1.1)))
+        id_size = max(9, min(11, round(spacing*.55)))
+        width = max(1, int(budget))
+        key = (label, char, char_size, id_size, width, height, bool(warning), muted)
+        cache = getattr(self, '_hud_label_cache', None)
+        if cache is None:
+            cache = self._hud_label_cache = {}
+        if key not in cache:
+            char_font, id_font = self._get_font(char_size, bold=True), self._get_font(id_size)
+            char_box, id_box = char_font.getbbox(char), id_font.getbbox(label)
+            text_width = max(char_box[2]-char_box[0], id_box[2]-id_box[0])
+            char_height = char_box[3]-char_box[1]
+            char_area = max(char_size, char_height)
+            header = Image.new('RGBA', (max(1, text_width)+8, char_area+id_size+9), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(header)
+            draw.text(((header.width-(char_box[2]-char_box[0]))/2-char_box[0],
+                       2+(char_area-char_height)/2-char_box[1]),
+                      char, font=char_font, fill=CARD, stroke_width=1, stroke_fill=TEXT)
+            draw.text(((header.width-(id_box[2]-id_box[0]))/2-id_box[0],
+                       char_area+5-id_box[1]), label, font=id_font, fill=CARD,
+                      stroke_width=1, stroke_fill=TEXT)
+            # Fit the complete token into its lane, preserving combining marks.
+            ratio = min(1., width/header.width, height/header.height)
+            if ratio < 1:
+                header = header.resize((max(1, round(header.width*ratio)), max(1, round(header.height*ratio))),
+                                       Image.Resampling.LANCZOS)
+            if len(cache) >= 512:
+                cache.clear()
+            cache[key] = cv2.cvtColor(np.asarray(header), cv2.COLOR_RGBA2BGRA)
+        return cache[key]
+
+    def _draw_cell_hud(self, canvas, cells, verbose_results=None, details=False):
+        """Draw confirmed per-cell tokens and measured dots, without decoding again."""
+        from scanner_ui import ACCENT, CARD, MUTED, STATUS, TEXT
+
+        def bgr(color):
+            return tuple(int(color[i:i+2], 16) for i in (5, 3, 1))
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        ink, active, inactive = bgr(CARD), bgr(STATUS['Detected']), bgr(MUTED)
+        height, width = canvas.shape[:2]
+        tokens = verbose_results or []
+        # Pillow supports Thai/combining marks. Composite small cached glyphs
+        # only when LivePreview rebuilds its overlay, not on every camera frame.
+        headers = []
+
+        def pattern_label(text, cx, top, scale):
             (tw, th), baseline = cv2.getTextSize(text, font, scale, 1)
             x = max(0, min(width-tw-4, round(cx-tw/2)-2))
             y = max(0, min(height-th-baseline-4, round(top)))
-            cv2.rectangle(canvas, (x, y), (x+tw+4, y+th+baseline+3), ink, -1)
-            cv2.putText(canvas, text, (x+2, y+th+1), font, scale,
-                        (239, 237, 226), 1, cv2.LINE_AA)
+            # Anti-alias dark text against its light outline, not the black
+            # overlay backing. Only the glyph-shaped mask reaches the camera.
+            glyph = np.full((th+baseline+4, tw+4, 3), bgr(TEXT), np.uint8)
+            mask = np.zeros(glyph.shape[:2], np.uint8)
+            cv2.putText(mask, text, (2, th+1), font, scale, 255, 2, cv2.LINE_8)
+            cv2.putText(glyph, text, (2, th+1), font, scale, ink, 1, cv2.LINE_AA)
+            gh, gw = min(glyph.shape[0], height-y), min(glyph.shape[1], width-x)
+            cv2.copyTo(glyph[:gh, :gw], mask[:gh, :gw], canvas[y:y+gh, x:x+gw])
             return th+baseline+4
 
         for index, cell in enumerate(cells):
@@ -275,21 +324,57 @@ class YOLOBrailleDetector:
                          for a, b in ((1, 2), (2, 3), (4, 5), (5, 6), (1, 4))
                          if a in slots and b in slots]
             spacing = min(distances, default=12.)
-            radius = max(2, min(10, round(spacing*.29)))
+            radius = max(2, min(12, round(spacing*.32)))
+            empty_radius = max(1, round(radius*.55))
             number_scale = min(.45, max(.15, (2*radius-2)/22))
             (nw, nh), _ = cv2.getTextSize('6', font, number_scale, 1)
             x1, y1, x2, y2 = map(round, grid['bbox'])
-            warning = cell.get('row_ambiguous') or cell.get('crop_status') == 'empty'
-            edge = (99, 179, 235) if warning else active
-            cv2.rectangle(canvas, (x1, y1), (x2, y2), edge, 1, cv2.LINE_AA)
+            token = tokens[index] if index < len(tokens) else None
+            warning = (cell.get('row_ambiguous') or cell.get('crop_status') == 'empty'
+                       or (token and token.get('warning')))
+            char = token.get('char', '') if token else ''
+            muted = token is None or bool(token.get('consumed')) or not char.strip()
+            if warning or '�' in char:
+                char, warning = '?', True
+            elif token is None:
+                char = '…'  # The camera withholds tokens until confirmation.
+            elif token.get('consumed'):
+                char = '+'  # Continuation of a multi-cell symbol; don't duplicate it.
+            elif not char.strip():
+                char = '·'  # A decoded indicator/blank has no printable character.
+            elif unicodedata.category(char[0]).startswith('M'):
+                char = '◌' + char  # Make a standalone Thai mark legible in its label.
+            edge = bgr(STATUS['Check image']) if warning else bgr(ACCENT)
+            # Follow measured slot geometry even when the page is tilted. Only
+            # these display separators are extended/clipped to the existing bbox.
+            if all(dot in slots for dot in range(1, 7)) and x2 > x1 and y2 > y1:
+                def midpoint(a, b):
+                    return tuple((slots[a][axis]+slots[b][axis])/2 for axis in (0, 1))
+
+                for start, end in ((midpoint(1, 4), midpoint(3, 6)),
+                                   (midpoint(1, 2), midpoint(4, 5)),
+                                   (midpoint(2, 3), midpoint(5, 6))):
+                    delta = tuple(end[axis]-start[axis] for axis in (0, 1))
+                    reach = math.hypot(x2-x1, y2-y1)/max(1., math.hypot(*delta))
+                    a = tuple(round(start[axis]-delta[axis]*reach) for axis in (0, 1))
+                    b = tuple(round(end[axis]+delta[axis]*reach) for axis in (0, 1))
+                    visible, a, b = cv2.clipLine((x1, y1, x2-x1+1, y2-y1+1), a, b)
+                    if visible:
+                        cv2.line(canvas, a, b, inactive, 1, cv2.LINE_8)
+            # The overlay uses a binary copy mask. Avoid anti-aliased edges on
+            # its black backing, which would leave dark halos over the camera.
+            cv2.rectangle(canvas, (x1, y1), (x2, y2), edge, 2, cv2.LINE_8)
             for dot_id, point in slots.items():
                 center = tuple(map(round, point))
                 is_active = dot_id in cell['dots']
-                cv2.circle(canvas, center, radius, active if is_active else ink, -1, cv2.LINE_AA)
-                if not is_active:
-                    cv2.circle(canvas, center, radius, inactive, 1, cv2.LINE_AA)
-                cv2.putText(canvas, str(dot_id), (center[0]-nw//2, center[1]+nh//2),
-                            font, number_scale, ink if is_active else inactive, 1, cv2.LINE_AA)
+                if is_active:
+                    cv2.circle(canvas, center, radius, active, 2, cv2.LINE_8)
+                else:
+                    # Hollow markers preserve camera pixels (also in cached overlays).
+                    cv2.circle(canvas, center, empty_radius, inactive, 1, cv2.LINE_8)
+                if details:
+                    cv2.putText(canvas, str(dot_id), (center[0]-nw//2, center[1]+nh//2),
+                                font, number_scale, ink, 1, cv2.LINE_AA)
 
             cx = (x1+x2)/2
             budget = max(8., min(width, (x2-x1)*1.6))
@@ -300,12 +385,15 @@ class YOLOBrailleDetector:
                     if distance > 0:
                         budget = min(budget, max(8., distance-3))
             label = f"C{cell.get('track_id', index+1)}"
-            scale = min(.42, max(.23, spacing*.024))
-            label_width = cv2.getTextSize(label, font, scale, 1)[0][0]
-            label_scale = min(scale, scale*max(4, budget-4)/max(1, label_width))
-            (_, th), baseline = cv2.getTextSize(label, font, label_scale, 1)
-            label_top = y1-th-baseline-6
-            plate(label, cx, label_top, label_scale)
+            header_pixels = self._cell_hud_header(label, char, spacing, min(width, budget), height, warning, muted)
+            header_height, header_width = header_pixels.shape[:2]
+            label_top = y1-header_height-3
+            header_below = label_top < 0
+            if header_below:
+                label_top = y2+3
+            label_top = max(0, min(height-header_height, label_top))
+            label_left = max(0, min(width-header_width, round(cx-header_width/2)))
+            headers.append((label_left, label_top, header_pixels))
 
             pattern = '[' + ','.join(map(str, sorted(cell['dots']))) + ']'
             pattern_scale = min(.34, max(.23, spacing*.022))
@@ -320,13 +408,18 @@ class YOLOBrailleDetector:
             pattern_scale = min(pattern_scale, pattern_scale*max(4, budget-4)/max(1, max_width))
             line_sizes = [cv2.getTextSize(line, font, pattern_scale, 1) for line in lines]
             block_height = sum(size[0][1]+size[1]+4 for size in line_sizes)
-            top = y2+3
+            top = label_top+header_height+3 if header_below else y2+3
             if top+block_height > height:
                 # Keep the entire pattern together when zoom puts a cell at the
                 # bottom edge; clamping each line separately would erase a line.
                 top = max(0, label_top-block_height-2)
             for line in lines:
-                top += plate(line, cx, top, pattern_scale)
+                top += pattern_label(line, cx, top, pattern_scale)
+
+        for x, y, header in headers:
+            h, w = header.shape[:2]
+            # Copy only glyph pixels, never the rectangular cache backing.
+            cv2.copyTo(header[:, :, :3], header[:, :, 3], canvas[y:y+h, x:x+w])
 
     def annotate_with_text(self, image, dots, cells, decoded_text="", verbose_results=None, lang="thai",
                            reader_name=None, details=True, footer=True, cell_hud=False):
@@ -410,7 +503,7 @@ class YOLOBrailleDetector:
                     )
 
         if cell_hud:
-            self._draw_cell_hud(canvas, cells)
+            self._draw_cell_hud(canvas, cells, verbose_results, details=details)
 
         if not details and not footer:
             return canvas
@@ -424,7 +517,7 @@ class YOLOBrailleDetector:
         font_small = self._get_font(size=14, bold=False)
 
         # ตัวอักษรเหนือ Cell
-        if details and verbose_results:
+        if details and verbose_results and not cell_hud:
             for idx, item in enumerate(verbose_results, 1):
                 if item.get('consumed'):
                     continue
@@ -433,8 +526,8 @@ class YOLOBrailleDetector:
                     grid = cell.get('grid')
                     if grid:
                         x_min, y_min = grid['bbox'][0], grid['bbox'][1]
-                        char_text = item['char'] if cell_hud else f"C{cell.get('track_id', idx)}: {item['char']}"
-                        draw.text((x_min + 2, y_min - (40 if cell_hud else 25)),
+                        char_text = f"C{cell.get('track_id', idx)}: {item['char']}"
+                        draw.text((x_min + 2, y_min - 25),
                                   char_text, fill=(255, 190, 0), font=font_mid)
         elif details and not cell_hud:
             for idx, cell in enumerate(cells, 1):
