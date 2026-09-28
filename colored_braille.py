@@ -113,7 +113,25 @@ class ColoredCellStream:
             3*min(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1])]
         if len(normal_areas) >= 4:
             floor = max(self.min_area, .12*float(np.median(normal_areas)))
-            dots = [dot for dot in dots if dot['area'] >= floor]
+            # Ink size may differ between text lines. Only reconsider marks
+            # below the page-wide floor when nearby dots support their size.
+            if any(dot['area'] < floor for dot in dots):
+                points = np.asarray([dot['center'] for dot in dots])
+                areas = np.asarray([dot['area'] for dot in dots])
+                spacing = _spacing(points, np.sqrt(areas))
+                if spacing is not None:
+                    keep = []
+                    for index, dot in enumerate(dots):
+                        if dot['area'] >= floor:
+                            keep.append(dot)
+                            continue
+                        distance = np.linalg.norm(points-points[index], axis=1)
+                        neighbours = areas[distance <= 2.5*spacing]
+                        local_floor = (max(self.min_area, .12*float(np.median(neighbours)))
+                                       if len(neighbours) >= 4 else floor)
+                        if dot['area'] >= local_floor:
+                            keep.append(dot)
+                    dots = keep
         # A joined pair can be wider than one dot. Apply the original aspect
         # limit AFTER attempting a pixel-supported split; unsplit lines stay out.
         dots = split_color_components(dots, mask, max_dots=6*self.max_cells)
