@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 
 from colored_braille import ColoredCellStream
+from decoder import decode_cells
 
 
 PATTERNS = ('1245', '16', '135', '123456')
@@ -83,6 +84,27 @@ class RedDetectionTests(unittest.TestCase):
                 cells, result = reader.detect(image, context=('camera', 'thai'))
                 self.assertEqual(patterns(cells), list(PATTERNS)*4)
                 self.assertFalse(result['grid_pending'])
+
+    def test_sparse_small_red_cell_reaches_thai_decoder(self):
+        image = np.full((900, 900, 3), 245, np.uint8)
+        sparse = ('1245', '6', '13456', '16')
+        for line in range(4):
+            for cell, pattern in enumerate(sparse):
+                for dot in map(int, pattern):
+                    x = 60+cell*95+(dot > 3)*40
+                    y = 60+line*205+((dot-1) % 3)*40
+                    cv2.circle(image, (x, y), 12 if line < 3 else 4,
+                               (0, 0, 220), -1)
+        reader = ColoredCellStream('red')
+        dots, diagnostics = reader.find_dots(image)
+        self.assertEqual(diagnostics['color_components'], 48)
+        self.assertEqual(len(dots), 48)
+        for frame in range(4):
+            with self.subTest(frame=frame):
+                cells, result = reader.detect(image, context=('camera', 'thai'))
+                self.assertEqual(patterns(cells), list(sparse)*4)
+                self.assertFalse(result['grid_pending'])
+                self.assertNotIn('\ufffd', decode_cells(cells, 'thai'))
 
 
 if __name__ == '__main__':

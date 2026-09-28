@@ -127,8 +127,10 @@ class ColoredCellStream:
                             continue
                         distance = np.linalg.norm(points-points[index], axis=1)
                         neighbours = areas[distance <= 2.5*spacing]
+                        # The candidate plus two nearby marks is enough to
+                        # support a sparse cell at the end of a small-dot line.
                         local_floor = (max(self.min_area, .12*float(np.median(neighbours)))
-                                       if len(neighbours) >= 4 else floor)
+                                       if len(neighbours) >= 3 else floor)
                         if dot['area'] >= local_floor:
                             keep.append(dot)
                     dots = keep
