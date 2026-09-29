@@ -106,6 +106,16 @@ class RedDetectionTests(unittest.TestCase):
                 self.assertFalse(result['grid_pending'])
                 self.assertNotIn('\ufffd', decode_cells(cells, 'thai'))
 
+    def test_off_frame_red_fragments_do_not_create_a_fake_line(self):
+        image = painted_page((12, 12))
+        height, width = image.shape[:2]
+        for y, radius in ((height-2, 12), (height-35, 8), (height-70, 5)):
+            cv2.circle(image, (width-1, y), radius, (0, 0, 220), -1)
+        cells, result = ColoredCellStream('red').detect(image)
+        self.assertEqual(result['line_count'], 2)
+        self.assertEqual(len(cells), 2*len(PATTERNS))
+        self.assertEqual(patterns(cells), list(PATTERNS)*2)
+
 
 if __name__ == '__main__':
     unittest.main()

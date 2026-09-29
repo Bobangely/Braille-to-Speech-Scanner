@@ -134,6 +134,26 @@ class ColoredCellStream:
                         if dot['area'] >= local_floor:
                             keep.append(dot)
                     dots = keep
+        # A component clipped by the camera boundary is not a reliable dot.
+        # Also discard only tiny nearby fragments of the same off-frame mark,
+        # using the measured dot diameter instead of a frame-specific threshold.
+        regular_sizes = [min(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1])
+                         for d in dots if
+                         max(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1]) <=
+                         3*min(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1])]
+        if regular_sizes:
+            height, width = image.shape[:2]
+            typical_size = float(np.median(regular_sizes))
+            edge_margin = max(2., 1.5*typical_size)
+            def clipped_or_near_edge(dot):
+                x1, y1, x2, y2 = dot['bbox']
+                min_size = min(x2-x1, y2-y1)
+                clipped = x1 <= 0 or y1 <= 0 or x2 >= width or y2 >= height
+                tiny_fragment = (min_size < .5*typical_size and
+                                 (x1 < edge_margin or y1 < edge_margin or
+                                  width-x2 < edge_margin or height-y2 < edge_margin))
+                return clipped or tiny_fragment
+            dots = [dot for dot in dots if not clipped_or_near_edge(dot)]
         # A joined pair can be wider than one dot. Apply the original aspect
         # limit AFTER attempting a pixel-supported split; unsplit lines stay out.
         dots = split_color_components(dots, mask, max_dots=6*self.max_cells)
