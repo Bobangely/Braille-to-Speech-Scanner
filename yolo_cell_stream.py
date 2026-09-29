@@ -27,7 +27,7 @@ def _clusters(values, tolerance):
     return groups
 
 
-def _spacing(points, diameters=None):
+def _spacing(points, diameters=None, *, nearest_out=None):
     if len(points) < 2:
         return None
     nearest = []
@@ -40,6 +40,8 @@ def _spacing(points, diameters=None):
             within_dot = .8*np.minimum(diameters[start:start+128, None], diameters[None, :])
             distances[distances < within_dot] = np.inf
         nearest.extend(distances.min(axis=1))
+    if nearest_out is not None:
+        nearest_out.extend(nearest)
     finite = np.asarray(nearest)[np.isfinite(nearest)]
     return float(np.percentile(finite, 25)) if len(finite) else None
 
@@ -167,7 +169,8 @@ def plan_cells(dots, image_shape, *, _basis=None):
         return []
     points = np.asarray([d['center'] for d in dots], dtype=float)
     diameters = np.sqrt([max(0, dot.get('area', 0)) for dot in dots])
-    spacing = _spacing(points, diameters) if _basis is None else _basis[0]
+    nearest = []
+    spacing = _spacing(points, diameters, nearest_out=nearest) if _basis is None else _basis[0]
     if spacing is None or spacing < 2:
         return []  # an isolated dot has no observable 2x3 reference grid
     angle = _angle(points, spacing) if _basis is None else _basis[1]
@@ -181,26 +184,32 @@ def plan_cells(dots, image_shape, *, _basis=None):
     breaks = np.flatnonzero(np.diff(rectified[order, 1]) > 3*spacing)+1
     if len(breaks) and _basis is None:
         cells, line_offset = [], 0
+        nearest = np.asarray(nearest)
         for band in np.split(order, breaks):
-            # Retain the shared pitch and orientation unless a local angle
-            # gives a complete, better-fitting three-row reference grid.
+            # A separated text band has its own measured dot pitch. Reusing
+            # the page-wide pitch can split a smaller line into several lines
+            # before the cell grid is ever estimated.
             band_points = points[band]
-            local_angle = _angle(band_points, spacing)
+            band_nearest = nearest[band]
+            band_nearest = band_nearest[np.isfinite(band_nearest)]
+            band_spacing = (float(np.percentile(band_nearest, 25))
+                            if len(band) > 1 and len(band_nearest) else spacing)
+            local_angle = _angle(band_points, band_spacing)
             def fit(candidate):
                 values = band_points @ np.array([-math.sin(candidate), math.cos(candidate)])
-                groups = _row_clusters(values, spacing)
+                groups = _row_clusters(values, band_spacing)
                 if len(groups) != 3:
                     return float('inf')
                 centers = np.array([np.median(values[g]) for g in groups])
                 dy = (centers[-1]-centers[0])/2
-                if not .65*spacing <= dy <= 1.6*spacing or np.max(np.abs(np.diff(centers)/dy-1)) > .25:
+                if not .65*band_spacing <= dy <= 1.6*band_spacing or np.max(np.abs(np.diff(centers)/dy-1)) > .25:
                     return float('inf')
                 return sum(np.sum((values[g]-c)**2) for g,c in zip(groups, centers))/len(values)
             best_angle = angle
             if not np.isfinite(fit(angle)):
-                candidates = [angle, local_angle, _band_angle(band_points, spacing, angle)]
+                candidates = [angle, local_angle, _band_angle(band_points, band_spacing, angle)]
                 best_angle = min(candidates, key=fit)
-            local = plan_cells([dots[i] for i in band], image_shape, _basis=(spacing, best_angle))
+            local = plan_cells([dots[i] for i in band], image_shape, _basis=(band_spacing, best_angle))
             for cell in local:
                 cell['source_dot_ids'] = [int(band[i]) for i in cell['source_dot_ids']]
                 cell['line_id'] += line_offset
