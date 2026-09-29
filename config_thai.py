@@ -28,6 +28,8 @@ THAI_TONE_MARKS = {dots(k): v for k, v in {
 }.items()}
 THAI_SPECIAL_MARKS = {dots(k): v for k, v in {
     '356': '์', '3': '็', '2': 'ๆ', '5': 'ํ',
+    # Standalone hyphen; complete adjacent 36-prefix consonants still win.
+    '36': '-',
 }.items()}
 THAI_MULTI_CELL = {}
 for prefix, mapping in [(PREFIX_6, THAI_CONSONANTS_PREFIX6),
