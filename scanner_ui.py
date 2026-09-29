@@ -7,6 +7,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from result_text import ResultText
+
 
 # RGB palette. Status is also written in text, never conveyed by color alone.
 BG, CARD, BORDER = '#0e141e', '#171f2c', '#2b3749'
@@ -29,6 +31,7 @@ class ScannerUI:
         self._fps = (0., 0.)
         self._fps_at = 0.
         self._state = {}
+        self._result_text = ResultText()
 
     def resize(self, width, height):
         # HighGUI scales this bounded canvas on 4K displays; inference retains
@@ -93,7 +96,7 @@ class ScannerUI:
                         clusters.append(char)
                 line = ''
                 for cluster in clusters:
-                    if line and font.getlength(line+cluster) > width:
+                    if line and self._result_text.width(font, line+cluster) > width:
                         lines.append(line)
                         line = ''
                     line += cluster
@@ -136,12 +139,15 @@ class ScannerUI:
         if text != self._text:
             self.scroll_offset, self._text = 0, text
         lines = self._wrapped(text, right-x-20*s, 20) if text else []
-        capacity = max(1, int((bottom-y-111*s) / (29*s)))
+        result_font = self._font(20)
+        line_step = max(29*s, self._result_text.line_height(result_font, text)+3*s) if text else 29*s
+        capacity = max(1, int((bottom-y-111*s) / line_step))
         self.max_scroll = max(0, len(lines)-capacity)
         self.scroll_offset = min(self.scroll_offset, self.max_scroll)
         if lines:
             for i, line in enumerate(lines[self.scroll_offset:self.scroll_offset+capacity]):
-                self._label(draw, (x+10*s, y+(62+29*i)*s), line, 20)
+                self._result_text.draw(image, draw, (x+10*s, y+62*s+line_step*i),
+                                       line, result_font, TEXT)
         else:
             self._label(draw, (x+10*s, y+62*s), 'รอผลอ่านที่นิ่ง' if state.get('lang') == 'thai' else 'Waiting for a stable result', 16, MUTED)
         count, total = state.get('confirmed', 0), max(1, state.get('required', 6))
