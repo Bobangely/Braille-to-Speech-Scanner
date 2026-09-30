@@ -330,7 +330,7 @@ class YOLOBrailleDetector:
             (nw, nh), _ = cv2.getTextSize('6', font, number_scale, 1)
             x1, y1, x2, y2 = map(round, grid['bbox'])
             token = tokens[index] if index < len(tokens) else None
-            warning = (cell.get('row_ambiguous') or cell.get('crop_status') == 'empty'
+            warning = (cell.get('row_ambiguous') or cell.get('crop_status') in ('empty', 'invalid_grid')
                        or (token and token.get('warning')))
             char = token.get('char', '') if token else ''
             muted = token is None or bool(token.get('consumed')) or not char.strip()

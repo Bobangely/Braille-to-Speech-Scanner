@@ -10,6 +10,7 @@ import math
 
 import cv2
 import numpy as np
+from cell_geometry import grid_error, slot_points, validate_cell_grids
 
 
 class UnreadableBrailleFrame(ValueError):
@@ -159,6 +160,25 @@ def _band_angle(points, spacing, angle):
     return angle
 
 
+def _column_groups(columns, spacing):
+    """Prefer the measured dot pitch when adjacent candidate pairs overlap."""
+    groups, index = [], 0
+    while index < len(columns):
+        if index+1 < len(columns) and columns[index+1]-columns[index] <= 1.22*spacing:
+            gap = columns[index+1]-columns[index]
+            if (index+2 < len(columns) and columns[index+2]-columns[index+1] <= 1.22*spacing
+                    and abs(columns[index+2]-columns[index+1]-spacing) < abs(gap-spacing)):
+                groups.append([index])
+                index += 1
+                continue
+            groups.append([index, index+1])
+            index += 2
+        else:
+            groups.append([index])
+            index += 1
+    return groups
+
+
 def plan_cells(dots, image_shape, *, _basis=None):
     """Split rows into lines of at most three rows BEFORE assigning any cell.
 
@@ -244,11 +264,7 @@ def plan_cells(dots, image_shape, *, _basis=None):
         local_x = rectified[indices, 0]
         column_groups = _clusters(local_x, .45*spacing)
         columns = np.asarray([np.median(local_x[group]) for group in column_groups])
-        groups = []
-        for i, x in enumerate(columns):
-            if not groups or len(groups[-1]) == 2 or x-columns[groups[-1][-1]] > 1.22*spacing:
-                groups.append([])
-            groups[-1].append(i)
+        groups = _column_groups(columns, spacing)
         pair_widths = [columns[g[1]]-columns[g[0]] for g in groups if len(g) == 2]
         dx = float(np.median(pair_widths)) if pair_widths else spacing
         anchors = [float(columns[g[0]]) for g in groups if len(g) == 2]
@@ -276,6 +292,17 @@ def plan_cells(dots, image_shape, *, _basis=None):
                 else:
                     is_right, column_ambiguous = False, True
                 left, right = (x-dx, x) if is_right else (x, x+dx)
+                # A sparse column's opposite slots must fit between neighbouring
+                # cells. Only switch phase when the other phase uniquely fits.
+                low = ((columns[groups[line_cell_index-1][-1]]+x)/2
+                       if line_cell_index else -np.inf)
+                high = ((x+columns[groups[line_cell_index+1][0]])/2
+                        if line_cell_index+1 < len(groups) else np.inf)
+                fits = [low <= a and b <= high for a, b in ((x, x+dx), (x-dx, x))]
+                if sum(fits) == 1:
+                    is_right = fits[1]
+                    left, right = (x-dx, x) if is_right else (x, x+dx)
+                    column_ambiguous = False
             source_ids = [indices[i] for column in group for i in column_groups[column]]
             slot_uv = np.array([(left if d < 3 else right, expected_rows[d % 3]) for d in range(6)])
             source_slots = slot_uv @ rotation.T
@@ -308,7 +335,7 @@ def plan_cells(dots, image_shape, *, _basis=None):
                 grid=dict(expected_cols=[float(source_slots[1, 0]), float(source_slots[4, 0])],
                           expected_rows=[float(np.mean(source_slots[[r, r+3], 1])) for r in range(3)],
                           slots={d+1: tuple(p) for d, p in enumerate(source_slots)}, bbox=bbox)))
-    return cells
+    return validate_cell_grids(cells, image_shape)
 
 
 def crop_cell(image, cell, canvas_size=320):
@@ -337,7 +364,13 @@ def crop_cell(image, cell, canvas_size=320):
 
 def read_cell(cell, crop_dots, inverse):
     """Map isolated dot evidence through its transform to this cell's six slots."""
-    slots = np.asarray(list(cell['grid']['slots'].values()))
+    error = cell.get('geometry_error') or grid_error(cell)
+    if error:
+        return dict(cell, overview_dots=cell['dots'], dots=frozenset(), read_pattern=frozenset(),
+                    crop_status='invalid_grid', geometry_status='invalid', geometry_error=error,
+                    crop_diagnostics=dict(detections=0, matched_slots=0, outside_grid=0, duplicate_slots=0),
+                    read_dots=[], crop_disagreement=bool(cell['dots']))
+    slots = slot_points(cell)
     accepted = {}
     detections = outside_grid = duplicate_slots = 0
     for dot in crop_dots:
@@ -376,12 +409,19 @@ class CellStream:
             raise UnreadableBrailleFrame(f'{len(planned)} cell candidates exceed limit {self.max_cells}; narrow the camera ROI')
         iterator = iter(planned)
         while batch := list(islice(iterator, self.batch_size)):
-            crops = [crop_cell(image, cell) for cell in batch]
-            predictions = list(self.predict_crops([patch for patch, _ in crops]))
-            if len(predictions) != len(batch):
+            valid = [grid_error(cell, image.shape) is None for cell in batch]
+            readable = [cell for cell, ok in zip(batch, valid) if ok]
+            crops = [crop_cell(image, cell) for cell in readable]
+            predictions = list(self.predict_crops([patch for patch, _ in crops])) if crops else []
+            if len(predictions) != len(readable):
                 raise RuntimeError('YOLO crop result count does not match submitted cells')
-            for cell, dots, (_, inverse) in zip(batch, predictions, crops):
-                yield read_cell(cell, dots, inverse)
+            reads = iter(zip(predictions, crops))
+            for cell, ok in zip(batch, valid):
+                if not ok:
+                    yield read_cell(cell, [], np.eye(3))
+                else:
+                    dots, (_, inverse) = next(reads)
+                    yield read_cell(cell, dots, inverse)
 
 
 def pair_markers(cells, lang='thai'):

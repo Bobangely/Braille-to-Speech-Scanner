@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 
 from frame_motion import estimate_motion, full_size_motion, tracking_gray, tracking_width
+from cell_geometry import grid_bbox
 
 
 class GridStabilizer:
@@ -68,9 +69,7 @@ class GridStabilizer:
                 old_quad = cv2.perspectiveTransform(np.float32([old['crop_quad']]), motion)[0]
                 quad = .75 * old_quad + .25 * np.array(cell['crop_quad'])
                 center = slots.mean(axis=0)
-                h, w = image.shape[:2]
-                bbox = (max(0, int(np.floor(quad[:, 0].min()))), max(0, int(np.floor(quad[:, 1].min()))),
-                        min(w, int(np.ceil(quad[:, 0].max()))), min(h, int(np.ceil(quad[:, 1].max()))))
+                bbox = grid_bbox(slots, image.shape)
                 result.update(center=tuple(center), x=float(center[0]), y=float(center[1]),
                               crop_quad=quad.tolist(), track_id=old['track_id'],
                               grid=dict(cell['grid'], bbox=bbox,

@@ -16,10 +16,12 @@ def _spacing(cell):
 
 def is_unread_cell(cell):
     """A proposed cell with a failed crop read is unknown, not a blank space."""
-    return not cell['dots'] and cell.get('crop_status') == 'empty'
+    return not cell['dots'] and cell.get('crop_status') in ('empty', 'invalid_grid')
 
 
 def cell_read_warning(cell):
+    if cell.get('geometry_status') == 'invalid' or cell.get('crop_status') == 'invalid_grid':
+        return 'invalid_cell_grid'
     if is_unread_cell(cell):
         return 'empty_crop'
     if cell.get('row_ambiguous'):

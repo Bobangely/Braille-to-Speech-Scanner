@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from frame_motion import cell_motion_mask, estimate_motion, full_size_motion, tracking_gray, tracking_width
+from cell_geometry import grid_bbox, validate_cell_grids
 
 
 def transform_grid(cell, matrix, shape):
@@ -25,8 +26,7 @@ def _geometry(cell, slots, quad, shape):
     axis = slots[3]-slots[0]
     spacing = float(np.linalg.norm(axis))
     scale = spacing / cell['dot_spacing']
-    bbox = (max(0, int(np.floor(quad[:, 0].min()))), max(0, int(np.floor(quad[:, 1].min()))),
-            min(shape[1], int(np.ceil(quad[:, 0].max()))), min(shape[0], int(np.ceil(quad[:, 1].max()))))
+    bbox = grid_bbox(slots, shape)
     return dict(cell, center=tuple(center), x=float(center[0]), y=float(center[1]),
         reading_x=float(np.dot(center, axis)/spacing), dot_spacing=spacing,
         cell_pitch=cell['cell_pitch']*scale, crop_quad=quad.tolist(),
@@ -142,6 +142,12 @@ class CellGridTracker:
         return evidence, assigned
 
     def update(self, measured, dots, image, context, color_mask=None):
+        if any('geometry_status' not in cell for cell in measured):
+            measured = validate_cell_grids(measured, image.shape)
+        if any(cell.get('geometry_status') == 'invalid' for cell in measured):
+            self.reset()
+            self.current_dots = dots
+            return measured, 'invalid'
         now = time.monotonic()
         context = (context, image.shape)
         if context != self.context or now-self.updated_at > .75 or not dots:

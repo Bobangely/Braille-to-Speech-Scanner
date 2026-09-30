@@ -21,6 +21,8 @@ def scaled_geometry(dots, cells, sx, sy):
         small_dots.append(small)
     for cell in cells:
         small = dict(cell, center=point(cell['center']), x=cell['x'] * sx, y=cell['y'] * sy)
+        if cell.get('crop_quad'):
+            small['crop_quad'] = [point(p) for p in cell['crop_quad']]
         if cell.get('grid'):
             grid = cell['grid']
             small['grid'] = dict(grid, bbox=box(grid['bbox']),
