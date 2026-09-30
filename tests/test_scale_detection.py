@@ -73,6 +73,27 @@ class ScaleDetectionTests(unittest.TestCase):
                         image[y, x] = ink
                     self.assert_page(image, centers, expected, color, 3)
 
+    def test_isolated_two_to_five_pixel_specks_do_not_create_extra_cells(self):
+        shapes = (((0, 0), (1, 0)), ((0, 0), (1, 0), (2, 0)),
+                  ((1, 0), (0, 1), (1, 1), (2, 1), (1, 2)))
+        for color in ('blue', 'red'):
+            for lines in (1, 3, 4):
+                for shape in shapes:
+                    with self.subTest(color=color, lines=lines, pixels=len(shape)):
+                        image, centers, expected = scaled_page(lines, .15, color=color)
+                        for x, y in shape:
+                            image[image.shape[0]-10+y, image.shape[1]-10+x] = (
+                                (255, 0, 0) if color == 'blue' else (0, 0, 255))
+                        self.assert_page(image, centers, expected, color, lines)
+
+    def test_small_component_budget_precedes_pairwise_scale_work(self):
+        from unittest.mock import patch
+        from yolo_cell_stream import UnreadableBrailleFrame
+        image, _, _ = scaled_page(4, .15)
+        with patch('colored_braille._spacing', side_effect=AssertionError('over-budget fitting')):
+            with self.assertRaisesRegex(UnreadableBrailleFrame, 'Too many small'):
+                ColoredCellStream(max_cells=2).find_dots(image)
+
     def test_geometry_does_not_depend_on_absolute_page_scale(self):
         image, dots, expected = page([list(PATTERNS)] * 4, line_pitch=180)
         for scale in (1., .5, .25, .2, .15, .1, .075, .05):

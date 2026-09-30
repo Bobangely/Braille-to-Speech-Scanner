@@ -218,6 +218,8 @@ class ColoredCellStream:
             dots.append(dict(center=tuple(map(float, centers[index])), area=float(area),
                              bbox=(x, y, x+width, y+height), confidence=1.0,
                              source='color', color_pixels=area))
+        if min_area < self.min_area and len(dots) > 6*self.max_cells:
+            raise UnreadableBrailleFrame('Too many small colored components for scale estimation')
         # Reject small speckles relative to actual ink marks while retaining partial dots.
         normal_areas = [d['area'] for d in dots if
             max(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1]) <=
@@ -226,18 +228,23 @@ class ColoredCellStream:
             floor = max(min_area, .12*float(np.median(normal_areas)))
             # Ink size may differ between text lines. Only reconsider marks
             # below the page-wide floor when nearby dots support their size.
-            if any(dot['area'] < floor for dot in dots):
+            if any(dot['area'] < max(floor, self.min_area) for dot in dots):
                 points = np.asarray([dot['center'] for dot in dots])
                 areas = np.asarray([dot['area'] for dot in dots])
                 spacing = _spacing(points, np.sqrt(areas))
                 if spacing is not None:
                     keep = []
                     for index, dot in enumerate(dots):
-                        if dot['area'] >= floor:
+                        if dot['area'] >= max(floor, self.min_area):
                             keep.append(dot)
                             continue
                         distance = np.linalg.norm(points-points[index], axis=1)
                         neighbours = areas[distance <= 2.5*spacing]
+                        # Only rescue few-pixel marks in a supported
+                        # neighbourhood. An isolated 2-5 pixel speck must not
+                        # become a new cell just because the page is small.
+                        if dot['area'] < self.min_area and len(neighbours) < 3:
+                            continue
                         # The candidate plus two nearby marks is enough to
                         # support a sparse cell at the end of a small-dot line.
                         local_floor = (max(min_area, .12*float(np.median(neighbours)))
