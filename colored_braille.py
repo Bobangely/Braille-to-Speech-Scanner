@@ -75,6 +75,105 @@ def split_color_components(dots, mask, *, max_dots=1536):
     return refined
 
 
+def split_red_components(dots, mask, *, max_dots=1536):
+    """Split touching red ink only at measured lobes with an intervening valley.
+
+    A fixed fraction of the largest lobe can join unequal cores or omit a
+    smaller one. Local distance maxima preserve their separate evidence. This
+    runs before cell planning and does not rely on any proposed grid slots.
+    """
+    if len(dots) < 4 or len(dots) > max_dots:
+        return dots
+    points = np.asarray([d['center'] for d in dots])
+    spacing = _spacing(points, np.sqrt([d['area'] for d in dots]))
+    if spacing is None or spacing < 2:
+        return dots
+    radius = max(1, round(.35*spacing))
+    # Rectangular max filtering is separable/fast. Its diagonal reach stays
+    # below the minimum lobe separation used below (.7 * spacing).
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2*radius+1, 2*radius+1))
+    refined = []
+    for dot in dots:
+        x1, y1, x2, y2 = dot['bbox']
+        if max(x2-x1, y2-y1) < .7*spacing:
+            refined.append(dot)
+            continue
+        patch = cv2.copyMakeBorder(mask[y1:y2, x1:x2], 1, 1, 1, 1,
+                                   cv2.BORDER_CONSTANT, value=0)
+        # An irregular parent bbox can enclose a separate neighbouring dot.
+        # Match the original component's measured area and centroid, then keep
+        # only its pixels: a neighbour must neither veto nor join this split.
+        if cv2.countNonZero(patch) != dot['area']:
+            _, labels, stats, centers = cv2.connectedComponentsWithStats(patch)
+            parent_center = np.asarray(dot['center']) - (x1-1, y1-1)
+            parents = [i for i in range(1, len(stats))
+                       if stats[i, cv2.CC_STAT_AREA] == dot['area']
+                       and np.allclose(centers[i], parent_center, rtol=0, atol=1e-6)]
+            if len(parents) != 1:
+                refined.append(dot)
+                continue
+            patch = (labels == parents[0]).astype(np.uint8)*255
+        distance = cv2.distanceTransform(patch, cv2.DIST_L2, 5)
+        maxima = ((distance >= cv2.dilate(distance, kernel)-1e-6)
+                  & (distance >= max(1., .35*float(distance.max()))))
+        peak_y, peak_x = np.nonzero(maxima)
+        # If all maxima fit within one separation radius, two valid lobes are
+        # impossible. Skip component labelling for the common single-dot case.
+        if not len(peak_x) or np.hypot(np.ptp(peak_x), np.ptp(peak_y)) < .7*spacing:
+            refined.append(dot)
+            continue
+        _, _, _, centers = cv2.connectedComponentsWithStats(maxima.astype(np.uint8))
+        # A rough flat summit may have several equal maxima. Keep one per lobe,
+        # using the same minimum dot separation as the existing BLUE splitter.
+        ranked = sorted(centers[1:], key=lambda p: (-distance[round(p[1]), round(p[0])], p[1], p[0]))
+        peaks = []
+        for center in ranked:
+            if all(np.linalg.norm(center-peak) >= .7*spacing for peak in peaks):
+                peaks.append(center)
+        if len(peaks) < 2 or len(peaks) > 6:
+            refined.append(dot)
+            continue
+        # Every lobe must be connected to another supported lobe through a thin
+        # neck; a broad, solid smudge must not turn into fabricated dots.
+        edges = [set() for _ in peaks]
+        for i, first in enumerate(peaks):
+            for j, second in enumerate(peaks[i+1:], i+1):
+                if np.linalg.norm(first-second) > 1.5*spacing:
+                    continue
+                midpoint = (first+second)/2
+                depth = min(distance[round(p[1]), round(p[0])] for p in (first, second))
+                if distance[round(midpoint[1]), round(midpoint[0])] < .7*depth:
+                    edges[i].add(j)
+                    edges[j].add(i)
+        reached, pending = set(), [0]
+        while pending:
+            current = pending.pop()
+            if current not in reached:
+                reached.add(current)
+                pending.extend(edges[current]-reached)
+        if len(reached) != len(peaks):
+            refined.append(dot)
+            continue
+        yy, xx = np.nonzero(patch)
+        pixels = np.column_stack((xx, yy))
+        labels = np.linalg.norm(pixels[:, None]-np.asarray(peaks)[None], axis=2).argmin(axis=1)
+        parts = []
+        for index, peak in enumerate(peaks):
+            part = pixels[labels == index]
+            if len(part) < 6 or np.linalg.norm(part.mean(axis=0)-peak) > .35*spacing:
+                break
+            part = part + (x1-1, y1-1)
+            low, high = part.min(axis=0), part.max(axis=0)+1
+            width, height = high-low
+            if max(width, height) > 3*min(width, height) or len(part)/(width*height) < .2:
+                break
+            parts.append(dict(dot, center=tuple(part.mean(axis=0)), area=float(len(part)),
+                              bbox=tuple(map(int, (*low, *high))), color_pixels=len(part),
+                              split_from_bbox=dot['bbox']))
+        refined.extend(parts if len(parts) == len(peaks) else [dot])
+    return refined
+
+
 class ColoredCellStream:
     def __init__(self, color='blue', max_cells=256, min_area=6, max_area=8000):
         if color not in DOT_COLORS:
@@ -156,11 +255,13 @@ class ColoredCellStream:
             dots = [dot for dot in dots if not clipped_or_near_edge(dot)]
         # A joined pair can be wider than one dot. Apply the original aspect
         # limit AFTER attempting a pixel-supported split; unsplit lines stay out.
-        dots = split_color_components(dots, mask, max_dots=6*self.max_cells)
+        splitter = split_red_components if self.color == 'red' else split_color_components
+        dots = splitter(dots, mask, max_dots=6*self.max_cells)
         dots = [d for d in dots if max(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1]) <=
                 3*min(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1])]
-        split_count = sum('split_from_bbox' in d for d in dots)//2
-        accepted_components = len(dots)-split_count
+        split_parts = [tuple(d['split_from_bbox']) for d in dots if 'split_from_bbox' in d]
+        split_count = len(set(split_parts))
+        accepted_components = len(dots)-len(split_parts)+split_count
         return dots, dict(mask=mask, color=self.color, color_components=count-1,
                           colored_dots=len(dots), rejected_color_components=count-1-accepted_components,
                           split_color_components=split_count,
