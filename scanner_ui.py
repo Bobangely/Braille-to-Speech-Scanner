@@ -134,7 +134,12 @@ class ScannerUI:
 
         x, y, right, bottom = self.result_card
         self._label(draw, (x+10*s, y+10*s), 'DETECTION RESULT', 12, MUTED, True)
-        self._label(draw, (x+10*s, y+34*s), 'ข้อความที่ยืนยันแล้ว' if state.get('lang') == 'thai' else 'Confirmed text', 13)
+        if state.get('result_held'):
+            result_label = 'ผลล่าสุด · กำลังอ่านใหม่' if state.get('lang') == 'thai' else 'Last confirmed · reading again'
+        else:
+            result_label = 'ข้อความที่ยืนยันแล้ว' if state.get('lang') == 'thai' else 'Confirmed text'
+        self._label(draw, (x+10*s, y+34*s), result_label, 13,
+                    MUTED if state.get('result_held') else TEXT)
         text = state.get('text', '')
         if text != self._text:
             self.scroll_offset, self._text = 0, text

@@ -592,6 +592,8 @@ class RealTimeBrailleScanner:
         # State tracking
         self.history = deque(maxlen=stability_threshold)
         self._last_stability_result_id = 0
+        self._confirmed_text = ''
+        self._confirmed_context = None
         self._last_submitted_frame_id = -1
         self._last_submitted_context = None
         self._last_error = None
@@ -751,7 +753,8 @@ class RealTimeBrailleScanner:
         status = ('Error' if result.get('error') else
                   'Check image' if result.get('status') in ('uncertain', 'unreadable') else
                   'Detected' if is_locked else 'Scanning' if cells else 'Ready')
-        state = dict(text=current_text if is_locked else '', lang=self.lang,
+        display_text = current_text if is_locked else self._confirmed_text
+        state = dict(text=display_text, result_held=bool(display_text) and not is_locked, lang=self.lang,
             color=self.dot_color, sharp=SHARPNESS_LEVELS[self.sharpness_idx][1].split()[0],
             details=self.show_details, zoom=self.zoom_level, status=status,
             resolution=f'{self.actual_width} x {self.actual_height}',
@@ -823,6 +826,12 @@ class RealTimeBrailleScanner:
         enhanced_frame, crop_box = self._apply_zoom(frame)
         context = (self._context_generation, self.lang, self.detector_mode, self.sharpness_idx,
                    tuple(crop_box) if crop_box is not None else None, enhanced_frame.shape, self.dot_color)
+        if context != self._confirmed_context:
+            # Historical text belongs to this language/color/camera crop only.
+            self._confirmed_text = ''
+            self._confirmed_context = context
+            self.history.clear()
+            self._last_stability_result_id = 0
         if frame_id != self._last_submitted_frame_id or context != self._last_submitted_context:
             self.ai_worker.submit_frame(enhanced_frame, lang=self.lang,
                 sharpness_strength=SHARPNESS_LEVELS[self.sharpness_idx][2],
@@ -859,6 +868,8 @@ class RealTimeBrailleScanner:
             decoded_text=decoded_text if is_locked else '',
             verbose_results=result['verbose_results'] if is_locked else [])
         if result.get('source_shape') != enhanced_frame.shape:
+            self.history.clear()
+            is_locked = False
             preview_result = dict(preview_result, result_id=-1, cells=[], dots=[], decoded_text='', verbose_results=[])
         try:
             self._preview.details = self.show_details
@@ -871,6 +882,10 @@ class RealTimeBrailleScanner:
                 round(enhanced_frame.shape[0]*annotated.shape[1]/enhanced_frame.shape[1]))
             self._preview_crop_box = crop_box
             self._draw_mini_viewfinder(annotated, frame, crop_box)
+            if is_locked:
+                # Publish only after both confirmation and preview motion checks.
+                # Transient failed reads must not erase the previous confirmed text.
+                self._confirmed_text = decoded_text
             annotated = self._compose_dashboard(annotated[:self._preview_image_size[1]],
                 preview_result, decoded_text, is_locked)
             self._draw_top_hud(annotated, decoded_text if is_locked else '', is_locked)
@@ -1011,6 +1026,8 @@ class RealTimeBrailleScanner:
         window_name = "Braille Scanner"
         window_created = False
         self.history.clear()
+        self._confirmed_text = ''
+        self._confirmed_context = None
         self._context_generation += 1
         self._last_submitted_frame_id = -1
         self._last_stability_result_id = 0
