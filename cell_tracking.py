@@ -9,7 +9,7 @@ import time
 import cv2
 import numpy as np
 
-from frame_motion import cell_motion_mask, estimate_motion, full_size_motion, tracking_gray
+from frame_motion import cell_motion_mask, estimate_motion, full_size_motion, tracking_gray, tracking_width
 
 
 def transform_grid(cell, matrix, shape):
@@ -148,7 +148,8 @@ class CellGridTracker:
             self.reset()
         if not dots:
             return [], 'empty'
-        gray = tracking_gray(image)
+        width = self.reference.shape[1] if self.reference is not None else tracking_width(measured, image.shape)
+        gray = tracking_gray(image, width)
         motion = (estimate_motion(self.reference, gray, self.mask)
                   if self.reference is not None else None)
         if motion is None:
@@ -208,8 +209,10 @@ class CellGridTracker:
             pattern = frozenset(int(np.linalg.norm(slots-dots[i]['center'], axis=1).argmin())+1
                                 for i in indices)
             output.append(dict(cell, source_dot_ids=indices, dots=pattern))
-        self.cells, self.reference = chosen, gray
+        next_width = tracking_width(chosen, image.shape, gray.shape[1])
+        self.cells = chosen
+        self.reference = gray if next_width == gray.shape[1] else tracking_gray(image, next_width)
         self.current_dots = dots
-        self.mask = cell_motion_mask(chosen, image.shape, gray.shape)
+        self.mask = cell_motion_mask(chosen, image.shape, self.reference.shape)
         self.context, self.updated_at = context, now
         return output, status

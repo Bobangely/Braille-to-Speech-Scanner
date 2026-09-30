@@ -2,7 +2,7 @@
 
 import cv2
 import numpy as np
-from frame_motion import cell_motion_mask, estimate_motion, full_size_motion, tracking_gray
+from frame_motion import cell_motion_mask, estimate_motion, full_size_motion, tracking_gray, tracking_width
 from grid_stability import GridStabilizer
 
 
@@ -72,7 +72,9 @@ class LivePreview:
                 decoded_text=result['decoded_text'], verbose_results=result['verbose_results'],
                 lang=lang, reader_name=result.get('reader_name'), **style)
             self._mask = np.any(self._overlay > 0, axis=2).astype(np.uint8) * 255
-            self._reference = (tracking_gray(reference) if result['cells'] and
+            track_width = tracking_width(self._stable_cells, frame.shape,
+                                         self._reference.shape[1] if self._reference is not None else 640)
+            self._reference = (tracking_gray(reference, track_width) if result['cells'] and
                 isinstance(reference, np.ndarray) and reference.shape == frame.shape else None)
             self._motion_mask = (cell_motion_mask(self._stable_cells, frame.shape, self._reference.shape)
                                  if self._reference is not None else None)
@@ -86,7 +88,7 @@ class LivePreview:
         self.motion_valid = True
         overlay, mask = self._overlay, self._mask
         if self._reference is not None:
-            motion = estimate_motion(self._reference, tracking_gray(frame), self._motion_mask)
+            motion = estimate_motion(self._reference, tracking_gray(frame, self._reference.shape[1]), self._motion_mask)
             self.motion_valid = motion is not None
             if motion is None:
                 overlay, mask = self._waiting, self._waiting_mask

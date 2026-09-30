@@ -5,7 +5,7 @@ import time
 import cv2
 import numpy as np
 
-from frame_motion import estimate_motion, full_size_motion, tracking_gray
+from frame_motion import estimate_motion, full_size_motion, tracking_gray, tracking_width
 
 
 class GridStabilizer:
@@ -33,7 +33,8 @@ class GridStabilizer:
         now = time.monotonic()
         if context != self._context or now - self._updated_at > .75:
             self.reset()
-        gray = tracking_gray(image)
+        width = self._reference.shape[1] if self._reference is not None else tracking_width(cells, image.shape)
+        gray = tracking_gray(image, width)
         motion = estimate_motion(self._reference, gray) if self._reference is not None else None
         previous = self._cells
         if motion is None:
@@ -82,6 +83,8 @@ class GridStabilizer:
             stable.append(result)
         # Preserve current spatial order and evidence. Track IDs, not list
         # positions, identify surviving cells after another cell disappears.
-        self._cells, self._reference = stable, gray
+        next_width = tracking_width(stable, image.shape, gray.shape[1])
+        self._cells = stable
+        self._reference = gray if next_width == gray.shape[1] else tracking_gray(image, next_width)
         self._context, self._updated_at = context, now
         return stable
