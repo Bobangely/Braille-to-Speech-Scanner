@@ -142,6 +142,22 @@ def _atom(record, index):
                 semantic=kind == 'vowel' and len(value) > 1)
 
 
+def _is_written_o(atoms, index):
+    """Resolve อ as a vowel only when it has no own following vowel."""
+    if atoms[index]['kind'] != 'consonant' or atoms[index]['value'] != 'อ':
+        return False
+    end = index + 1
+    while end < len(atoms) and atoms[end]['kind'] == 'tone':
+        end += 1
+    if end == len(atoms):
+        return True
+    if atoms[end]['kind'] == 'vowel' or atoms[end]['value'] == 'อ':
+        return False  # อิ/ออ/... start their own syllable, as in เต็มอิ่ม.
+    if atoms[end]['kind'] == 'leading':
+        return end+1 < len(atoms) and atoms[end+1]['kind'] == 'consonant'
+    return True
+
+
 def _starts_syllable(atoms, index):
     """A consonant with its own following vowel belongs to the next syllable."""
     end = index + 1
@@ -155,7 +171,10 @@ def _starts_syllable(atoms, index):
         # Written แ + ม starts the next syllable; it is not a vowel of the
         # preceding ณ in คุณแม่. Post-onset เ + ะ remains a short-vowel form.
         return end+1 >= len(atoms) or atoms[end+1]['kind'] != 'consonant'
-    return atoms[end]['kind'] == 'vowel'
+    # อ can be a written vowel after an onset (กล + ่ + อ + ง).
+    # Its lexical token remains a consonant because it can also be an onset;
+    # identify its vowel role here before borrowing that onset as a coda.
+    return atoms[end]['kind'] == 'vowel' or _is_written_o(atoms, end)
 
 
 def _parse_run(atoms):
@@ -191,6 +210,9 @@ def _parse_run(atoms):
                 if index+1 < len(atoms) and atoms[index+1]['kind'] == 'consonant':
                     break
                 prefix = atom['value']
+            elif vowel is None and _is_written_o(atoms, index):
+                # Contextual written อ, rather than a semantic compound vowel.
+                vowel = 'ออ'
             elif atom['kind'] == 'vowel':
                 if vowel is None:
                     vowel, semantic = atom['vowel'], atom['semantic']
@@ -220,7 +242,8 @@ def _parse_run(atoms):
                 tail = index
                 while tail < len(atoms) and atoms[tail]['kind'] == 'consonant':
                     tail += 1
-                if semantic and tail-index > 1 and tail == len(atoms):
+                if (semantic and tail-index > 1 and tail == len(atoms)
+                        and not _starts_syllable(atoms, index+1)):
                     # Several bare consonants could be a coda, silent ending,
                     # or another implicit-vowel syllable. No lexicon to decide.
                     status = status or 'AMBIGUOUS_SYLLABLE'
