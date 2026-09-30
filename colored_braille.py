@@ -198,10 +198,22 @@ class ColoredCellStream:
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE,
                                cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
         count, _, stats, centers = cv2.connectedComponentsWithStats(mask)
+        # Estimate scale from marks that already pass the original safety
+        # limit. At small scales quantisation can leave a real dot with 4-5
+        # pixels while its neighbours have 6-7; do not discard it before the
+        # relative/local ink filter can examine it. Isolated one-pixel noise
+        # cannot lower this limit, and normal-size pages keep the old floor.
+        reference_areas = [area for x, y, width, height, area in stats[1:]
+                           if self.min_area <= area <= self.max_area
+                           and max(width, height) <= 3*min(width, height)
+                           and area/(width*height) >= .2]
+        min_area = self.min_area
+        if len(reference_areas) >= 4:
+            min_area = min(self.min_area, max(2., .12*float(np.median(reference_areas))))
         dots = []
         for index in range(1, count):
             x, y, width, height, area = map(int, stats[index])
-            if not self.min_area <= area <= self.max_area or area/(width*height) < .2:
+            if not min_area <= area <= self.max_area or area/(width*height) < .2:
                 continue
             dots.append(dict(center=tuple(map(float, centers[index])), area=float(area),
                              bbox=(x, y, x+width, y+height), confidence=1.0,
@@ -211,7 +223,7 @@ class ColoredCellStream:
             max(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1]) <=
             3*min(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1])]
         if len(normal_areas) >= 4:
-            floor = max(self.min_area, .12*float(np.median(normal_areas)))
+            floor = max(min_area, .12*float(np.median(normal_areas)))
             # Ink size may differ between text lines. Only reconsider marks
             # below the page-wide floor when nearby dots support their size.
             if any(dot['area'] < floor for dot in dots):
@@ -228,7 +240,7 @@ class ColoredCellStream:
                         neighbours = areas[distance <= 2.5*spacing]
                         # The candidate plus two nearby marks is enough to
                         # support a sparse cell at the end of a small-dot line.
-                        local_floor = (max(self.min_area, .12*float(np.median(neighbours)))
+                        local_floor = (max(min_area, .12*float(np.median(neighbours)))
                                        if len(neighbours) >= 3 else floor)
                         if dot['area'] >= local_floor:
                             keep.append(dot)
@@ -266,7 +278,7 @@ class ColoredCellStream:
                           colored_dots=len(dots), rejected_color_components=count-1-accepted_components,
                           split_color_components=split_count,
                           color_config=dict(hue_ranges=HUE_RANGES.get(self.color, ((0, 179),)),
-                              saturation_min=60, value_min=15, min_area=self.min_area,
+                              saturation_min=60, value_min=15, min_area=min_area,
                               max_area=self.max_area))
 
     def detect(self, image, lang='thai', *, context=None, roi=None):
