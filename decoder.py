@@ -1,7 +1,7 @@
 """Decode ordered Thai/English Braille cells while preserving reading failures."""
 
 from config import BRAILLE_TO_CHAR
-from thai_decoder import _break_before, cell_read_warning, decode_thai, normalize_thai, tokenize_thai
+from thai_decoder import _break_before, cell_read_warning, decode_thai, normalize_thai, thai_verbose
 
 
 _CAPITAL = frozenset({6})
@@ -97,7 +97,7 @@ def decode_cells(cells, lang='english'):
 def decode_cells_verbose(cells, lang='english'):
     language = lang.lower()
     if language in ('thai', 'th'):
-        return tokenize_thai(cells)
+        return thai_verbose(cells)
     if language == 'thai-legacy':
         from archive.legacy_decoder import decode_cells_verbose as legacy_verbose
         return legacy_verbose(cells, lang)

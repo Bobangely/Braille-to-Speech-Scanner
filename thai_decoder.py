@@ -2,16 +2,10 @@
 
 import re
 import unicodedata
+from thai_composer import compose_tokens
 
-from config_thai import (THAI_BRAILLE_TO_CHAR, THAI_MULTI_CELL, THAI_READING_MULTI_CELL, THAI_DIGIT_MAP,
-                        THAI_CONSONANTS, THAI_TONE_MARKS, NUMBER_INDICATOR,
-                        COMPOUND_VOWELS)
-
-CONSONANTS = set(THAI_CONSONANTS.values()) | {
-    value for value in THAI_MULTI_CELL.values() if len(value) == 1 and 'ก' <= value <= 'ฮ'
-}
-TONES = set(THAI_TONE_MARKS.values())
-MARKS = 'ัิีึืุู็ํ'
+from config_thai import (THAI_BRAILLE_TO_CHAR, THAI_READING_MULTI_CELL,
+                        THAI_DIGIT_MAP, NUMBER_INDICATOR)
 
 
 def _spacing(cell):
@@ -120,53 +114,22 @@ def normalize_thai(text):
     return unicodedata.normalize('NFC', text)
 
 
-def _onset_index(output):
-    index = len(output) - 1
-    while index >= 0 and output[index] in TONES:
-        index -= 1
-    if index < 0 or output[index] not in CONSONANTS:
-        return None
-    if index > 0:
-        previous, current = output[index - 1:index + 1]
-        if ((previous == 'ห' and current in 'งญนมยรลว') or (previous == 'อ' and current == 'ย')
-                or (previous in 'กขคตปผพทศส' and current in 'รลว')):
-            index -= 1
-    return index
+def decode_thai_details(cells):
+    """Keep physical-cell tokens and syllable decisions alongside final text."""
+    return compose_tokens(tokenize_thai(cells))
 
 
 def decode_thai(cells):
-    output = []
-    for token in tokenize_thai(cells):
-        if token['consumed']:
-            continue
-        if token['line_break_before'] and output:
-            while output and output[-1] == ' ':
-                output.pop()
-            output.append('\n')
-        elif token['break_before'] and output and output[-1] not in ' \n':
-            output.append(' ')
-        char = token['char']
-        if not char or (char == ' ' and (not output or output[-1] in ' \n')):
-            continue
-        if char in COMPOUND_VOWELS:
-            onset = _onset_index(output)
-            if onset is None:
-                # Preserve uncertainty instead of inventing a missing consonant.
-                output.append('�')
-                continue
-            if char.startswith('เ') and (onset == 0 or output[onset - 1] != 'เ'):
-                output.insert(onset, 'เ')
-            output.extend({'เ◌า': 'า', 'เ◌อ': 'อ', 'เ◌ีย': 'ีย',
-                           'เ◌ือ': 'ือ', '◌ัว': 'ัว'}[char])
-        elif char in TONES:
-            trailing = bool(output) and output[-1] in 'าำะ'
-            if len(output) > 1 and output[-1] in 'อยว':
-                trailing = output[-2] in MARKS or (
-                    output[-1] == 'อ' and len(output) >= 3 and output[-3] == 'เ')
-            if trailing:
-                output.insert(len(output) - 1, char)
-            else:
-                output.append(char)
-        else:
-            output.extend(char)
-    return normalize_thai(''.join(output).strip())
+    return decode_thai_details(cells)['text']
+
+
+def thai_verbose(cells):
+    """Preserve overlay labels/spans; attach composition decisions for diagnostics."""
+    result = decode_thai_details(cells)
+    tokens = result['raw_tokens']
+    for syllable in result['syllables']:
+        token = tokens[syllable['indices'][0]]
+        token['composition'] = syllable
+        if syllable['needs_review'] and not token.get('warning'):
+            token['warning'] = syllable['status']
+    return tokens

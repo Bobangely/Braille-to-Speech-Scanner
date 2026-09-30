@@ -149,7 +149,13 @@ def _starts_syllable(atoms, index):
         end += 1
     while end < len(atoms) and atoms[end]['kind'] == 'tone':
         end += 1
-    return end < len(atoms) and atoms[end]['kind'] in ('vowel', 'leading')
+    if end >= len(atoms):
+        return False
+    if atoms[end]['kind'] == 'leading':
+        # Written แ + ม starts the next syllable; it is not a vowel of the
+        # preceding ณ in คุณแม่. Post-onset เ + ะ remains a short-vowel form.
+        return end+1 >= len(atoms) or atoms[end+1]['kind'] != 'consonant'
+    return atoms[end]['kind'] == 'vowel'
 
 
 def _parse_run(atoms):
@@ -182,6 +188,8 @@ def _parse_run(atoms):
                     status = 'UNSUPPORTED_COMBINATION'
                 tone = atom['value']
             elif atom['kind'] == 'leading' and not prefix and vowel is None:
+                if index+1 < len(atoms) and atoms[index+1]['kind'] == 'consonant':
+                    break
                 prefix = atom['value']
             elif atom['kind'] == 'vowel':
                 if vowel is None:
@@ -209,6 +217,13 @@ def _parse_run(atoms):
         final = None
         if vowel and index < len(atoms) and atoms[index]['kind'] == 'consonant':
             if not _starts_syllable(atoms, index) and (semantic or vowel not in INHERENT_FINAL):
+                tail = index
+                while tail < len(atoms) and atoms[tail]['kind'] == 'consonant':
+                    tail += 1
+                if semantic and tail-index > 1 and tail == len(atoms):
+                    # Several bare consonants could be a coda, silent ending,
+                    # or another implicit-vowel syllable. No lexicon to decide.
+                    status = status or 'AMBIGUOUS_SYLLABLE'
                 final = atoms[index]['value']
                 index += 1
                 if index < len(atoms) and atoms[index]['kind'] == 'tone':
