@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from decoder import decode_cells, decode_cells_verbose
+from thai_decoder import decode_thai_details
 from yolo_cell_stream import crop_cell
 
 
@@ -75,6 +76,8 @@ def export_stream(image, cells, debug_info, output_dir, lang='thai', source=None
                   metadata=metadata or {},
                   diagnostics={key: value for key, value in debug_info.items() if key not in ('dots', 'mask')},
                   cells=records)
+    if lang.lower() in ('thai', 'th'):
+        report['language_trace'] = decode_thai_details(cells)
     if detector is not None:
         font = detector._get_font(size=18, bold=True)
         color = debug_info.get('color', getattr(detector, 'dot_color', None))

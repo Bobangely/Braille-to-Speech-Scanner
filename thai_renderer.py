@@ -143,8 +143,18 @@ def render_thai(parsed, *, lexicon=None, confidence_threshold=None):
             status = status or 'LOW_CONFIDENCE'
         text = '�' if status else candidate
         pieces.append(text)
-        if traced:
+        if traced or status:
+            events = []
+            if candidate and '็' in candidate:
+                explicit = '3' in syllable.get('raw_patterns', []) or syllable.get('vowel') == '็'
+                reasons = {'เอะ': 'VOWEL_E_SHORT_CLOSED', 'แอะ': 'VOWEL_AE_SHORT_CLOSED',
+                           'เอาะ': 'VOWEL_O_SHORT_CLOSED'}
+                reason = 'EXPLICIT_MAITAIKHU' if explicit else reasons.get(syllable.get('vowel'))
+                if reason:
+                    events.append(dict(mark='็', inserted_mark=None if explicit else '็',
+                                       reason=reason, source=syllable.get('raw_patterns', [])))
             traces.append(dict(syllable, candidate=candidate, text=text, status=status or 'OK',
-                               needs_review=bool(status), min_confidence=minimum))
+                               needs_review=bool(status), min_confidence=minimum, render_events=events))
     return dict(parsed, text=unicodedata.normalize('NFC', ''.join(pieces).strip()),
-                syllables=traces, needs_review=any(t['needs_review'] for t in traces))
+                syllables=traces, needs_review=any(t['needs_review'] for t in traces),
+                status='NEEDS_REVIEW' if any(t['needs_review'] for t in traces) else 'VALID')

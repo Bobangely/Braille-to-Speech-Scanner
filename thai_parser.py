@@ -3,6 +3,18 @@
 from copy import deepcopy
 
 from thai_renderer import CONSONANTS, TONES, LEADING, SHORT, INHERENT_FINAL, normalize_vowel
+from thai_braille import BRAILLE_STANDARD, RULES_SOURCE, lex_braille, match_post_onset_vowel
+
+
+def _is_consonant(atom):
+    return atom['kind'] in ('consonant', 'ambiguous_o')
+
+
+def _component(kind, value, atoms, rule):
+    indices = [i for atom in atoms for i in atom.get('source_indices', [atom['index']])]
+    return dict(type=kind, value=value, indices=indices, rule=rule,
+                patterns=[p for atom in atoms for p in atom.get('patterns', [])],
+                source_cells=[c for atom in atoms for c in atom.get('source_cells', [])])
 
 
 def _cluster(left, right):
@@ -33,7 +45,7 @@ def _atom(record, index):
 
 def _is_written_o(atoms, index):
     """Resolve อ as a vowel only when it has no own following vowel."""
-    if atoms[index]['kind'] != 'consonant' or atoms[index]['value'] != 'อ':
+    if not _is_consonant(atoms[index]) or atoms[index]['value'] != 'อ':
         return False
     end = index + 1
     while end < len(atoms) and atoms[end]['kind'] == 'tone':
@@ -43,13 +55,14 @@ def _is_written_o(atoms, index):
     if atoms[end]['kind'] == 'vowel' or atoms[end]['value'] == 'อ':
         return False  # อิ/ออ/... start their own syllable, as in เต็มอิ่ม.
     if atoms[end]['kind'] == 'leading':
-        return end+1 < len(atoms) and atoms[end+1]['kind'] == 'consonant'
+        return end+1 < len(atoms) and _is_consonant(atoms[end+1])
     return True
 
 
 def _is_short_o_pair(atoms, index):
     """Recognize adjacent written อ + ะ; the caller must supply onset context."""
-    return (index+1 < len(atoms) and atoms[index]['kind'] == 'consonant'
+    # Physical Braille uses the raw sequence table and its adjacency checks.
+    return (not atoms[index].get('patterns') and index+1 < len(atoms) and _is_consonant(atoms[index])
             and atoms[index]['value'] == 'อ' and atoms[index+1]['kind'] == 'vowel'
             and atoms[index+1]['value'] == 'ะ')
 
@@ -57,7 +70,7 @@ def _is_short_o_pair(atoms, index):
 def _starts_syllable(atoms, index, *, onset_context=False):
     """A consonant with its own following vowel belongs to the next syllable."""
     end = index + 1
-    if end < len(atoms) and atoms[end]['kind'] == 'consonant' and _cluster(atoms[index]['value'], atoms[end]['value']):
+    if end < len(atoms) and _is_consonant(atoms[end]) and _cluster(atoms[index]['value'], atoms[end]['value']):
         end += 1
     while end < len(atoms) and atoms[end]['kind'] == 'tone':
         end += 1
@@ -66,14 +79,15 @@ def _starts_syllable(atoms, index, *, onset_context=False):
     if atoms[end]['kind'] == 'leading':
         # Written แ + ม starts the next syllable; it is not a vowel of the
         # preceding ณ in คุณแม่. Post-onset เ + ะ remains a short-vowel form.
-        return end+1 >= len(atoms) or atoms[end+1]['kind'] != 'consonant'
+        return end+1 >= len(atoms) or not _is_consonant(atoms[end+1])
     # อ can be a written vowel after an onset (กล + ่ + อ + ง).
     # Its lexical token remains a consonant because it can also be an onset;
     # identify its vowel role here before borrowing that onset as a coda.
     # In coda lookahead อ + ะ can be an independent อ onset (กินอะ).
     # Compound-vowel evidence is safe while resolving the current onset cluster.
-    return (atoms[end]['kind'] == 'vowel' or _is_written_o(atoms, end)
-            or (onset_context and _is_short_o_pair(atoms, end)))
+    return (atoms[end]['kind'] in ('vowel', 'ambiguous_mark') or _is_written_o(atoms, end)
+            or (onset_context and (_is_short_o_pair(atoms, end)
+                                   or match_post_onset_vowel(atoms, end) is not None)))
 
 
 def _parse_run(atoms):
@@ -82,41 +96,64 @@ def _parse_run(atoms):
     while index < len(atoms):
         start = index
         prefix = ''
-        if atoms[index]['kind'] == 'leading' and index+1 < len(atoms) and atoms[index+1]['kind'] == 'consonant':
+        components, prefix_atoms, vowel_atoms = [], [], []
+        vowel_rule, ambiguous_mark = 'VOWEL', False
+        if atoms[index]['kind'] == 'leading' and index+1 < len(atoms) and _is_consonant(atoms[index+1]):
             prefix = atoms[index]['value']
+            prefix_atoms.append(atoms[index])
             index += 1
-        if atoms[index]['kind'] != 'consonant':
+        if not _is_consonant(atoms[index]):
             atom = atoms[index]
-            status = 'AMBIGUOUS_SYLLABLE' if atom['semantic'] else None
-            yield dict(indices=[atom['index']], literal=atom['value'], status=status)
+            status = ('AMBIGUOUS_SEQUENCE' if atom['kind'] == 'ambiguous_mark' else
+                      'AMBIGUOUS_SYLLABLE' if atom['semantic'] else None)
+            yield dict(indices=atom.get('source_indices', [atom['index']]), literal=atom['value'],
+                       status=status, candidates=atom.get('candidates', []))
             index += 1
             continue
+        onset_start = index
         onset = atoms[index]['value']
         index += 1
-        if (index < len(atoms) and atoms[index]['kind'] == 'consonant'
+        if (index < len(atoms) and _is_consonant(atoms[index])
                 and _cluster(onset, atoms[index]['value'])
                 and (prefix or _starts_syllable(atoms, index, onset_context=True))):
             onset += atoms[index]['value']
             index += 1
+        components.append(_component('ONSET', onset, atoms[onset_start:index], 'ONSET_CONTEXT'))
         vowel, tone, semantic, status = None, None, False, None
         while index < len(atoms):
             atom = atoms[index]
+            matched = match_post_onset_vowel(atoms, index) if vowel is None and not prefix else None
             if atom['kind'] == 'tone':
                 if tone:
                     status = 'UNSUPPORTED_COMBINATION'
                 tone = atom['value']
+                components.append(_component('TONE', tone, [atom], 'SYLLABLE_TONE'))
+            elif matched:
+                vowel, span = matched
+                semantic, vowel_rule = True, 'POST_ONSET_SEQUENCE'
+                vowel_atoms.extend(atoms[index:index+span])
+                index += span
+                continue
             elif atom['kind'] == 'leading' and not prefix and vowel is None:
-                if index+1 < len(atoms) and atoms[index+1]['kind'] == 'consonant':
+                if index+1 < len(atoms) and _is_consonant(atoms[index+1]):
                     break
                 prefix = atom['value']
+                prefix_atoms.append(atom)
             elif vowel is None and not prefix and _is_short_o_pair(atoms, index):
                 # Consume both physical tokens as one semantic vowel, retaining
                 # their original indices/raw tokens for diagnostics.
                 vowel, semantic = 'เอาะ', True
+                vowel_atoms.extend(atoms[index:index+2])
                 index += 1
             elif vowel is None and _is_written_o(atoms, index):
                 # Contextual written อ, rather than a semantic compound vowel.
                 vowel = 'ออ'
+                vowel_atoms.append(atom)
+                vowel_rule = 'WRITTEN_O_AFTER_ONSET'
+            elif atom['kind'] == 'ambiguous_mark' and vowel is None:
+                vowel, ambiguous_mark = '็', True
+                vowel_atoms.append(atom)
+                vowel_rule = 'EXPLICIT_MAITAIKHU'
             elif atom['kind'] == 'vowel':
                 if vowel is None:
                     vowel, semantic = atom['vowel'], atom['semantic']
@@ -124,6 +161,7 @@ def _parse_run(atoms):
                     vowel, semantic = SHORT[vowel], True
                 else:
                     break
+                vowel_atoms.append(atom)
             else:
                 break
             index += 1
@@ -133,18 +171,24 @@ def _parse_run(atoms):
         if prefix:
             if vowel is None:
                 vowel = LEADING[prefix]
+                vowel_atoms = prefix_atoms
             elif vowel == 'อะ' and prefix in 'เแโ':
                 vowel, semantic = SHORT[LEADING[prefix]], True
+                vowel_atoms = prefix_atoms + vowel_atoms
             elif prefix == 'เ' and vowel == 'อา' and index < len(atoms) and atoms[index]['vowel'] == 'อะ':
                 vowel, semantic = 'เอาะ', True
+                vowel_atoms = prefix_atoms + vowel_atoms + [atoms[index]]
                 index += 1
             else:
                 orthographic_prefix = prefix
+                components.append(_component('PRE_VOWEL', prefix, prefix_atoms, 'WRITTEN_PREFIX'))
+        if vowel:
+            components.append(_component('VOWEL', vowel, vowel_atoms, vowel_rule))
         final = None
-        if vowel and index < len(atoms) and atoms[index]['kind'] == 'consonant':
+        if vowel and index < len(atoms) and _is_consonant(atoms[index]):
             if not _starts_syllable(atoms, index) and (semantic or vowel not in INHERENT_FINAL):
                 tail = index
-                while tail < len(atoms) and atoms[tail]['kind'] == 'consonant':
+                while tail < len(atoms) and _is_consonant(atoms[tail]):
                     tail += 1
                 if (semantic and tail-index > 1 and tail == len(atoms)
                         and not _starts_syllable(atoms, index+1)):
@@ -152,15 +196,26 @@ def _parse_run(atoms):
                     # or another implicit-vowel syllable. No lexicon to decide.
                     status = status or 'AMBIGUOUS_SYLLABLE'
                 final = atoms[index]['value']
+                components.append(_component('FINAL', final, [atoms[index]], 'CODA_CONTEXT'))
                 index += 1
                 if index < len(atoms) and atoms[index]['kind'] == 'tone':
                     if tone:
                         status = 'UNSUPPORTED_COMBINATION'
                     tone = atoms[index]['value']
+                    components.append(_component('TONE', tone, [atoms[index]], 'SYLLABLE_TONE'))
                     index += 1
+        if ambiguous_mark:
+            # A supplied mark in an open written Thai syllable (e.g. ก็) is
+            # not a generated short-vowel mark. Keep that existing reading;
+            # an incompatible closed form still needs additional context.
+            explicit_open = not orthographic_prefix and final is None and tone is None
+            explicit_closed = orthographic_prefix in ('เ', 'แ') and final is not None
+            if not (explicit_open or explicit_closed):
+                status = status or 'AMBIGUOUS_SEQUENCE'
         yield dict(onset=onset, vowel=vowel, tone=tone, final=final,
                    tone_anchor=len(onset)-1, prefix=orthographic_prefix,
-                   indices=[a['index'] for a in atoms[start:index]], status=status)
+                   indices=[i for a in atoms[start:index] for i in a.get('source_indices', [a['index']])],
+                   components=sorted(components, key=lambda c: c['indices'][0]), status=status)
 
 
 def parse_tokens(tokens, *, atoms=None):
@@ -186,7 +241,10 @@ def parse_tokens(tokens, *, atoms=None):
         line_break = record.get('line_break_before') or (line is not None and last_line is not None and line != last_line)
         if line is not None:
             last_line = line
-        if line_break or record.get('break_before'):
+        # Raw Braille must use the same adjacency boundary for lexical and
+        # contextual matches; the text-token compatibility path has no geometry.
+        sequence_break = atoms is not None and not atom.get('adjacent_before', True)
+        if line_break or record.get('break_before') or sequence_break:
             flush()
             if units:
                 if line_break:
@@ -199,11 +257,37 @@ def parse_tokens(tokens, *, atoms=None):
         if atom['kind'] in ('literal', 'error'):
             flush()
             value = atom['value']
+            indices = atom.get('source_indices', [index])
             if atom['kind'] == 'error':
-                literal('�', [index], record.get('warning') or 'UNKNOWN_TOKEN')
+                literal('�', indices, record.get('warning') or 'UNKNOWN_TOKEN')
             elif value and not (value == ' ' and (not units or units[-1].get('literal') in (' ', '\n'))):
-                literal(value, [index])
+                literal(value, indices)
         else:
             run.append(atom)
     flush()
     return dict(raw_tokens=raw, normalized_tokens=normalized, syllables=units)
+
+
+def parse_braille(cells):
+    """Raw patterns -> contextual semantic syllables, without producing Thai text."""
+    raw, tokens, atoms = lex_braille(cells)
+    parsed = parse_tokens(tokens, atoms=atoms)
+    semantic, trace = [], []
+    states = {'ONSET': 'ONSET', 'VOWEL': 'POST_VOWEL', 'PRE_VOWEL': 'PRE_VOWEL',
+              'TONE': 'TONE', 'FINAL': 'FINAL'}
+    for syllable in parsed['syllables']:
+        indices = syllable['indices']
+        syllable['raw_patterns'] = [raw[i]['pattern'] for i in indices]
+        syllable['source_cells'] = [raw[i]['cell_id'] for i in indices]
+        state = 'START'
+        for component in syllable.get('components', []):
+            semantic.append(deepcopy(component))
+            following = states[component['type']]
+            trace.append(dict(component, state_before=state, state_after=following))
+            state = following
+        if indices:
+            trace.append(dict(state_before=state, state_after='INVALID' if syllable.get('status') else 'COMPLETE',
+                              rule=syllable.get('status') or 'SYLLABLE_END',
+                              patterns=syllable['raw_patterns'], source_cells=syllable['source_cells']))
+    return dict(parsed, standard=BRAILLE_STANDARD, rules_source=RULES_SOURCE, raw_cells=raw,
+                raw_patterns=[cell['pattern'] for cell in raw], semantic_tokens=semantic, parser_trace=trace)
