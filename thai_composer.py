@@ -158,7 +158,14 @@ def _is_written_o(atoms, index):
     return True
 
 
-def _starts_syllable(atoms, index):
+def _is_short_o_pair(atoms, index):
+    """Recognize adjacent written อ + ะ; the caller must supply onset context."""
+    return (index+1 < len(atoms) and atoms[index]['kind'] == 'consonant'
+            and atoms[index]['value'] == 'อ' and atoms[index+1]['kind'] == 'vowel'
+            and atoms[index+1]['value'] == 'ะ')
+
+
+def _starts_syllable(atoms, index, *, onset_context=False):
     """A consonant with its own following vowel belongs to the next syllable."""
     end = index + 1
     if end < len(atoms) and atoms[end]['kind'] == 'consonant' and _cluster(atoms[index]['value'], atoms[end]['value']):
@@ -174,7 +181,10 @@ def _starts_syllable(atoms, index):
     # อ can be a written vowel after an onset (กล + ่ + อ + ง).
     # Its lexical token remains a consonant because it can also be an onset;
     # identify its vowel role here before borrowing that onset as a coda.
-    return atoms[end]['kind'] == 'vowel' or _is_written_o(atoms, end)
+    # In coda lookahead อ + ะ can be an independent อ onset (กินอะ).
+    # Compound-vowel evidence is safe while resolving the current onset cluster.
+    return (atoms[end]['kind'] == 'vowel' or _is_written_o(atoms, end)
+            or (onset_context and _is_short_o_pair(atoms, end)))
 
 
 def _parse_run(atoms):
@@ -196,7 +206,7 @@ def _parse_run(atoms):
         index += 1
         if (index < len(atoms) and atoms[index]['kind'] == 'consonant'
                 and _cluster(onset, atoms[index]['value'])
-                and (prefix or _starts_syllable(atoms, index))):
+                and (prefix or _starts_syllable(atoms, index, onset_context=True))):
             onset += atoms[index]['value']
             index += 1
         vowel, tone, semantic, status = None, None, False, None
@@ -210,6 +220,11 @@ def _parse_run(atoms):
                 if index+1 < len(atoms) and atoms[index+1]['kind'] == 'consonant':
                     break
                 prefix = atom['value']
+            elif vowel is None and not prefix and _is_short_o_pair(atoms, index):
+                # Consume both physical tokens as one semantic vowel, retaining
+                # their original indices/raw tokens for diagnostics.
+                vowel, semantic = 'เอาะ', True
+                index += 1
             elif vowel is None and _is_written_o(atoms, index):
                 # Contextual written อ, rather than a semantic compound vowel.
                 vowel = 'ออ'

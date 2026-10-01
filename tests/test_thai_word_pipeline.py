@@ -30,6 +30,11 @@ PATTERNS = [
     ('เดือน', ['145', '12345', '1345']),
     ('เกิดมา', ['1245', '146', '145', '134', '16']),
     ('กะทิ', ['1245', '1', '23456', '12']),
+    ('เกาะ', ['1245', '135', '1']),
+    ('ขอน', ['13', '135', '1345']),
+    ('เกาะขอน', ['1245', '135', '1', '13', '135', '1345']),
+    ('เขียดเขียวเกาะขอน', ['13', '12356', '145', '13', '12356', '2456',
+                         '1245', '135', '1', '13', '135', '1345']),
 ]
 
 
@@ -58,6 +63,17 @@ class ThaiWordPipelineTests(unittest.TestCase):
         syllable = result['syllables'][0]
         self.assertEqual([syllable[k] for k in ('onset', 'vowel', 'tone', 'final')], ['ก', 'เออ', None, 'ด'])
         self.assertEqual(syllable['indices'], [0, 1, 2])
+
+    def test_o_short_a_compound_keeps_raw_cells_in_the_syllable_trace(self):
+        cells = logical_cells(['1245', '135', '1', '13', '135', '1345'])
+        result = decode_thai_details(cells)
+        self.assertEqual([t['char'] for t in result['raw_tokens']], ['ก', 'อ', 'ะ', 'ข', 'อ', 'น'])
+        self.assertEqual(result['text'], 'เกาะขอน')
+        first, second = result['syllables']
+        self.assertEqual((first['onset'], first['vowel'], first['final'], first['indices']),
+                         ('ก', 'เอาะ', None, [0, 1, 2]))
+        self.assertEqual((second['onset'], second['vowel'], second['final'], second['indices']),
+                         ('ข', 'ออ', 'น', [3, 4, 5]))
 
     def test_space_line_and_detection_failure_stop_composition(self):
         for change, expected in [(dict(reading_x=500), 'เกอ ด'),

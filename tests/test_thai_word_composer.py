@@ -45,6 +45,52 @@ class ThaiWordComposerTests(unittest.TestCase):
             self.assertEqual(result['normalized_tokens'][1]['vowel'], 'เออ')
             self.assertEqual(result['raw_tokens'][1], alias)
 
+    def test_contextual_o_short_a_is_a_semantic_short_o_vowel(self):
+        for tokens, text in [(['ก', 'อ', 'ะ'], 'เกาะ'),
+                             (['ก', 'อ', 'ะ', 'ข', 'อ', 'น'], 'เกาะขอน'),
+                             (['ห', 'อ', 'ะ'], 'เหาะ'),
+                             (['ก', 'ล', 'อ', 'ะ'], 'เกลาะ'),
+                             (['ก', '่', 'อ', 'ะ'], 'เก่าะ'),
+                             (['ก', 'อ', 'ะ', '่'], 'เก่าะ')]:
+            with self.subTest(tokens=tokens):
+                original = deepcopy(tokens)
+                result = compose_tokens(tokens)
+                self.assertEqual(result['text'], text)
+                self.assertEqual(result['syllables'][0]['vowel'], 'เอาะ')
+                self.assertFalse(result['needs_review'])
+                self.assertEqual(result['raw_tokens'], original)
+                self.assertEqual(tokens, original)
+
+    def test_o_consonant_and_written_long_o_are_not_rewritten(self):
+        for tokens, text in [(['ข', 'อ', 'น'], 'ขอน'),
+                             (['อ', 'ะ'], 'อะ'), (['อ', 'ิ', '่', 'ม'], 'อิ่ม'),
+                             (['อ', 'อ', 'ม'], 'ออม'),
+                             (['ก', 'ะ', 'อ', 'ะ'], 'กะอะ'),
+                             (['ก', 'ิ', 'น', 'อ', 'ะ'], 'กินอะ'),
+                             (['เ', 'ก', 'อ', 'ะ'], 'เกอะ')]:
+            with self.subTest(tokens=tokens):
+                result = compose_tokens(tokens)
+                self.assertEqual(result['text'], text)
+                self.assertEqual(result['raw_tokens'], tokens)
+                self.assertFalse(result['needs_review'])
+
+    def test_compound_o_short_a_cannot_cross_parsing_boundaries(self):
+        for boundary in (' ', '\n', '-'):
+            for tokens, text in [(['ก', boundary, 'อ', 'ะ'], 'ก'+boundary+'อะ'),
+                                 (['ก', 'อ', boundary, 'ะ'], 'กอ'+boundary+'ะ')]:
+                with self.subTest(tokens=tokens):
+                    self.assertEqual(compose_tokens(tokens)['text'], text)
+        for metadata, text in [(dict(break_before=True), 'กอ ะ'),
+                               (dict(line_id=1), 'กอ\nะ'),
+                               (dict(warning='unknown_or_incomplete_symbol'), 'กอ�')]:
+            tokens = [dict(char=c, line_id=0) for c in ['ก', 'อ', 'ะ']]
+            tokens[-1].update(metadata)
+            original = deepcopy(tokens)
+            result = compose_tokens(tokens)
+            self.assertEqual(result['text'], text)
+            self.assertEqual(result['raw_tokens'], original)
+            self.assertEqual(tokens, original)
+
     def test_tones_and_cluster_anchor(self):
         for onset, vowel, final, tone, expected in [
             ('ก', 'อา', None, '่', 'ก่า'), ('ก', 'อี', None, '่', 'กี่'),
