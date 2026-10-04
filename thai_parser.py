@@ -1,5 +1,6 @@
 """Parse token sequences into Thai syllables before orthographic rendering."""
 
+from collections import Counter
 from copy import deepcopy
 
 from thai_renderer import (CONSONANTS, TONES, LEADING, SHORT, INHERENT_FINAL,
@@ -126,21 +127,39 @@ def _implicit_closed_span(atoms, index):
     return onset_end, final_index, end
 
 
-def _segmentation_error(units):
-    """Check structural vowel/tone/final validity, without rendering or a lexicon."""
+def _segmentation_error(units, source_indices=None):
+    """Validate a complete structural parse, without rendering or a lexicon."""
+    if source_indices is not None:
+        expected = Counter(source_indices)
+        actual = Counter(i for unit in units for i in unit['indices'])
+        if any(actual[i] > expected[i] for i in expected):
+            return 'REUSED_SOURCE_CELL'
+        if actual.keys() - expected.keys():
+            return 'INVALID_SOURCE_CELLS'
+        if actual != expected:
+            return 'INCOMPLETE_PARSE'
     for unit in units:
         if unit.get('status'):
             return unit['status']
         if 'literal' in unit:
             if unit['literal'] == '�':
                 return 'UNKNOWN_TOKEN'
+            # Punctuation is a complete literal, but a detached linguistic
+            # fragment cannot make a competing *syllable* parse valid.
+            if (unit['literal'] in CONSONANTS or unit['literal'] in TONES or unit['literal'] in LEADING
+                    or normalize_vowel(unit['literal']) is not None):
+                return 'INVALID_SYLLABLE'
             continue
         vowel = unit.get('vowel')
         if vowel is None:
             return 'UNRESOLVED_NUCLEUS'
         if (not unit.get('onset') or any(c not in CONSONANTS for c in unit['onset'])
+                or (len(unit['onset']) > 1 and
+                    (len(unit['onset']) != 2 or not _cluster(*unit['onset'])))
                 or (unit.get('final') and (len(unit['final']) != 1 or unit['final'] not in CONSONANTS))):
             return 'INVALID_SYLLABLE'
+        if vowel not in RULES:
+            return 'INVALID_VOWEL'
         template = RULES[vowel][bool(unit.get('final'))]
         if template is None:
             return 'INVALID_FINAL'
@@ -161,15 +180,18 @@ def _compound_boundary(atoms, index, current):
             or not _starts_syllable(atoms, index, onset_context=True)):
         return None
     alternatives = []
+    source_indices = current['indices'] + [i for atom in atoms[index:]
+                                          for i in atom.get('source_indices', [atom['index']])]
     for role, final, suffix in (
             ('CODA_CONTEXT', atoms[index]['value'], index+1),
             ('NEXT_EXPLICIT_ONSET', None, index)):
         preceding = dict(onset=current['onset'], vowel=current['vowel'],
                          prefix=current['prefix'], tone=current['tone'], final=final,
+                         status=current.get('status'),
                          indices=current['indices']+(atoms[index].get('source_indices', [atoms[index]['index']])
                                                       if final else []))
         units = [preceding, *list(_parse_run(atoms[suffix:], compare_boundaries=False))]
-        error = _segmentation_error(units)
+        error = _segmentation_error(units, source_indices)
         alternatives.append(dict(role=role, syllables=units, valid=error is None,
                                  validation_error=error))
     valid = [candidate for candidate in alternatives if candidate['valid']]
@@ -182,7 +204,8 @@ def _compound_boundary(atoms, index, current):
     selected = valid[0] if len(valid) == 1 else preferred
     # An unresolved nucleus or lexicon-dependent path is not disproved.
     # Only a concrete vowel/final/tone violation can eliminate a competitor.
-    hard_errors = {'INVALID_FINAL', 'INVALID_SYLLABLE', 'UNSUPPORTED_COMBINATION'}
+    hard_errors = {'INVALID_FINAL', 'INVALID_SYLLABLE', 'UNSUPPORTED_COMBINATION',
+                   'INVALID_VOWEL', 'INVALID_SOURCE_CELLS', 'REUSED_SOURCE_CELL', 'INCOMPLETE_PARSE'}
     unique = len(valid) == 1 and all(candidate['validation_error'] in hard_errors
                                    for candidate in alternatives if not candidate['valid'])
     # Incomplete evidence is not a second valid parse. Keep it review-only,
@@ -322,7 +345,7 @@ def _parse_run(atoms, *, compare_boundaries=True):
                 boundary_rule = 'CODA_IMPLICIT_O'
             else:
                 current = dict(onset=onset, vowel=vowel, tone=tone,
-                               prefix=orthographic_prefix, semantic=semantic,
+                               prefix=orthographic_prefix, semantic=semantic, status=status,
                                vowel_has_onset_alternative=any(_is_consonant(a) for a in vowel_atoms),
                                indices=[i for a in atoms[start:index]
                                         for i in a.get('source_indices', [a['index']])])

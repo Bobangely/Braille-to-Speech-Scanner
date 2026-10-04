@@ -56,6 +56,10 @@ def _uncertainty_notice(result):
             w_text = 'empty crop'
             
         warnings.append(f"{c_name} [{dots_str}]: {w_text}")
+
+    # A text-level boundary review is not an unknown dot pattern in a cell.
+    warnings.extend(f"text segmentation: {t['composition_warning']}"
+                    for t in tokens if t.get('composition_warning'))
         
     if not warnings:
         return 'text assembly incomplete'
@@ -450,7 +454,8 @@ class AsyncBrailleWorker:
                     if cells:
                         decoded_text = decode_cells(cells, lang=frame_lang)
                         verbose_results = decode_cells_verbose(cells, lang=frame_lang)
-                    warnings = [str(item['warning']) for item in verbose_results if item.get('warning')]
+                    warnings = [str(item[key]) for item in verbose_results
+                                for key in ('warning', 'composition_warning') if item.get(key)]
                     if debug_info.get('grid_pending'):
                         warnings.append('unstable_grid')
                     if warnings or '�' in decoded_text:
