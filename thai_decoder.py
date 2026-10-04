@@ -45,6 +45,13 @@ def thai_verbose(cells):
     for syllable in result['syllables']:
         token = tokens[syllable['indices'][0]]
         token['composition'] = syllable
-        if syllable['needs_review'] and not token.get('warning'):
-            token['warning'] = syllable['status']
+        if syllable['needs_review']:
+            # A boundary decision concerns coda vs next onset, not the mapping
+            # of the preceding syllable's first cell. Preserve that cell label.
+            if (syllable['status'] == syllable.get('boundary_status')
+                    and syllable.get('boundary_indices')):
+                token = tokens[syllable['boundary_indices'][0]]
+                token['segmentation'] = syllable
+            if not token.get('warning'):
+                token['warning'] = syllable['status']
     return tokens

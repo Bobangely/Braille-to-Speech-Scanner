@@ -9,6 +9,7 @@ from camera_reader import AsyncBrailleWorker, RealTimeBrailleScanner
 from decoder import decode_cells_verbose
 from thai_composer import compose_tokens
 from thai_decoder import decode_thai_details
+from thai_braille import PATTERN_CANDIDATES
 from thai_parser import parse_braille
 from thai_renderer import render_syllable
 from tests.test_camera_recovery import await_condition
@@ -64,7 +65,86 @@ class ThaiSegmentationCandidateTests(unittest.TestCase):
             result = decode_thai_details(source)
         self.assertEqual(result['text'], 'หัวเราะ')
         self.assertEqual(result['status'], 'NEEDS_REVIEW')
-        self.assertEqual(result['syllables'][0]['boundary_evidence'], 'COMPETING_SEGMENTATIONS')
+        self.assertEqual(result['syllables'][0]['boundary_evidence'], 'UNRESOLVED_SEGMENTATIONS')
+        self.assertEqual(result['syllables'][0]['status'], 'UNRESOLVED_SEGMENTATION')
+
+    def test_single_125_has_no_invented_prefix_or_boundary_candidate(self):
+        self.assertEqual([(c['kind'], c['value']) for c in PATTERN_CANDIDATES['125']],
+                         [('consonant', 'ห')])
+        for pattern in ('125', '521', '251'):
+            source = physical([pattern])
+            original = deepcopy(source)
+            result = decode_thai_details(source)
+            self.assertEqual(result['text'], 'ห')
+            self.assertEqual(result['status'], 'VALID')
+            self.assertEqual(result['syllables'][0]['boundary_candidates'], [])
+            verbose = decode_cells_verbose(source, 'thai')
+            self.assertEqual(verbose[0]['char'], 'ห')
+            self.assertFalse(verbose[0].get('warning'))
+            self.assertEqual(source, original)
+
+    def test_125_at_each_sentence_position_keeps_its_single_cell_reading(self):
+        for patterns, expected in [
+                (['125', '', '1245', '1', '', '245', '1'], 'ห กะ จะ'),
+                (['1245', '1', '', '125', '', '245', '1'], 'กะ ห จะ'),
+                (['1245', '1', '', '245', '1', '', '125'], 'กะ จะ ห')]:
+            with self.subTest(expected=expected):
+                source = physical(patterns)
+                result = decode_thai_details(source)
+                self.assertEqual(result['text'], expected)
+                self.assertEqual(result['status'], 'VALID')
+                token = decode_cells_verbose(source, 'thai')[patterns.index('125')]
+                self.assertEqual(token['char'], 'ห')
+                self.assertFalse(token.get('warning'))
+
+    def test_boundary_warning_does_not_blame_the_previous_onset(self):
+        source = physical(['125', '15', '1235', '135', '1'])
+        original = deepcopy(source)
+        result = decode_thai_details(source)
+        boundary = result['syllables'][0]
+        self.assertEqual(result['text'], 'หัวเราะ')
+        self.assertEqual(result['status'], 'NEEDS_REVIEW')
+        self.assertEqual(boundary['boundary_indices'], [2])
+        self.assertEqual(boundary['boundary_patterns'], ['1235'])
+        self.assertEqual(boundary['boundary_source_cells'], ['S2'])
+        verbose = decode_cells_verbose(source, 'thai')
+        self.assertEqual(verbose[0]['char'], 'ห')
+        self.assertFalse(verbose[0].get('warning'))
+        self.assertEqual(verbose[2]['warning'], 'AMBIGUOUS_SEGMENTATION')
+        self.assertEqual(verbose[2]['segmentation']['boundary_indices'], [2])
+        self.assertEqual(source, original)
+
+    def test_no_valid_segmentation_is_unresolved_not_ambiguous(self):
+        source = physical(['125', '15', '1235', '135', '1'])
+        with patch('thai_parser._segmentation_error',
+                   side_effect=['UNRESOLVED_NUCLEUS', 'NEEDS_LEXICON']):
+            result = decode_thai_details(source)
+        self.assertEqual(result['status'], 'NEEDS_REVIEW')
+        self.assertEqual(result['syllables'][0]['status'], 'UNRESOLVED_SEGMENTATION')
+        self.assertFalse(any(c['valid'] for c in result['syllables'][0]['boundary_candidates']))
+
+    def test_warning_location_is_general_and_uses_global_source_indices(self):
+        for onset in ('125', '1245', '123', '234'):
+            source = physical(['245', '1', '', onset, '15', '1235', '135', '1'])
+            result = decode_thai_details(source)
+            boundary = next(s for s in result['syllables'] if s.get('boundary_review'))
+            self.assertEqual(boundary['boundary_indices'], [5])
+            self.assertEqual(boundary['boundary_source_cells'], ['S5'])
+            self.assertEqual(sum(c['valid'] for c in boundary['boundary_candidates']), 2)
+            verbose = decode_cells_verbose(source, 'thai')
+            self.assertFalse(verbose[3].get('warning'))
+            self.assertEqual(verbose[5]['warning'], 'AMBIGUOUS_SEGMENTATION')
+
+    def test_125_in_contiguous_syllables_has_no_prefix_ambiguity(self):
+        for patterns, expected in [
+                (['125', '1', '1245', '1'], 'หะกะ'),
+                (['1245', '1', '125', '1', '245', '1'], 'กะหะจะ'),
+                (['1245', '1', '125', '1'], 'กะหะ')]:
+            result = decode_thai_details(physical(patterns))
+            self.assertEqual(result['text'], expected)
+            self.assertEqual(result['status'], 'VALID')
+            self.assertFalse(any(t.get('warning') for t in
+                                 decode_cells_verbose(physical(patterns), 'thai')))
 
     def test_explicit_boundaries_resolve_compound_vs_coda_without_guessing(self):
         for split, expected in ((3, 'กัน อะ'), (2, 'กะ เนาะ')):

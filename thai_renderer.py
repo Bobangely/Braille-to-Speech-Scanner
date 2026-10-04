@@ -148,7 +148,7 @@ def render_thai(parsed, *, lexicon=None, confidence_threshold=None):
         # Ambiguous segmentation keeps a display candidate, never confirmation.
         # Other invalid/low-confidence cases retain their existing � behavior.
         if syllable.get('boundary_review'):
-            status = status or 'AMBIGUOUS_SEGMENTATION'
+            status = status or syllable['boundary_status']
         if traced or status:
             events = []
             if candidate and '็' in candidate:

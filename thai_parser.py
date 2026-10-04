@@ -185,9 +185,17 @@ def _compound_boundary(atoms, index, current):
     hard_errors = {'INVALID_FINAL', 'INVALID_SYLLABLE', 'UNSUPPORTED_COMBINATION'}
     unique = len(valid) == 1 and all(candidate['validation_error'] in hard_errors
                                    for candidate in alternatives if not candidate['valid'])
+    # Incomplete evidence is not a second valid parse. Keep it review-only,
+    # but do not describe an unresolved path as proven segmentation ambiguity.
+    status = (None if unique else 'AMBIGUOUS_SEGMENTATION' if len(valid) >= 2
+              else 'UNRESOLVED_SEGMENTATION')
     return dict(role=selected['role'], review=not unique,
                 candidates=alternatives,
-                evidence='UNIQUE_VALID_SEGMENTATION' if unique else 'COMPETING_SEGMENTATIONS')
+                status=status,
+                indices=atoms[index].get('source_indices', [atoms[index]['index']]),
+                evidence=('UNIQUE_VALID_SEGMENTATION' if unique else
+                          'COMPETING_SEGMENTATIONS' if len(valid) >= 2 else
+                          'UNRESOLVED_SEGMENTATIONS'))
 
 
 def _final_role(atoms, index, vowel, *, current=None, compare_boundaries=True):
@@ -357,6 +365,8 @@ def _parse_run(atoms, *, compare_boundaries=True):
                    indices=[i for a in atoms[start:index] for i in a.get('source_indices', [a['index']])],
                    boundary_rule=boundary_rule,
                    boundary_review=boundary_decision['review'],
+                   boundary_status=boundary_decision.get('status'),
+                   boundary_indices=boundary_decision.get('indices', []),
                    boundary_candidates=boundary_decision.get('candidates', []),
                    boundary_evidence=boundary_decision.get('evidence'),
                    components=sorted(components, key=lambda c: c['indices'][0] if c['indices']
@@ -424,6 +434,9 @@ def parse_braille(cells):
         indices = syllable['indices']
         syllable['raw_patterns'] = [raw[i]['pattern'] for i in indices]
         syllable['source_cells'] = [raw[i]['cell_id'] for i in indices]
+        boundary_indices = syllable.get('boundary_indices', [])
+        syllable['boundary_patterns'] = [raw[i]['pattern'] for i in boundary_indices]
+        syllable['boundary_source_cells'] = [raw[i]['cell_id'] for i in boundary_indices]
         state = 'START'
         for component in syllable.get('components', []):
             semantic.append(deepcopy(component))
