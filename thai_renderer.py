@@ -62,6 +62,8 @@ SHORT = {'เอ': 'เอะ', 'แอ': 'แอะ', 'โอ': 'โอะ', '�
          'เอา': 'เอาะ', 'เอีย': 'เอียะ', 'เอือ': 'เอือะ', 'อัว': 'อัวะ'}
 INHERENT_FINAL = {'อำ', 'ไอ', 'ใอ', 'เอา'}
 SHORT_COMPOUNDS = {'เอียะ', 'เอือะ', 'อัวะ'}
+CODA_CHANGES_VOWEL = {vowel for vowel, (opened, closed) in RULES.items()
+                      if closed is not None and opened != closed.replace('{F}', '')}
 
 
 class CompositionError(ValueError):

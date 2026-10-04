@@ -2,7 +2,8 @@
 
 from copy import deepcopy
 
-from thai_renderer import CONSONANTS, TONES, LEADING, SHORT, INHERENT_FINAL, normalize_vowel
+from thai_renderer import (CONSONANTS, TONES, LEADING, SHORT, INHERENT_FINAL,
+                           CODA_CHANGES_VOWEL, normalize_vowel)
 from thai_braille import BRAILLE_STANDARD, RULES_SOURCE, lex_braille, match_post_onset_vowel
 
 
@@ -90,6 +91,55 @@ def _starts_syllable(atoms, index, *, onset_context=False):
                                    or match_post_onset_vowel(atoms, end) is not None)))
 
 
+def _implicit_closed_span(atoms, index):
+    """Recognize an onset + omitted โอะ + final with a supported right boundary.
+
+    An explicit vowel owns its onset first. A residual bare consonant is not
+    boundary evidence: the following run must end or start another complete
+    syllable. This prevents turning every adjacent consonant into a coda.
+    """
+    if (index >= len(atoms) or not _is_consonant(atoms[index])
+            or _starts_syllable(atoms, index, onset_context=True)):
+        return None
+    onset_end = index + 1
+    if (onset_end+1 < len(atoms) and _is_consonant(atoms[onset_end])
+            and _is_consonant(atoms[onset_end+1])
+            and _cluster(atoms[index]['value'], atoms[onset_end]['value'])
+            and not _starts_syllable(atoms, onset_end, onset_context=True)):
+        onset_end += 1
+    final_index = onset_end
+    while final_index < len(atoms) and atoms[final_index]['kind'] == 'tone':
+        final_index += 1
+    if (final_index >= len(atoms) or not _is_consonant(atoms[final_index])
+            or atoms[final_index]['value'] == 'อ'
+            or _starts_syllable(atoms, final_index, onset_context=True)):
+        return None
+    end = final_index + 1
+    while end < len(atoms) and atoms[end]['kind'] == 'tone':
+        end += 1
+    if end < len(atoms):
+        preposed = (atoms[end]['kind'] == 'leading' and end+1 < len(atoms)
+                    and _is_consonant(atoms[end+1]))
+        explicit = _is_consonant(atoms[end]) and _starts_syllable(atoms, end, onset_context=True)
+        if not (preposed or explicit or _implicit_closed_span(atoms, end) is not None):
+            return None
+    return onset_end, final_index, end
+
+
+def _final_role(atoms, index, vowel):
+    """Resolve the syllable boundary before a renderer can reduce its vowel."""
+    if _starts_syllable(atoms, index):
+        return 'NEXT_EXPLICIT_ONSET'
+    if _implicit_closed_span(atoms, index) is not None:
+        # A short-a ending supports the open syllable. Where the vowel's
+        # spelling is unchanged, prefer the complete following syllable too.
+        # Otherwise a boundary could change the recognized vowel spelling.
+        if vowel == 'อะ' or vowel in SHORT.values() or vowel not in CODA_CHANGES_VOWEL:
+            return 'NEXT_IMPLICIT_ONSET'
+        return 'AMBIGUOUS_BOUNDARY'
+    return 'CODA_CONTEXT'
+
+
 def _parse_run(atoms):
     """Parse a boundary-free run; preserve orthographic fragments as explicit units."""
     index = 0
@@ -111,11 +161,13 @@ def _parse_run(atoms):
             index += 1
             continue
         onset_start = index
+        implicit = _implicit_closed_span(atoms, index) if not prefix else None
         onset = atoms[index]['value']
         index += 1
         if (index < len(atoms) and _is_consonant(atoms[index])
                 and _cluster(onset, atoms[index]['value'])
-                and (prefix or _starts_syllable(atoms, index, onset_context=True))):
+                and (prefix or _starts_syllable(atoms, index, onset_context=True)
+                     or (implicit is not None and implicit[0] > index))):
             onset += atoms[index]['value']
             index += 1
         components.append(_component('ONSET', onset, atoms[onset_start:index], 'ONSET_CONTEXT'))
@@ -182,16 +234,26 @@ def _parse_run(atoms):
             else:
                 orthographic_prefix = prefix
                 components.append(_component('PRE_VOWEL', prefix, prefix_atoms, 'WRITTEN_PREFIX'))
+        if vowel is None and not prefix and implicit is not None and index == implicit[1]:
+            vowel, semantic, vowel_rule = 'โอะ', True, 'IMPLICIT_O_CLOSED'
         if vowel:
             components.append(_component('VOWEL', vowel, vowel_atoms, vowel_rule))
         final = None
+        boundary_rule = 'RUN_END'
         if vowel and index < len(atoms) and _is_consonant(atoms[index]):
-            if not _starts_syllable(atoms, index) and (semantic or vowel not in INHERENT_FINAL):
+            boundary_rule = ('CODA_IMPLICIT_O' if vowel_rule == 'IMPLICIT_O_CLOSED'
+                             else _final_role(atoms, index, vowel))
+            if (not boundary_rule.startswith('NEXT_') and
+                    (semantic or vowel not in INHERENT_FINAL)):
+                if boundary_rule == 'AMBIGUOUS_BOUNDARY':
+                    status = status or 'AMBIGUOUS_SYLLABLE'
                 tail = index
                 while tail < len(atoms) and _is_consonant(atoms[tail]):
                     tail += 1
-                if (semantic and tail-index > 1 and tail == len(atoms)
-                        and not _starts_syllable(atoms, index+1)):
+                if (semantic and vowel_rule != 'IMPLICIT_O_CLOSED'
+                        and tail-index > 1 and tail == len(atoms)
+                        and not _starts_syllable(atoms, index+1)
+                        and _implicit_closed_span(atoms, index+1) is None):
                     # Several bare consonants could be a coda, silent ending,
                     # or another implicit-vowel syllable. No lexicon to decide.
                     status = status or 'AMBIGUOUS_SYLLABLE'
@@ -215,7 +277,9 @@ def _parse_run(atoms):
         yield dict(onset=onset, vowel=vowel, tone=tone, final=final,
                    tone_anchor=len(onset)-1, prefix=orthographic_prefix,
                    indices=[i for a in atoms[start:index] for i in a.get('source_indices', [a['index']])],
-                   components=sorted(components, key=lambda c: c['indices'][0]), status=status)
+                   boundary_rule=boundary_rule,
+                   components=sorted(components, key=lambda c: c['indices'][0] if c['indices']
+                                     else atoms[onset_start]['index']+.5), status=status)
 
 
 def parse_tokens(tokens, *, atoms=None):
