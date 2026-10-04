@@ -29,6 +29,7 @@ if sys.stdout.encoding != 'utf-8':
 from yolo_detector import YOLOBrailleDetector
 from colored_braille import DOT_COLORS
 from live_preview import LivePreview
+from line_confirmation import LineConfirmation, reading_lines
 from decoder import decode_cells, decode_cells_verbose
 
 logger = logging.getLogger(__name__)
@@ -344,6 +345,7 @@ class AsyncBrailleWorker:
         self.dots = []
         self.decoded_text = ""
         self.verbose_results = []
+        self.line_results = []
         self.ai_fps = 0.0
 
         self.running = False
@@ -388,6 +390,7 @@ class AsyncBrailleWorker:
                 'dots': list(self.dots),
                 'decoded_text': self.decoded_text,
                 'verbose_results': list(self.verbose_results),
+                'line_results': list(self.line_results),
                 'ai_fps': self.ai_fps,
                 'result_id': self.result_id,
                 'lang': self.result_lang,
@@ -434,6 +437,7 @@ class AsyncBrailleWorker:
                     self.busy_since = started
                 stage = 'preprocessing'
                 cells, dots, verbose_results, debug_info = [], [], [], {}
+                line_results = []
                 decoded_text, error, reason, status, source_shape = '', None, None, 'ok', None
                 try:
                     if not _valid_frame(frame_to_process):
@@ -454,6 +458,7 @@ class AsyncBrailleWorker:
                     if cells:
                         decoded_text = decode_cells(cells, lang=frame_lang)
                         verbose_results = decode_cells_verbose(cells, lang=frame_lang)
+                        line_results = reading_lines(cells, verbose_results, decoded_text)
                     warnings = [str(item[key]) for item in verbose_results
                                 for key in ('warning', 'composition_warning') if item.get(key)]
                     if debug_info.get('grid_pending'):
@@ -465,9 +470,11 @@ class AsyncBrailleWorker:
                 except UnreadableBrailleFrame as exc:
                     status, reason = 'unreadable', str(exc)
                     cells, dots, verbose_results, debug_info, decoded_text = [], [], [], {}, ''
+                    line_results = []
                 except Exception as exc:
                     status, error, reason = 'error', str(exc) or type(exc).__name__, str(exc)
                     cells, dots, verbose_results, debug_info, decoded_text = [], [], [], {}, ''
+                    line_results = []
                     source_shape = None
                     signature = (stage, type(exc), str(exc))
                     previous, logged_at = self._last_error_log
@@ -484,6 +491,7 @@ class AsyncBrailleWorker:
                     inst_fps = 1.0 / max(1e-5, time.monotonic() - started)
                     self.ai_fps = .85*self.ai_fps + .15*inst_fps if self.ai_fps > 0 else inst_fps
                     self.cells, self.dots, self.verbose_results = cells, dots, verbose_results
+                    self.line_results = line_results
                     self.decoded_text = decoded_text
                     self.result_id += 1
                     self.result_lang, self.result_frame_id = frame_lang, frame_id
@@ -596,6 +604,7 @@ class RealTimeBrailleScanner:
 
         # State tracking
         self.history = deque(maxlen=stability_threshold)
+        self._line_confirmation = LineConfirmation(stability_threshold)
         self._last_stability_result_id = 0
         self._confirmed_text = ''
         self._confirmed_context = None
@@ -640,17 +649,21 @@ class RealTimeBrailleScanner:
         self._prev_frame_time = time.time()
 
 
+    def _reset_confirmation(self):
+        self.history.clear()
+        self._line_confirmation.reset()
+
     def cycle_sharpness(self):
         """สลับระดับความคมชัด: OFF -> LOW -> MED -> HIGH -> ULTRA"""
         self.sharpness_idx = (self.sharpness_idx + 1) % len(SHARPNESS_LEVELS)
         lvl_num, lvl_name, _ = SHARPNESS_LEVELS[self.sharpness_idx]
-        self.history.clear()
+        self._reset_confirmation()
         print(f"   ปรับระดับความคมชัด (Sharpness): Level {lvl_num} [{lvl_name}]")
 
     def cycle_dot_color(self):
         self.dot_color = DOT_COLORS[(DOT_COLORS.index(self.dot_color) + 1) % len(DOT_COLORS)]
         self._context_generation += 1
-        self.history.clear()
+        self._reset_confirmation()
         print(f"  สีจุดที่อ่าน: {self.dot_color.upper()} [C]")
 
     def cycle_resolution(self):
@@ -667,7 +680,7 @@ class RealTimeBrailleScanner:
             self.actual_height = target_h
 
         self.res_name = name
-        self.history.clear()
+        self._reset_confirmation()
         print(f"   ขอเปลี่ยนความละเอียดกล้องเป็น: {name} ({target_w}x{target_h}); กำลังรอเฟรมใหม่")
 
     def zoom_in(self, step=0.2, center_norm=None):
@@ -680,7 +693,7 @@ class RealTimeBrailleScanner:
                     max(0.1, min(0.9, center_norm[0])),
                     max(0.1, min(0.9, center_norm[1])),
                 ]
-            self.history.clear()
+            self._reset_confirmation()
             print(f"   ZOOM IN: {self.zoom_level:.1f}x")
 
     def zoom_out(self, step=0.2):
@@ -690,7 +703,7 @@ class RealTimeBrailleScanner:
             self.zoom_level = new_zoom
             if self.zoom_level <= 1.001:
                 self.zoom_center = [0.5, 0.5]
-            self.history.clear()
+            self._reset_confirmation()
             print(f"   ZOOM OUT: {self.zoom_level:.1f}x")
 
     def reset_zoom(self):
@@ -698,7 +711,7 @@ class RealTimeBrailleScanner:
         if self.zoom_level != 1.0:
             self.zoom_level = 1.0
             self.zoom_center = [0.5, 0.5]
-            self.history.clear()
+            self._reset_confirmation()
             print("   RESET ZOOM: 1.0x")
 
     def _apply_zoom(self, frame):
@@ -759,7 +772,23 @@ class RealTimeBrailleScanner:
                   'Check image' if result.get('status') in ('uncertain', 'unreadable') else
                   'Detected' if is_locked else 'Scanning' if cells else 'Ready')
         display_text = current_text if is_locked else self._confirmed_text
-        state = dict(text=display_text, result_held=bool(display_text) and not is_locked, lang=self.lang,
+        lines = result.get('line_confirmation', [])
+        confirmed_lines = sum(line['confirmed'] for line in lines)
+        partial = bool(confirmed_lines) and not is_locked
+        if partial:
+            display = []
+            for index, line in enumerate(lines, 1):
+                if line['confirmed']:
+                    display.append(line['text'])
+                elif self.lang in ('thai', 'th'):
+                    label = 'รอตรวจสอบ' if line['status'] == 'uncertain' else f"รอยืนยัน {line['samples']}/{self.stability_threshold}"
+                    display.append(f'[บรรทัด {index}: {label}]')
+                else:
+                    label = 'review required' if line['status'] == 'uncertain' else f"confirming {line['samples']}/{self.stability_threshold}"
+                    display.append(f'[Line {index}: {label}]')
+            display_text = '\n'.join(display)
+        state = dict(text=display_text, result_held=bool(display_text) and not is_locked and not partial, lang=self.lang,
+            result_partial=partial, confirmed_lines=confirmed_lines, line_total=len(lines),
             color=self.dot_color, sharp=SHARPNESS_LEVELS[self.sharpness_idx][1].split()[0],
             details=self.show_details, zoom=self.zoom_level, status=status,
             resolution=f'{self.actual_width} x {self.actual_height}',
@@ -819,7 +848,7 @@ class RealTimeBrailleScanner:
         # คลิกซ้ายเพื่อเลื่อนจุดโฟกัส (Pan) เมื่ออยู่ในโหมดซูม
         elif event == cv2.EVENT_LBUTTONDOWN and self.zoom_level > 1.0:
             self.zoom_center = [max(0.1, min(0.9, x / w)), max(0.1, min(0.9, y / h))]
-            self.history.clear()
+            self._reset_confirmation()
 
     def _render_frame(self, frame, frame_id):
         if not _valid_frame(frame):
@@ -835,7 +864,7 @@ class RealTimeBrailleScanner:
             # Historical text belongs to this language/color/camera crop only.
             self._confirmed_text = ''
             self._confirmed_context = context
-            self.history.clear()
+            self._reset_confirmation()
             self._last_stability_result_id = 0
         if frame_id != self._last_submitted_frame_id or context != self._last_submitted_context:
             self.ai_worker.submit_frame(enhanced_frame, lang=self.lang,
@@ -849,8 +878,8 @@ class RealTimeBrailleScanner:
         if (result.get('context') != context or result['lang'] != self.lang or
                 result['result_id'] == self._rejected_result_id or slow or stale):
             result = dict(result, result_id=-1, cells=[], dots=[], decoded_text='',
-                          verbose_results=[], error=None, status='waiting', reason=None)
-            self.history.clear()
+                          verbose_results=[], line_results=[], error=None, status='waiting', reason=None)
+            self._reset_confirmation()
         signature = (result.get('status'), result.get('reason'))
         if signature != self._last_error:
             self._last_error = signature
@@ -867,20 +896,24 @@ class RealTimeBrailleScanner:
                 self.history.clear()
         is_locked = (len(self.history) >= self.stability_threshold and bool(decoded_text.strip())
                      and all(t == decoded_text for t in self.history))
+        self._line_confirmation.update(result)
         # Diagnostics keep the raw result; the live text/character labels only
         # publish after confirmation across distinct inference results.
         preview_result = dict(result, reader_name=f'COLOR {self.dot_color.upper()}',
             decoded_text=decoded_text if is_locked else '',
-            verbose_results=result['verbose_results'] if is_locked else [])
+            verbose_results=result['verbose_results'] if is_locked else
+                            self._line_confirmation.preview_tokens(result['verbose_results']),
+            line_confirmation=list(self._line_confirmation.lines))
         if result.get('source_shape') != enhanced_frame.shape:
-            self.history.clear()
+            self._reset_confirmation()
             is_locked = False
-            preview_result = dict(preview_result, result_id=-1, cells=[], dots=[], decoded_text='', verbose_results=[])
+            preview_result = dict(preview_result, result_id=-1, cells=[], dots=[], decoded_text='', verbose_results=[], line_confirmation=[])
         try:
             self._preview.details = self.show_details
             annotated = self._preview.render(enhanced_frame, self.detector, preview_result, self.lang)
             if not self._preview.motion_valid:
-                self.history.clear()
+                self._reset_confirmation()
+                preview_result = dict(preview_result, line_confirmation=[])
                 is_locked = False
                 decoded_text = ''
             self._preview_image_size = (annotated.shape[1],
@@ -897,6 +930,7 @@ class RealTimeBrailleScanner:
         except Exception:
             # Do not repeatedly render the same broken result on every display tick.
             self._rejected_result_id = result['result_id']
+            self._reset_confirmation()
             self._preview = LivePreview(max_width=1280, dashboard=True)
             raise
         status = result.get('status')
@@ -957,7 +991,7 @@ class RealTimeBrailleScanner:
             self.reset_zoom()
         elif key in (ord('l'), ord('L')):
             self.lang = 'english' if self.lang == 'thai' else 'thai'
-            self.history.clear()
+            self._reset_confirmation()
             print(f"  🌐 สลับภาษาเป็น: {self.lang.upper()}")
         elif key in (ord('d'), ord('D')):
             # Live preview pixels can be newer than AI output. Export one atomic AI result.
@@ -1030,7 +1064,7 @@ class RealTimeBrailleScanner:
         # 1. เริ่มต้น Threaded Camera Grabber
         window_name = "Braille Scanner"
         window_created = False
-        self.history.clear()
+        self._reset_confirmation()
         self._confirmed_text = ''
         self._confirmed_context = None
         self._context_generation += 1
@@ -1070,7 +1104,7 @@ class RealTimeBrailleScanner:
                     else:
                         if not waiting:
                             self._context_generation += 1
-                            self.history.clear()
+                            self._reset_confirmation()
                             waiting = True
                         status, detail = self.camera.get_status()
                         annotated = self._compose_dashboard(None, {})
@@ -1081,7 +1115,7 @@ class RealTimeBrailleScanner:
                             self._draw_notice(annotated, message + ': ' + detail)
                 except Exception as exc:
                     self._report_ui_error('frame processing / preview', exc)
-                    self.history.clear()
+                    self._reset_confirmation()
                     if _valid_frame(frame):
                         scale = min(1., 1280/frame.shape[1])
                         annotated = cv2.resize(frame, (max(1, round(frame.shape[1]*scale)),

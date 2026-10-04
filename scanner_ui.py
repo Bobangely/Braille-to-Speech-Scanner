@@ -134,7 +134,11 @@ class ScannerUI:
 
         x, y, right, bottom = self.result_card
         self._label(draw, (x+10*s, y+10*s), 'DETECTION RESULT', 12, MUTED, True)
-        if state.get('result_held'):
+        if state.get('result_partial'):
+            count, total = state.get('confirmed_lines', 0), state.get('line_total', 0)
+            result_label = (f'ยืนยัน {count}/{total} บรรทัด · ยังไม่ครบหน้า' if state.get('lang') == 'thai'
+                            else f'Confirmed {count}/{total} lines · partial')
+        elif state.get('result_held'):
             result_label = 'ผลล่าสุด · กำลังอ่านใหม่' if state.get('lang') == 'thai' else 'Last confirmed · reading again'
         else:
             result_label = 'ข้อความที่ยืนยันแล้ว' if state.get('lang') == 'thai' else 'Confirmed text'
@@ -156,11 +160,15 @@ class ScannerUI:
         else:
             self._label(draw, (x+10*s, y+62*s), 'รอผลอ่านที่นิ่ง' if state.get('lang') == 'thai' else 'Waiting for a stable result', 16, MUTED)
         count, total = state.get('confirmed', 0), max(1, state.get('required', 6))
+        progress_label = f'Confirmation  {count}/{total}'
+        if state.get('result_partial'):
+            count, total = state.get('confirmed_lines', 0), max(1, state.get('line_total', 0))
+            progress_label = f'Lines confirmed  {count}/{total}'
         progress_y = bottom-17*s
         draw.rounded_rectangle((x+10*s, progress_y, right-10*s, progress_y+4*s), radius=2, fill=BORDER)
         if count:
             draw.rounded_rectangle((x+10*s, progress_y, x+10*s+(right-x-20*s)*min(count/total, 1), progress_y+4*s), radius=2, fill=ACCENT)
-        self._label(draw, (x+10*s, bottom-42*s), f'Confirmation  {count}/{total}', 12, MUTED)
+        self._label(draw, (x+10*s, bottom-42*s), progress_label, 12, MUTED)
         if self.max_scroll:
             self._button(draw, (right-72*s, bottom-45*s, right-45*s, bottom-23*s), '^', ord('['))
             self._button(draw, (right-37*s, bottom-45*s, right-10*s, bottom-23*s), 'v', ord(']'))
