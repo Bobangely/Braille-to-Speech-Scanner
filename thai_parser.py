@@ -3,7 +3,7 @@
 from copy import deepcopy
 
 from thai_renderer import (CONSONANTS, TONES, LEADING, SHORT, INHERENT_FINAL,
-                           CODA_CHANGES_VOWEL, normalize_vowel)
+                           CODA_CHANGES_VOWEL, RULES, normalize_vowel)
 from thai_braille import BRAILLE_STANDARD, RULES_SOURCE, lex_braille, match_post_onset_vowel
 
 
@@ -126,26 +126,89 @@ def _implicit_closed_span(atoms, index):
     return onset_end, final_index, end
 
 
-def _final_role(atoms, index, vowel):
+def _segmentation_error(units):
+    """Check structural vowel/tone/final validity, without rendering or a lexicon."""
+    for unit in units:
+        if unit.get('status'):
+            return unit['status']
+        if 'literal' in unit:
+            if unit['literal'] == '�':
+                return 'UNKNOWN_TOKEN'
+            continue
+        vowel = unit.get('vowel')
+        if vowel is None:
+            return 'UNRESOLVED_NUCLEUS'
+        if (not unit.get('onset') or any(c not in CONSONANTS for c in unit['onset'])
+                or (unit.get('final') and (len(unit['final']) != 1 or unit['final'] not in CONSONANTS))):
+            return 'INVALID_SYLLABLE'
+        template = RULES[vowel][bool(unit.get('final'))]
+        if template is None:
+            return 'INVALID_FINAL'
+        if unit.get('tone') and '็' in template:
+            return 'UNSUPPORTED_COMBINATION'
+        if vowel == 'เออะ' and unit.get('final'):
+            return 'NEEDS_LEXICON'
+    return None
+
+
+def _compound_boundary(atoms, index, current):
+    """Compare coda + next onset against next onset + compound vowel.
+
+    Both paths use the same parser with nested boundary comparisons disabled.
+    A display preference is not proof: equally viable paths remain review-only.
+    """
+    if (_starts_syllable(atoms, index)
+            or not _starts_syllable(atoms, index, onset_context=True)):
+        return None
+    alternatives = []
+    for role, final, suffix in (
+            ('CODA_CONTEXT', atoms[index]['value'], index+1),
+            ('NEXT_EXPLICIT_ONSET', None, index)):
+        preceding = dict(onset=current['onset'], vowel=current['vowel'],
+                         prefix=current['prefix'], tone=current['tone'], final=final,
+                         indices=current['indices']+(atoms[index].get('source_indices', [atoms[index]['index']])
+                                                      if final else []))
+        units = [preceding, *list(_parse_run(atoms[suffix:], compare_boundaries=False))]
+        error = _segmentation_error(units)
+        alternatives.append(dict(role=role, syllables=units, valid=error is None,
+                                 validation_error=error))
+    valid = [candidate for candidate in alternatives if candidate['valid']]
+    # Preserve an already selected compound-vowel state for display; other
+    # explicit short/written vowels keep their available coda display.
+    # This only ranks review candidates, never proves a syllable boundary.
+    prefer_open = current['semantic'] and (
+        current['vowel'] not in SHORT.values() or current['vowel_has_onset_alternative'])
+    preferred = alternatives[int(prefer_open)]
+    selected = valid[0] if len(valid) == 1 else preferred
+    # An unresolved nucleus or lexicon-dependent path is not disproved.
+    # Only a concrete vowel/final/tone violation can eliminate a competitor.
+    hard_errors = {'INVALID_FINAL', 'INVALID_SYLLABLE', 'UNSUPPORTED_COMBINATION'}
+    unique = len(valid) == 1 and all(candidate['validation_error'] in hard_errors
+                                   for candidate in alternatives if not candidate['valid'])
+    return dict(role=selected['role'], review=not unique,
+                candidates=alternatives,
+                evidence='UNIQUE_VALID_SEGMENTATION' if unique else 'COMPETING_SEGMENTATIONS')
+
+
+def _final_role(atoms, index, vowel, *, current=None, compare_boundaries=True):
     """Resolve the syllable boundary before a renderer can reduce its vowel."""
-    # Before a coda can change the current vowel's written form, look ahead
-    # through the next onset's compound vowel too (e.g. 135-1). Otherwise its
-    # onset is stolen, and the remaining อ + ะ is parsed as an independent อะ.
-    # Retain written-vowel/coda context where no vowel reduction is involved,
-    # such as ก + ิ + น + อ + ะ, rather than forcing every อ into a vowel.
-    if _starts_syllable(atoms, index, onset_context=vowel in CODA_CHANGES_VOWEL):
-        return 'NEXT_EXPLICIT_ONSET'
+    if compare_boundaries and current is not None:
+        decision = _compound_boundary(atoms, index, current)
+        if decision is not None:
+            return decision
+    if _starts_syllable(atoms, index, onset_context=not compare_boundaries):
+        return dict(role='NEXT_EXPLICIT_ONSET', review=False)
     if _implicit_closed_span(atoms, index) is not None:
         # A short-a ending supports the open syllable. Where the vowel's
         # spelling is unchanged, prefer the complete following syllable too.
         # Otherwise a boundary could change the recognized vowel spelling.
         if vowel == 'อะ' or vowel in SHORT.values() or vowel not in CODA_CHANGES_VOWEL:
-            return 'NEXT_IMPLICIT_ONSET'
-        return 'AMBIGUOUS_BOUNDARY'
-    return 'CODA_CONTEXT'
+            return dict(role='NEXT_IMPLICIT_ONSET', review=False)
+        return dict(role='AMBIGUOUS_BOUNDARY', review=False)
+    return dict(role='CODA_CONTEXT', review=False)
 
 
-def _parse_run(atoms):
+def _parse_run(atoms, *, compare_boundaries=True):
     """Parse a boundary-free run; preserve orthographic fragments as explicit units."""
     index = 0
     while index < len(atoms):
@@ -245,9 +308,19 @@ def _parse_run(atoms):
             components.append(_component('VOWEL', vowel, vowel_atoms, vowel_rule))
         final = None
         boundary_rule = 'RUN_END'
+        boundary_decision = dict(review=False)
         if vowel and index < len(atoms) and _is_consonant(atoms[index]):
-            boundary_rule = ('CODA_IMPLICIT_O' if vowel_rule == 'IMPLICIT_O_CLOSED'
-                             else _final_role(atoms, index, vowel))
+            if vowel_rule == 'IMPLICIT_O_CLOSED':
+                boundary_rule = 'CODA_IMPLICIT_O'
+            else:
+                current = dict(onset=onset, vowel=vowel, tone=tone,
+                               prefix=orthographic_prefix, semantic=semantic,
+                               vowel_has_onset_alternative=any(_is_consonant(a) for a in vowel_atoms),
+                               indices=[i for a in atoms[start:index]
+                                        for i in a.get('source_indices', [a['index']])])
+                boundary_decision = _final_role(atoms, index, vowel, current=current,
+                                                compare_boundaries=compare_boundaries)
+                boundary_rule = boundary_decision['role']
             if (not boundary_rule.startswith('NEXT_') and
                     (semantic or vowel not in INHERENT_FINAL)):
                 if boundary_rule == 'AMBIGUOUS_BOUNDARY':
@@ -283,6 +356,9 @@ def _parse_run(atoms):
                    tone_anchor=len(onset)-1, prefix=orthographic_prefix,
                    indices=[i for a in atoms[start:index] for i in a.get('source_indices', [a['index']])],
                    boundary_rule=boundary_rule,
+                   boundary_review=boundary_decision['review'],
+                   boundary_candidates=boundary_decision.get('candidates', []),
+                   boundary_evidence=boundary_decision.get('evidence'),
                    components=sorted(components, key=lambda c: c['indices'][0] if c['indices']
                                      else atoms[onset_start]['index']+.5), status=status)
 

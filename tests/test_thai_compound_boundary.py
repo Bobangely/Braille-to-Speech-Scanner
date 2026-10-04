@@ -5,7 +5,7 @@ import unittest
 from thai_composer import compose_tokens
 from thai_decoder import decode_thai_details
 from thai_parser import parse_braille
-from thai_renderer import render_thai
+from thai_renderer import render_thai, render_syllable
 from tests.test_thai_syllable_boundaries import physical
 
 
@@ -43,8 +43,21 @@ class ThaiCompoundBoundaryTests(unittest.TestCase):
         for patterns, expected in cases:
             with self.subTest(expected=expected):
                 result = decode_thai_details(physical(patterns))
-                self.assertEqual(result['text'], expected)
-                self.assertFalse(result['needs_review'])
+                if expected in ('ทะเลาะ', 'กะเกาะ', 'เกะเราะ'):
+                    # Short vowel + coda and next compound onset are both
+                    # structurally possible: preserve the former reading as
+                    # an alternative, not as a falsely certain final result.
+                    alternatives = result['syllables'][0]['boundary_candidates']
+                    rendered = {''.join(render_syllable(s)
+                                        for s in option['syllables']) for option in alternatives}
+                    self.assertIn(expected, rendered)
+                else:
+                    self.assertEqual(result['text'], expected)
+                if expected in ('หัวเลอะ', 'หัวเจอ'):
+                    self.assertFalse(result['needs_review'])
+                else:
+                    self.assertTrue(result['needs_review'])
+                    self.assertEqual(result['status'], 'NEEDS_REVIEW')
 
     def test_real_codas_and_independent_o_are_not_globally_replaced(self):
         cases = [

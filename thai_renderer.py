@@ -145,6 +145,10 @@ def render_thai(parsed, *, lexicon=None, confidence_threshold=None):
             status = status or 'LOW_CONFIDENCE'
         text = '�' if status else candidate
         pieces.append(text)
+        # Ambiguous segmentation keeps a display candidate, never confirmation.
+        # Other invalid/low-confidence cases retain their existing � behavior.
+        if syllable.get('boundary_review'):
+            status = status or 'AMBIGUOUS_SEGMENTATION'
         if traced or status:
             events = []
             if candidate and '็' in candidate:

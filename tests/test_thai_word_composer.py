@@ -72,7 +72,11 @@ class ThaiWordComposerTests(unittest.TestCase):
                 result = compose_tokens(tokens)
                 self.assertEqual(result['text'], text)
                 self.assertEqual(result['raw_tokens'], tokens)
-                self.assertFalse(result['needs_review'])
+                if text == 'กินอะ':
+                    self.assertTrue(result['needs_review'])
+                    self.assertEqual(result['status'], 'NEEDS_REVIEW')
+                else:
+                    self.assertFalse(result['needs_review'])
 
     def test_compound_o_short_a_cannot_cross_parsing_boundaries(self):
         for boundary in (' ', '\n', '-'):
