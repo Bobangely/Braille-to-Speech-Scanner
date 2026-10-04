@@ -266,6 +266,12 @@ def plan_cells(dots, image_shape, *, _basis=None):
         columns = np.asarray([np.median(local_x[group]) for group in column_groups])
         groups = _column_groups(columns, spacing)
         pair_widths = [columns[g[1]]-columns[g[0]] for g in groups if len(g) == 2]
+        # Nearest-dot distance can measure vertical pitch, not column pitch.
+        # Fit the horizontal scale from this line's observed complete pairs
+        # before deciding whether a sparse cell's two columns belong together.
+        if len(pair_widths) >= 2:
+            groups = _column_groups(columns, float(np.median(pair_widths)))
+            pair_widths = [columns[g[1]]-columns[g[0]] for g in groups if len(g) == 2]
         dx = float(np.median(pair_widths)) if pair_widths else spacing
         anchors = [float(columns[g[0]]) for g in groups if len(g) == 2]
         pitch = _cell_pitch(columns, anchors, dx)

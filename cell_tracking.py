@@ -215,6 +215,13 @@ class CellGridTracker:
             pattern = frozenset(int(np.linalg.norm(slots-dots[i]['center'], axis=1).argmin())+1
                                 for i in indices)
             output.append(dict(cell, source_dot_ids=indices, dots=pattern))
+        # Motion/blending can invalidate a previously valid layout. Validate
+        # current ownership and geometry again before color reading/decoding.
+        output = validate_cell_grids(output, image.shape, repair=False)
+        if any(cell['geometry_status'] == 'invalid' for cell in output):
+            self.reset()
+            self.current_dots = dots
+            return output, 'invalid'
         next_width = tracking_width(chosen, image.shape, gray.shape[1])
         self.cells = chosen
         self.reference = gray if next_width == gray.shape[1] else tracking_gray(image, next_width)

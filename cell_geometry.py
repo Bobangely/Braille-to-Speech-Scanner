@@ -66,7 +66,7 @@ def grid_error(cell, shape=None):
     return _grid_errors(cell, shape)[2]
 
 
-def validate_cell_grids(cells, shape):
+def validate_cell_grids(cells, shape, *, repair=True):
     """Repair lost logical slots from nearby reliable grids; never from dot bits."""
     measurements = [(cell, *_grid_errors(cell, shape)) for cell in cells]
     trusted = [(cell, points) for cell, points, _, error in measurements if error is None]
@@ -75,7 +75,7 @@ def validate_cell_grids(cells, shape):
         result = dict(cell)
         repaired = False
         repairable = lattice_error or error in ('invalid_crop', 'clipped_grid')
-        if repairable and not cell.get('row_ambiguous') and not cell.get('column_ambiguous'):
+        if repair and repairable and not cell.get('row_ambiguous') and not cell.get('column_ambiguous'):
             neighbours = [(other, p) for other, p in trusted if other is not cell
                           and other.get('line_id') == cell.get('line_id')]
             try:
@@ -91,7 +91,7 @@ def validate_cell_grids(cells, shape):
                 quad = grid_quad(points)
                 crosses_neighbour = any(cv2.pointPolygonTest(np.float32(quad), tuple(map(float, p[d-1])), False) >= 0
                                         for other, p in trusted if other is not cell
-                                        for d in other.get('dots', ()))
+                                        for d in range(1, 7))
                 if not crosses_neighbour and _lattice_error(points) is None:
                     result['crop_quad'] = quad.tolist()
                     repaired = True
@@ -108,4 +108,59 @@ def validate_cell_grids(cells, shape):
         result['geometry_status'] = 'invalid' if error else ('repaired' if repaired else 'valid')
         result['geometry_error'] = error
         output.append(result)
+    return validate_cell_relations(output)
+
+
+def validate_cell_relations(cells):
+    """Reject intersecting logical cells and duplicate ownership, never guess phase.
+
+    Compare the actual 2x3 footprint, not padded axis-aligned display boxes:
+    neighbouring rotated boxes can overlap without sharing any logical slot.
+    """
+    output = [dict(cell, overlap_ratio=0.) for cell in cells]
+    owners = {}
+    polygons = []
+    for index, cell in enumerate(output):
+        for source in set(cell.get('source_dot_ids', ())):
+            owners.setdefault(source, []).append(index)
+        try:
+            polygon = np.float32(slot_points(cell)[[0, 3, 5, 2]])
+            area = cv2.contourArea(polygon)
+            polygons.append((polygon, area) if area > 0 and cv2.isContourConvex(polygon) else None)
+        except (KeyError, TypeError, ValueError):
+            polygons.append(None)
+    for indices in owners.values():
+        if len(indices) > 1:
+            for index in indices:
+                output[index].update(geometry_status='invalid', geometry_error='shared_source_dot')
+    bounds = np.array([(p[0].min(axis=0), p[0].max(axis=0)) if p is not None
+                       else ([np.inf, np.inf], [-np.inf, -np.inf]) for p in polygons])
+    for index, first in enumerate(polygons):
+        if first is None:
+            continue
+        polygon, area = first
+        low, high = bounds[index]
+        candidates = np.flatnonzero(np.all(bounds[:, 0] < high, axis=1) &
+                                    np.all(bounds[:, 1] > low, axis=1))
+        for other_index in candidates[candidates > index]:
+            second = polygons[other_index]
+            if second is None:
+                continue
+            other, other_area = second
+            intersection, _ = cv2.intersectConvexConvex(polygon, other)
+            ratio = float(intersection)/min(area, other_area)
+            # Only allow float32 numerical error at touching edges.
+            if ratio > 1e-6:
+                for target in (index, other_index):
+                    cell = output[target]
+                    cell['overlap_ratio'] = max(cell['overlap_ratio'], ratio)
+                    cell.update(geometry_status='invalid',
+                                geometry_error=cell.get('geometry_error') or 'overlapping_grid')
+    for index, cell in enumerate(output):
+        cell['geometry_debug'] = dict(
+            cell_id=cell.get('track_id', index+1), line_id=cell.get('line_id'),
+            source_dots=list(cell.get('source_dot_ids', ())),
+            bbox=cell.get('grid', {}).get('bbox'), spacing=cell.get('dot_spacing'),
+            overlap_ratio=cell['overlap_ratio'], validation_status=cell['geometry_status'],
+            validation_error=cell.get('geometry_error'))
     return output
