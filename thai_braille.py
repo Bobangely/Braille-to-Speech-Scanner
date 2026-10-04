@@ -4,14 +4,17 @@ Scanner subset of THAI_BRAILLE_G1_PARSER_RULES.md. Forward Liblouis tables
 are references, not a claim that every reverse reading is unambiguous.
 """
 from copy import deepcopy
+import logging
 import math
 from numbers import Integral
 
-from config_thai import THAI_BRAILLE_TO_CHAR, THAI_READING_MULTI_CELL, THAI_DIGIT_MAP, NUMBER_INDICATOR
+from config_thai import (THAI_BRAILLE_TO_CHAR, THAI_READING_MULTI_CELL,
+                        THAI_MULTI_CELL_SYMBOLS, THAI_DIGIT_MAP, NUMBER_INDICATOR)
 from thai_renderer import CONSONANTS, TONES, LEADING, normalize_vowel
 
 BRAILLE_STANDARD = 'TH_G1_SCANNER_V1'
 RULES_SOURCE = 'THAI_BRAILLE_G1_PARSER_RULES.md'
+logger = logging.getLogger(__name__)
 
 POST_ONSET_VOWELS = {
     ('124', '1'): 'เอะ', ('126', '1'): 'แอะ', ('24', '1'): 'โอะ',
@@ -54,6 +57,12 @@ LEXICAL_SEQUENCES = {
     tuple(''.join(map(str, sorted(p))) for p in sequence): _descriptor(value)
     for sequence, value in THAI_READING_MULTI_CELL.items()
 }
+for sequence, symbol in THAI_MULTI_CELL_SYMBOLS.items():
+    key = tuple(''.join(map(str, sorted(p))) for p in sequence)
+    LEXICAL_SEQUENCES[key].update(symbol_id=symbol['id'],
+                                  tts=symbol['tts'], symbol_type=symbol['type'])
+SYMBOL_PREFIXES = {''.join(map(str, sorted(sequence[0])))
+                   for sequence in THAI_MULTI_CELL_SYMBOLS}
 
 
 def match_post_onset_vowel(atoms, index):
@@ -92,6 +101,8 @@ def _break_before(cells, index, adjacent=False):
     if index == 0:
         return False
     left, right = cells[index - 1:index + 1]
+    if right.get('break_before') or right.get('line_break_before'):
+        return True
     if any(not cell.get('dots') and not is_unread_cell(cell) for cell in (left, right)):
         return True
     if 'line_id' in left and 'line_id' in right and left['line_id'] != right['line_id']:
@@ -136,13 +147,14 @@ def snapshot_cells(cells):
                 confidence = None
         pattern = ''.join(map(str, dots))
         raw.append(dict(cell_id=cell.get('cell_id', f"C{cell.get('track_id', index+1)}"),
-                        dots=deepcopy(dots), pattern=pattern, confidence=confidence,
+                        dots=deepcopy(dots), raw_dots=deepcopy(values), pattern=pattern, confidence=confidence,
                         index=index, line_id=cell.get('line_id'), center=cell.get('center', (0, 0)),
                         break_before=_break_before(prepared, index),
                         adjacent_before=not _break_before(prepared, index, adjacent=True),
-                        line_break_before=(index > 0 and prepared[index-1].get('line_id') is not None
+                        line_break_before=(bool(cell.get('line_break_before')) or
+                                           (index > 0 and prepared[index-1].get('line_id') is not None
                                            and cell.get('line_id') is not None
-                                           and prepared[index-1]['line_id'] != cell['line_id']),
+                                           and prepared[index-1]['line_id'] != cell['line_id'])),
                         warning=cell_read_warning(cell) if valid else 'invalid_raw_pattern'))
     return raw
 
@@ -193,6 +205,15 @@ def lex_braille(cells):
                         descriptor['kind'] = 'ambiguous_mark'
                 else:
                     char, warning = '�', 'unknown_or_incomplete_symbol'
+        if logger.isEnabledFor(logging.DEBUG) and (
+                warning in ('unknown_or_incomplete_symbol', 'invalid_raw_pattern')
+                or (span == 1 and pattern in SYMBOL_PREFIXES)):
+            logger.debug(
+                '[UNKNOWN_BRAILLE_SEQUENCE] line=%r cell_index=%s raw_dots=%r '
+                'normalized_dots=%r neighbor_cells=%r confidence=%r',
+                cell['line_id'], index, cell['raw_dots'], cell['dots'],
+                [dict(line=c['line_id'], pattern=c['pattern'], dots=c['dots'])
+                 for c in raw[max(0, index-1):index+3]], cell['confidence'])
         if warning:
             descriptor = dict(kind='error', value='�', vowel=None, semantic=False)
         elif descriptor is None:
@@ -202,6 +223,8 @@ def lex_braille(cells):
                     source_cells=[raw[i]['cell_id'] for i in source_indices],
                     patterns=[raw[i]['pattern'] for i in source_indices],
                     adjacent_before=cell['adjacent_before'], candidates=candidates, rule=rule)
+        symbol_metadata = {key: descriptor[key] for key in ('symbol_id', 'tts', 'symbol_type')
+                           if key in descriptor}
         for offset in range(span):
             origin = raw[index+offset]
             codepoint = (chr(0x2800 + sum(1 << (d-1) for d in origin['dots']))
@@ -212,7 +235,7 @@ def lex_braille(cells):
                                center=origin['center'], cell_start=index, cell_end=index+span-1,
                                consumed=offset > 0, break_before=cell['break_before'] if offset == 0 else False,
                                line_break_before=cell['line_break_before'] if offset == 0 else False,
-                               line_id=origin['line_id'], warning=warning))
+                               line_id=origin['line_id'], warning=warning, **symbol_metadata))
             atoms.append(atom if offset == 0 else None)
         index += span
     return raw, tokens, atoms
