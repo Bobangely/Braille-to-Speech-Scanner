@@ -128,7 +128,12 @@ def _implicit_closed_span(atoms, index):
 
 def _final_role(atoms, index, vowel):
     """Resolve the syllable boundary before a renderer can reduce its vowel."""
-    if _starts_syllable(atoms, index):
+    # Before a coda can change the current vowel's written form, look ahead
+    # through the next onset's compound vowel too (e.g. 135-1). Otherwise its
+    # onset is stolen, and the remaining อ + ะ is parsed as an independent อะ.
+    # Retain written-vowel/coda context where no vowel reduction is involved,
+    # such as ก + ิ + น + อ + ะ, rather than forcing every อ into a vowel.
+    if _starts_syllable(atoms, index, onset_context=vowel in CODA_CHANGES_VOWEL):
         return 'NEXT_EXPLICIT_ONSET'
     if _implicit_closed_span(atoms, index) is not None:
         # A short-a ending supports the open syllable. Where the vowel's

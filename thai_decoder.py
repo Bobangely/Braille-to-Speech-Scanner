@@ -2,10 +2,13 @@
 
 import re
 import unicodedata
+import logging
 
 from thai_braille import _break_before, cell_read_warning, is_unread_cell, lex_braille
 from thai_parser import parse_braille
 from thai_renderer import render_thai
+
+logger = logging.getLogger(__name__)
 
 
 def tokenize_thai(cells):
@@ -22,8 +25,13 @@ def normalize_thai(text):
 
 
 def decode_thai_details(cells, *, lexicon=None, confidence_threshold=None):
-    return render_thai(parse_braille(cells), lexicon=lexicon,
-                       confidence_threshold=confidence_threshold)
+    result = render_thai(parse_braille(cells), lexicon=lexicon,
+                         confidence_threshold=confidence_threshold)
+    if result['needs_review'] and logger.isEnabledFor(logging.DEBUG):
+        logger.debug('[THAI_COMPOSITION_REVIEW] raw_cells=%r decoded_cells=%r '
+                     'syllables=%r composed_output=%r', result['raw_cells'],
+                     result['raw_tokens'], result['syllables'], result['text'])
+    return result
 
 
 def decode_thai(cells):
