@@ -24,5 +24,3 @@ The following pre-processing was applied to each image:
 * Auto-orientation of pixel data (with EXIF-orientation stripping)
 
 No image augmentation techniques were applied.
-
-
