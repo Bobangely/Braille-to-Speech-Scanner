@@ -7,6 +7,8 @@ from thai_renderer import (CONSONANTS, TONES, LEADING, SHORT, INHERENT_FINAL,
                            CODA_CHANGES_VOWEL, RULES, normalize_vowel)
 from thai_braille import BRAILLE_STANDARD, RULES_SOURCE, lex_braille, match_post_onset_vowel
 
+MAX_SEGMENTATION_CANDIDATES = 128
+
 
 def _is_consonant(atom):
     return atom['kind'] in ('consonant', 'ambiguous_o')
@@ -127,7 +129,7 @@ def _implicit_closed_span(atoms, index):
     return onset_end, final_index, end
 
 
-def _segmentation_error(units, source_indices=None):
+def _structural_error(units, source_indices=None):
     """Validate a complete structural parse, without rendering or a lexicon."""
     if source_indices is not None:
         expected = Counter(source_indices)
@@ -170,6 +172,10 @@ def _segmentation_error(units, source_indices=None):
     return None
 
 
+def _segmentation_error(units, source_indices=None):
+    return _structural_error(units, source_indices)
+
+
 def _compound_boundary(atoms, index, current):
     """Compare coda + next onset against next onset + compound vowel.
 
@@ -188,8 +194,12 @@ def _compound_boundary(atoms, index, current):
         preceding = dict(onset=current['onset'], vowel=current['vowel'],
                          prefix=current['prefix'], tone=current['tone'], final=final,
                          status=current.get('status'),
+                         tone_anchor=len(current['onset'])-1,
+                         components=deepcopy(current.get('components', [])),
                          indices=current['indices']+(atoms[index].get('source_indices', [atoms[index]['index']])
                                                       if final else []))
+        if final:
+            preceding['components'].append(_component('FINAL', final, [atoms[index]], 'CODA_CONTEXT'))
         units = [preceding, *list(_parse_run(atoms[suffix:], compare_boundaries=False))]
         error = _segmentation_error(units, source_indices)
         alternatives.append(dict(role=role, syllables=units, valid=error is None,
@@ -346,6 +356,7 @@ def _parse_run(atoms, *, compare_boundaries=True):
             else:
                 current = dict(onset=onset, vowel=vowel, tone=tone,
                                prefix=orthographic_prefix, semantic=semantic, status=status,
+                               components=components,
                                vowel_has_onset_alternative=any(_is_consonant(a) for a in vowel_atoms),
                                indices=[i for a in atoms[start:index]
                                         for i in a.get('source_indices', [a['index']])])
@@ -396,14 +407,99 @@ def _parse_run(atoms, *, compare_boundaries=True):
                                      else atoms[onset_start]['index']+.5), status=status)
 
 
+def _enumerate_run(atoms, original):
+    """Expand every competing boundary, including nested suffix alternatives.
+
+    The old local comparisons remain in the trace. Ranking instead consumes
+    complete paths, revalidated for source coverage and syllable structure.
+    A complexity limit fails closed: an incomplete search cannot be ranked.
+    """
+    if not any(unit.get('boundary_candidates') for unit in original):
+        return None
+    paths = {}
+
+    def expand():
+        plans, pending = {}, [0]
+        while pending:
+            start = pending[-1]
+            if start in paths:
+                pending.pop()
+                continue
+            if start not in plans:
+                units = original if start == 0 else list(_parse_run(atoms[start:]))
+                choice = next(((pos, unit['boundary_candidates']) for pos, unit in enumerate(units)
+                               if unit.get('boundary_candidates')), None)
+                if choice is None:
+                    paths[start] = [units]
+                    continue
+                position, alternatives = choice
+                branches = []
+                for alternative in alternatives:
+                    if alternative['validation_error'] in (
+                            'REUSED_SOURCE_CELL', 'INVALID_SOURCE_CELLS', 'INCOMPLETE_PARSE'):
+                        # Retain rejected provenance; never invent replacement
+                        # evidence by reparsing a corrupted source path.
+                        branches.append(dict(rejected=[*units[:position], *alternative['syllables']]))
+                        continue
+                    head = alternative['syllables'][0]
+                    used = set(head['indices'])
+                    following = max(i for i, atom in enumerate(atoms)
+                                    if used.intersection(atom.get('source_indices', [atom['index']]))) + 1
+                    branches.append(dict(prefix=units[:position], head=head, following=following))
+                plans[start] = branches
+            branches = plans[start]
+            missing = next((b['following'] for b in branches
+                            if 'following' in b and b['following'] not in paths), None)
+            if missing is not None:
+                pending.append(missing)
+                continue
+            results = []
+            for branch in branches:
+                if 'rejected' in branch:
+                    results.append(branch['rejected'])
+                else:
+                    for suffix in paths[branch['following']]:
+                        results.append([*branch['prefix'], branch['head'], *suffix])
+                        if len(results) > MAX_SEGMENTATION_CANDIDATES:
+                            raise OverflowError('segmentation_candidate_limit')
+                if len(results) > MAX_SEGMENTATION_CANDIDATES:
+                    raise OverflowError('segmentation_candidate_limit')
+            paths[start] = results
+        return paths[0]
+
+    indices = [i for atom in atoms for i in atom.get('source_indices', [atom['index']])]
+    try:
+        candidates = []
+        seen = set()
+        for units in expand():
+            signature = tuple((tuple(u['indices']), u.get('onset'), u.get('vowel'),
+                               u.get('tone'), u.get('final'), u.get('prefix'), u.get('literal'))
+                              for u in units)
+            if signature in seen:
+                continue
+            seen.add(signature)
+            error = _structural_error(units, indices)
+            candidates.append(dict(syllables=deepcopy(units), valid=error is None,
+                                   validation_error=error))
+        return dict(indices=indices, candidates=candidates, generation_complete=True)
+    except OverflowError:
+        return dict(indices=indices, candidates=[], generation_complete=False,
+                    reason='segmentation_candidate_limit')
+
+
 def parse_tokens(tokens, *, atoms=None):
     """Keep source tokens and return ordered syllables/literals without rendering."""
     raw = deepcopy(list(tokens))
     records = [dict(token=t) if isinstance(t, str) else t for t in raw]
-    normalized, units, run = [], [], []
+    normalized, units, run, segmentation_runs = [], [], [], []
 
     def flush():
-        units.extend(_parse_run(run))
+        original = list(_parse_run(run))
+        candidates = _enumerate_run(run, original)
+        if candidates is not None:
+            candidates.update(unit_start=len(units), unit_count=len(original))
+            segmentation_runs.append(candidates)
+        units.extend(original)
         run.clear()
 
     def literal(value, indices, status=None):
@@ -443,7 +539,8 @@ def parse_tokens(tokens, *, atoms=None):
         else:
             run.append(atom)
     flush()
-    return dict(raw_tokens=raw, normalized_tokens=normalized, syllables=units)
+    return dict(raw_tokens=raw, normalized_tokens=normalized, syllables=units,
+                segmentation_runs=segmentation_runs)
 
 
 def parse_braille(cells):
@@ -470,5 +567,12 @@ def parse_braille(cells):
             trace.append(dict(state_before=state, state_after='INVALID' if syllable.get('status') else 'COMPLETE',
                               rule=syllable.get('status') or 'SYLLABLE_END',
                               patterns=syllable['raw_patterns'], source_cells=syllable['source_cells']))
+    for run in parsed['segmentation_runs']:
+        for candidate in run['candidates']:
+            for unit in candidate['syllables']:
+                unit['raw_patterns'] = [raw[i]['pattern'] if 0 <= i < len(raw) else None
+                                        for i in unit['indices']]
+                unit['source_cells'] = [raw[i]['cell_id'] if 0 <= i < len(raw) else None
+                                        for i in unit['indices']]
     return dict(parsed, standard=BRAILLE_STANDARD, rules_source=RULES_SOURCE, raw_cells=raw,
                 raw_patterns=[cell['pattern'] for cell in raw], semantic_tokens=semantic, parser_trace=trace)
