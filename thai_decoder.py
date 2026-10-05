@@ -24,8 +24,8 @@ def normalize_thai(text):
     return unicodedata.normalize('NFC', text)
 
 
-def decode_thai_details(cells, *, lexicon=None, confidence_threshold=None):
-    result = render_thai(parse_braille(cells), lexicon=lexicon,
+def decode_thai_details(cells, *, lexicon=None, confidence_threshold=None, compatibility=False):
+    result = render_thai(parse_braille(cells, compatibility=compatibility), lexicon=lexicon,
                          confidence_threshold=confidence_threshold)
     if result['needs_review'] and logger.isEnabledFor(logging.DEBUG):
         logger.debug('[THAI_COMPOSITION_REVIEW] raw_cells=%r decoded_cells=%r '
@@ -34,13 +34,13 @@ def decode_thai_details(cells, *, lexicon=None, confidence_threshold=None):
     return result
 
 
-def decode_thai(cells):
-    return decode_thai_details(cells)['text']
+def decode_thai(cells, *, compatibility=False):
+    return decode_thai_details(cells, compatibility=compatibility)['text']
 
 
-def thai_verbose(cells):
+def thai_verbose(cells, *, compatibility=False):
     """Preserve overlay labels/spans; attach composition decisions for diagnostics."""
-    result = decode_thai_details(cells)
+    result = decode_thai_details(cells, compatibility=compatibility)
     tokens = result['raw_tokens']
     for syllable in result['syllables']:
         token = tokens[syllable['indices'][0]]

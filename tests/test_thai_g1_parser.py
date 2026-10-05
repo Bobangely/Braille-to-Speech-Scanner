@@ -228,18 +228,18 @@ class ThaiGradeOneParserTests(unittest.TestCase):
     def test_english_stays_on_its_own_decoder(self):
         self.assertEqual(decode_cells(cells(['6', '145', '3456', '1', '12']), 'english'), 'D12')
 
-    def test_diagnostic_keeps_text_review_without_invalidating_known_cells(self):
+    def test_diagnostic_standard_boundary_does_not_invalidate_known_cells(self):
         image, _, _ = page([['125', '15', '1235', '135', '1']])
         detected, debug = ColoredCellStream().detect(image)
         with tempfile.TemporaryDirectory() as folder:
             report = json.loads(export_stream(image, detected, debug, folder).read_text(encoding='utf-8'))
         self.assertEqual(report['text'], 'หัวเราะ')
-        self.assertEqual(report['language_trace']['status'], 'NEEDS_REVIEW')
-        self.assertEqual(report['warning_counts'], {'AMBIGUOUS_SEGMENTATION': 1})
+        self.assertEqual(report['language_trace']['status'], 'VALID')
+        self.assertEqual(report['warning_counts'], {})
         tokens = decode_cells_verbose(detected, 'thai')
         self.assertEqual((tokens[0]['char'], tokens[2]['char']), ('ห', 'ร'))
         self.assertFalse(any(t.get('warning') for t in tokens))
-        self.assertEqual(tokens[0]['composition_warning'], 'AMBIGUOUS_SEGMENTATION')
+        self.assertFalse(any(t.get('composition_warning') for t in tokens))
 
 
 if __name__ == '__main__':

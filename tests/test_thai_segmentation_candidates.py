@@ -101,14 +101,14 @@ class ThaiSegmentationCandidateTests(unittest.TestCase):
     def test_boundary_warning_does_not_blame_the_previous_onset(self):
         source = physical(['125', '15', '1235', '135', '1'])
         original = deepcopy(source)
-        result = decode_thai_details(source)
+        result = decode_thai_details(source, compatibility=True)
         boundary = result['syllables'][0]
         self.assertEqual(result['text'], 'หัวเราะ')
         self.assertEqual(result['status'], 'NEEDS_REVIEW')
         self.assertEqual(boundary['boundary_indices'], [2])
         self.assertEqual(boundary['boundary_patterns'], ['1235'])
         self.assertEqual(boundary['boundary_source_cells'], ['S2'])
-        verbose = decode_cells_verbose(source, 'thai')
+        verbose = decode_cells_verbose(source, 'thai', compatibility=True)
         self.assertEqual(verbose[0]['char'], 'ห')
         self.assertFalse(verbose[0].get('warning'))
         self.assertEqual(verbose[2]['char'], 'ร')
@@ -129,12 +129,12 @@ class ThaiSegmentationCandidateTests(unittest.TestCase):
     def test_warning_location_is_general_and_uses_global_source_indices(self):
         for onset in ('125', '1245', '123', '234'):
             source = physical(['245', '1', '', onset, '15', '1235', '135', '1'])
-            result = decode_thai_details(source)
+            result = decode_thai_details(source, compatibility=True)
             boundary = next(s for s in result['syllables'] if s.get('boundary_review'))
             self.assertEqual(boundary['boundary_indices'], [5])
             self.assertEqual(boundary['boundary_source_cells'], ['S5'])
             self.assertEqual(sum(c['valid'] for c in boundary['boundary_candidates']), 2)
-            verbose = decode_cells_verbose(source, 'thai')
+            verbose = decode_cells_verbose(source, 'thai', compatibility=True)
             self.assertFalse(verbose[3].get('warning'))
             self.assertFalse(verbose[5].get('warning'))
             self.assertEqual(verbose[3]['composition_warning'], 'AMBIGUOUS_SEGMENTATION')
@@ -172,14 +172,14 @@ class ThaiSegmentationCandidateTests(unittest.TestCase):
 
     def test_ambiguous_compound_candidate_keeps_display_but_never_valid(self):
         source = physical(['125', '15', '1235', '135', '1'])
-        parsed = parse_braille(source)
+        parsed = parse_braille(source, compatibility=True)
         self.assertNotIn('text', parsed)
         self.assertTrue(parsed['syllables'][0]['boundary_review'])
-        result = decode_thai_details(source)
+        result = decode_thai_details(source, compatibility=True)
         self.assertEqual(result['text'], 'หัวเราะ')
         self.assertEqual(result['status'], 'NEEDS_REVIEW')
         self.assertTrue(any(t.get('composition_warning') == 'AMBIGUOUS_SEGMENTATION'
-                            for t in decode_cells_verbose(source, 'thai')))
+                            for t in decode_cells_verbose(source, 'thai', compatibility=True)))
 
     def test_every_known_single_cell_consonant_is_valid_in_each_position(self):
         known = [(p, c) for p, c in THAI_BRAILLE_TO_CHAR.items() if c in CONSONANTS]
@@ -259,7 +259,7 @@ class ThaiSegmentationCandidateTests(unittest.TestCase):
 
     def test_text_review_notice_does_not_report_a_known_cell_as_unknown(self):
         source = physical(['125', '15', '1235', '135', '1'])
-        tokens = decode_cells_verbose(source, 'thai')
+        tokens = decode_cells_verbose(source, 'thai', compatibility=True)
         self.assertFalse(any(t.get('warning') for t in tokens))
         self.assertEqual(tokens[0]['composition_warning'], 'AMBIGUOUS_SEGMENTATION')
         notice = _uncertainty_notice(dict(cells=source, verbose_results=tokens))

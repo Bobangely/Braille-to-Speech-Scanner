@@ -53,7 +53,7 @@ class ThaiCompoundBoundaryTests(unittest.TestCase):
                     self.assertIn(expected, rendered)
                 else:
                     self.assertEqual(result['text'], expected)
-                if expected in ('หัวเลอะ', 'หัวเจอ'):
+                if expected in ('หัวเลอะ', 'หัวเจอ', 'หัวเราะ', 'ตัวเกาะ'):
                     self.assertFalse(result['needs_review'])
                 else:
                     self.assertTrue(result['needs_review'])
@@ -61,8 +61,9 @@ class ThaiCompoundBoundaryTests(unittest.TestCase):
 
     def test_real_codas_and_independent_o_are_not_globally_replaced(self):
         cases = [
-            (['234', '15', '1345'], 'สวน'),
-            (['13', '15', '145'], 'ขวด'),
+            # raw มาตรฐานเขียน ว หลังสระอัวลดรูป ไม่ใช่ ัว (15)
+            (['234', '2456', '1345'], 'สวน'),
+            (['13', '2456', '145'], 'ขวด'),
             (['1245', '12', '1345', '135', '1'], 'กินอะ'),
             (['135', '1'], 'อะ'),
             (['13', '135', '1345'], 'ขอน'),

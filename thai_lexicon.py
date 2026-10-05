@@ -67,16 +67,25 @@ def rank_segmentations(parsed, lexicon, render_unit):
                 score, matches = _coverage(parts, words)
                 text = ''.join(parts)
                 candidates.append(dict(text=text, valid=True, plausible=True,
+                                       accepted_mode=path.get('accepted_mode', 'standard'),
+                                       acceptance_reason=path.get('acceptance_reason'),
+                                       standard_valid=path.get('standard_valid', True),
+                                       standard_error=path.get('standard_error'),
+                                       compatibility_valid=path.get('compatibility_valid', True),
+                                       compatibility_error=path.get('compatibility_error'),
                                        known_characters=score, matches=matches,
                                        coverage=score / max(1, len(text)),
                                        syllables=deepcopy(path['syllables'])))
-        candidates.sort(key=lambda candidate: -candidate['coverage'])
+        # ใช้ lexicon จัดอันดับภายใน mode เดียวกันเท่านั้น
+        candidates.sort(key=lambda candidate: (candidate['accepted_mode'] != 'standard',
+                                                -candidate['coverage']))
         selected = None
         original_text = None
         reason = 'INCOMPLETE_CANDIDATE_SEARCH' if not run['generation_complete'] else 'NO_VALID_CANDIDATE'
         if candidates:
             highest = candidates[0]['coverage']
-            best = [c for c in candidates if c['coverage'] == highest]
+            best = [c for c in candidates if c['coverage'] == highest
+                    and c['accepted_mode'] == candidates[0]['accepted_mode']]
             reason = ('UNIQUE_STRUCTURAL_PATH' if len(candidates) == 1 else
                       'NO_LEXICAL_EVIDENCE' if highest == 0 else
                       'LEXICON_TIE' if len(best) > 1 else 'LEXICON_SUPPORTED_DISPLAY')
@@ -86,7 +95,7 @@ def rank_segmentations(parsed, lexicon, render_unit):
                 original_text = ''.join(render_unit(unit) for unit in original)
             except ValueError:
                 pass
-            if highest:
+            if highest or any(c['accepted_mode'] != candidates[0]['accepted_mode'] for c in candidates):
                 selected = next((c for c in best if c['text'] == original_text), best[0])
         # A lexical annotation must not erase existing parser evidence when
         # it agrees with the structural display path.

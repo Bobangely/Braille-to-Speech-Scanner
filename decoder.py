@@ -17,8 +17,8 @@ def normalize_thai_text(text):
     return normalize_thai(text)
 
 
-def decode_cells_thai(cells):
-    return decode_thai(cells)
+def decode_cells_thai(cells, *, compatibility=False):
+    return decode_thai(cells, compatibility=compatibility)
 
 
 def _english_tokens(cells):
@@ -80,10 +80,10 @@ def decode_cells_english(cells):
     return ''.join(output).strip()
 
 
-def decode_cells(cells, lang='english'):
+def decode_cells(cells, lang='english', *, compatibility=False):
     language = lang.lower()
     if language in ('thai', 'th'):
-        return decode_thai(cells)
+        return decode_thai(cells, compatibility=compatibility)
     if language == 'thai-legacy':
         # Historical image fixtures have different mappings. Load that decoder
         # only for an explicit legacy request, never in the live Thai pipeline.
@@ -94,10 +94,10 @@ def decode_cells(cells, lang='english'):
     raise ValueError(f'Unsupported Braille language: {lang}')
 
 
-def decode_cells_verbose(cells, lang='english'):
+def decode_cells_verbose(cells, lang='english', *, compatibility=False):
     language = lang.lower()
     if language in ('thai', 'th'):
-        return thai_verbose(cells)
+        return thai_verbose(cells, compatibility=compatibility)
     if language == 'thai-legacy':
         from archive.legacy_decoder import decode_cells_verbose as legacy_verbose
         return legacy_verbose(cells, lang)

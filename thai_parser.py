@@ -6,6 +6,7 @@ from copy import deepcopy
 from thai_renderer import (CONSONANTS, TONES, LEADING, SHORT, INHERENT_FINAL,
                            CODA_CHANGES_VOWEL, RULES, normalize_vowel)
 from thai_braille import BRAILLE_STANDARD, RULES_SOURCE, lex_braille, match_post_onset_vowel
+from thai_raw_rules import RAW_STANDARD, RAW_RULES_SOURCE, candidate_validation
 
 MAX_SEGMENTATION_CANDIDATES = 128
 
@@ -141,8 +142,9 @@ def _structural_error(units, source_indices=None):
         if actual != expected:
             return 'INCOMPLETE_PARSE'
     for unit in units:
-        if unit.get('status'):
-            return unit['status']
+        structural_status = unit.get('structural_status', unit.get('status'))
+        if structural_status:
+            return structural_status
         if 'literal' in unit:
             if unit['literal'] == '�':
                 return 'UNKNOWN_TOKEN'
@@ -202,8 +204,10 @@ def _compound_boundary(atoms, index, current):
             preceding['components'].append(_component('FINAL', final, [atoms[index]], 'CODA_CONTEXT'))
         units = [preceding, *list(_parse_run(atoms[suffix:], compare_boundaries=False))]
         error = _segmentation_error(units, source_indices)
-        alternatives.append(dict(role=role, syllables=units, valid=error is None,
-                                 validation_error=error))
+        validation = candidate_validation(units, error,
+                                          compatibility=atoms[index].get('compatibility_enabled', False),
+                                          raw_available=bool(atoms[index].get('patterns')))
+        alternatives.append(dict(role=role, syllables=units, **validation))
     valid = [candidate for candidate in alternatives if candidate['valid']]
     # Preserve an already selected compound-vowel state for display; other
     # explicit short/written vowels keep their available coda display.
@@ -211,11 +215,15 @@ def _compound_boundary(atoms, index, current):
     prefer_open = current['semantic'] and (
         current['vowel'] not in SHORT.values() or current['vowel_has_onset_alternative'])
     preferred = alternatives[int(prefer_open)]
-    selected = valid[0] if len(valid) == 1 else preferred
+    # มาตรฐานต้องมาก่อน compatibility ไม่ใช่ใช้คำที่พบใน lexicon มาตัดสิน mode
+    standard = [candidate for candidate in valid if candidate['standard_valid']]
+    eligible = standard or valid
+    selected = (preferred if preferred in eligible else eligible[0]) if eligible else preferred
     # An unresolved nucleus or lexicon-dependent path is not disproved.
     # Only a concrete vowel/final/tone violation can eliminate a competitor.
     hard_errors = {'INVALID_FINAL', 'INVALID_SYLLABLE', 'UNSUPPORTED_COMBINATION',
-                   'INVALID_VOWEL', 'INVALID_SOURCE_CELLS', 'REUSED_SOURCE_CELL', 'INCOMPLETE_PARSE'}
+                   'INVALID_VOWEL', 'INVALID_SOURCE_CELLS', 'REUSED_SOURCE_CELL', 'INCOMPLETE_PARSE',
+                   'NONSTANDARD_UA_CLOSED_FORM'}
     unique = len(valid) == 1 and all(candidate['validation_error'] in hard_errors
                                    for candidate in alternatives if not candidate['valid'])
     # Incomplete evidence is not a second valid parse. Keep it review-only,
@@ -394,7 +402,7 @@ def _parse_run(atoms, *, compare_boundaries=True):
             explicit_closed = orthographic_prefix in ('เ', 'แ') and final is not None
             if not (explicit_open or explicit_closed):
                 status = status or 'AMBIGUOUS_SEQUENCE'
-        yield dict(onset=onset, vowel=vowel, tone=tone, final=final,
+        unit = dict(onset=onset, vowel=vowel, tone=tone, final=final,
                    tone_anchor=len(onset)-1, prefix=orthographic_prefix,
                    indices=[i for a in atoms[start:index] for i in a.get('source_indices', [a['index']])],
                    boundary_rule=boundary_rule,
@@ -405,6 +413,16 @@ def _parse_run(atoms, *, compare_boundaries=True):
                    boundary_evidence=boundary_decision.get('evidence'),
                    components=sorted(components, key=lambda c: c['indices'][0] if c['indices']
                                      else atoms[onset_start]['index']+.5), status=status)
+        # ตรวจ raw ของพยางค์ที่ไม่มี boundary alternatives ด้วย เช่น legacy ส + 15 + น
+        validation = candidate_validation([unit], status,
+                                          compatibility=atoms[onset_start].get('compatibility_enabled', False),
+                                          raw_available=bool(atoms[onset_start].get('patterns')))
+        unit['structural_status'] = status
+        unit.update({key: value for key, value in validation.items()
+                     if key not in ('valid', 'validation_error')})
+        if not validation['valid']:
+            unit['status'] = status or validation['validation_error']
+        yield unit
 
 
 def _enumerate_run(atoms, original):
@@ -479,18 +497,22 @@ def _enumerate_run(atoms, original):
                 continue
             seen.add(signature)
             error = _structural_error(units, indices)
-            candidates.append(dict(syllables=deepcopy(units), valid=error is None,
-                                   validation_error=error))
+            validation = candidate_validation(units, error,
+                                              compatibility=atoms[0].get('compatibility_enabled', False),
+                                              raw_available=bool(atoms[0].get('patterns')))
+            candidates.append(dict(syllables=deepcopy(units), **validation))
         return dict(indices=indices, candidates=candidates, generation_complete=True)
     except OverflowError:
         return dict(indices=indices, candidates=[], generation_complete=False,
                     reason='segmentation_candidate_limit')
 
 
-def parse_tokens(tokens, *, atoms=None):
+def parse_tokens(tokens, *, atoms=None, compatibility=None):
     """Keep source tokens and return ordered syllables/literals without rendering."""
     raw = deepcopy(list(tokens))
     records = [dict(token=t) if isinstance(t, str) else t for t in raw]
+    # token adapter ไม่มี raw encoding จึงคง semantic compatibility ของเดิม
+    compatibility = atoms is None if compatibility is None else bool(compatibility)
     normalized, units, run, segmentation_runs = [], [], [], []
 
     def flush():
@@ -511,6 +533,7 @@ def parse_tokens(tokens, *, atoms=None):
         if record.get('consumed'):
             continue
         atom = deepcopy(atoms[index]) if atoms is not None else _atom(record, index)
+        atom['compatibility_enabled'] = compatibility
         line = record.get('line_id')
         line_break = record.get('line_break_before') or (line is not None and last_line is not None and line != last_line)
         if line is not None:
@@ -540,13 +563,14 @@ def parse_tokens(tokens, *, atoms=None):
             run.append(atom)
     flush()
     return dict(raw_tokens=raw, normalized_tokens=normalized, syllables=units,
-                segmentation_runs=segmentation_runs)
+                segmentation_runs=segmentation_runs, compatibility_enabled=compatibility,
+                parsing_precedence=['standard', 'compatibility', 'lexicon'])
 
 
-def parse_braille(cells):
+def parse_braille(cells, *, compatibility=False):
     """Raw patterns -> contextual semantic syllables, without producing Thai text."""
     raw, tokens, atoms = lex_braille(cells)
-    parsed = parse_tokens(tokens, atoms=atoms)
+    parsed = parse_tokens(tokens, atoms=atoms, compatibility=compatibility)
     semantic, trace = [], []
     states = {'ONSET': 'ONSET', 'VOWEL': 'POST_VOWEL', 'PRE_VOWEL': 'PRE_VOWEL',
               'TONE': 'TONE', 'FINAL': 'FINAL'}
@@ -574,5 +598,6 @@ def parse_braille(cells):
                                         for i in unit['indices']]
                 unit['source_cells'] = [raw[i]['cell_id'] if 0 <= i < len(raw) else None
                                         for i in unit['indices']]
-    return dict(parsed, standard=BRAILLE_STANDARD, rules_source=RULES_SOURCE, raw_cells=raw,
+    return dict(parsed, standard=RAW_STANDARD, rules_source=RAW_RULES_SOURCE, raw_cells=raw,
+                compatibility_standard=BRAILLE_STANDARD, compatibility_rules_source=RULES_SOURCE,
                 raw_patterns=[cell['pattern'] for cell in raw], semantic_tokens=semantic, parser_trace=trace)

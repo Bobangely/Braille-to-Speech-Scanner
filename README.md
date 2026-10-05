@@ -80,6 +80,39 @@
 `structural_syllables`; ทางเลือกทั้งหมดกับคะแนนอยู่ใน `segmentation_runs` และ
 `lexicon_ranking` ส่วน `syllables` แสดงทางที่เลือกสำหรับ renderer
 
+## มาตรฐาน raw Braille และ compatibility ภาษาไทย
+
+เส้นทาง scanner ใช้กฎ raw ของ Liblouis Thai Grade 1 เป็นหลัก โดยแยกจาก semantic
+compatibility ของโปรเจกต์ ลำดับเลือกคือ `standard > compatibility > lexicon`
+และเก็บ candidate ที่ถูกปฏิเสธไว้ใน `segmentation_runs` พร้อมเหตุผลของแต่ละ mode
+
+กฎ raw ที่ตรวจสอบและเพิ่มในรอบนี้อยู่ใน `thai_raw_rules.py`: `15` แทนรูปเขียน `ัว`
+จึงห้ามนำตัวสะกดจากพยางค์ถัดไปมาทำให้ `ัว` กลายเป็น `ว` โดยไม่มีหลักฐานจาก raw
+ส่วนอัวที่ลดรูปแล้วใช้ `ว` (`2456`) ยังคงอ่านผ่าน parser เดิม ไม่ห้ามตัวสะกด `ร`
+และไม่ใช้รายชื่อคำมาตัดสิน ดูแหล่งตารางที่ตรึง revision ไว้ใน `RAW_RULES_SOURCE`
+
+การเปลี่ยนนี้เป็น **scanner subset ที่ตรวจสอบกฎอัวแล้ว** ไม่ใช่การกลับตาราง Liblouis
+ทุกกฎแบบสมบูรณ์ กฎ segmentation/สระอื่นที่มีอยู่ยังคงเดิมเพื่อรักษา regression ของ P1
+
+ค่าเริ่มต้นไม่รับ raw รูปปิดที่อาศัย semantic compatibility เพียงอย่างเดียว หากเป็นข้อมูล
+legacy ที่ใช้ `15` เป็นสระอัวแบบปิด ให้เปิด mode อย่างชัดเจน:
+
+```python
+from thai_decoder import decode_thai_details
+
+result = decode_thai_details(cells, compatibility=True)
+```
+
+`decode_cells()` และ `decode_cells_verbose()` รับ keyword เดียวกัน ส่วน `compose_tokens()`
+เป็น semantic adapter จึงคง compatibility สำหรับ token เดิมที่ไม่มี raw encoding
+เมื่อทั้งสอง mode ให้คำตอบที่ต่างกันและยัง valid ระบบแสดง standard ก่อน แต่คืน
+`NEEDS_REVIEW`; lexicon จัดอันดับได้เฉพาะภายในระดับ mode เดียวกัน ไม่สามารถชุบ
+candidate ที่ผิดโครงสร้างหรือทำให้ compatibility แซง standard ได้
+
+debug มี `standard_valid`, `standard_error`, `compatibility_valid`,
+`compatibility_error`, `accepted_mode` และ `acceptance_reason` โดยไม่แก้ raw cells,
+patterns, source cell IDs หรือกฎ confirmation/Vision/Grid
+
 ## ตรวจสอบ
 
 ```powershell

@@ -59,7 +59,11 @@ class CapturedDetector:
 
 class LineConfirmationTests(unittest.TestCase):
     def setUp(self):
-        self.frame, self.cells, self.dots = captured_page(FIXTURE['lines'])
+        # Diagnostic เดิมอ่านผ่านแล้ว ใช้ ambiguity จริงของ P1 ทดสอบ partial gate ต่อ
+        self.partial_lines = deepcopy(FIXTURE['lines'])
+        self.partial_lines[-1] = dict(patterns=['1245', '1', '1345', '135', '1'],
+                                      gaps_before=[], text='กันอะ', status='uncertain')
+        self.frame, self.cells, self.dots = captured_page(self.partial_lines)
         self.source = CapturedDetector(self.cells, self.dots)
         self.scanner = RealTimeBrailleScanner(res_preset='480p')
         self.worker = AsyncBrailleWorker(self.source)
@@ -75,16 +79,16 @@ class LineConfirmationTests(unittest.TestCase):
         self.scanner._render_frame(self.frame, self.frame_id)
         return result
 
-    def test_diag_039_worker_reports_line_scope_without_losing_page_review(self):
+    def test_genuine_ambiguity_reports_line_scope_without_losing_page_review(self):
         result = self.feed()
         self.assertEqual(result['status'], 'uncertain')
         lines = result.get('line_results', [])
         self.assertEqual(len(lines), 4)
         self.assertEqual([line['status'] for line in lines], ['ok', 'ok', 'ok', 'uncertain'])
-        self.assertEqual([line['text'] for line in lines], [line['text'] for line in FIXTURE['lines']])
+        self.assertEqual([line['text'] for line in lines], [line['text'] for line in self.partial_lines])
         self.assertEqual(lines[-1]['reason'], 'AMBIGUOUS_SEGMENTATION')
 
-    def test_diag_039_confirms_three_lines_but_never_claims_the_reviewed_line(self):
+    def test_genuine_ambiguity_confirms_three_lines_but_never_claims_the_reviewed_line(self):
         for _ in range(6):
             result = self.feed()
         state = self.scanner._ui._state
@@ -95,7 +99,7 @@ class LineConfirmationTests(unittest.TestCase):
         for expected in ('กล่องของขวัญมีกบ', 'กบ กระโดดออกจากกล่องของขวัญ',
                          'แกะตกใจกระโดดกอด กา กับ ไก่'):
             self.assertIn(expected, state['text'])
-        self.assertNotIn('หัวเราะ', state['text'])
+        self.assertNotIn('กันอะ', state['text'])
         self.assertIn('รอตรวจสอบ', state['text'])
         self.assertFalse(self.scanner._confirmed_text)
         self.assertFalse(self.scanner.history)
@@ -120,7 +124,7 @@ class LineConfirmationTests(unittest.TestCase):
 
     def test_changed_line_does_not_publish_old_text_or_reset_unaffected_lines(self):
         self.confirm_partial()
-        lines = deepcopy(FIXTURE['lines'])
+        lines = deepcopy(self.partial_lines)
         lines[0]['patterns'][0] = '13'
         self.frame, self.source.cells, self.source.dots = captured_page(lines)
         self.feed()
@@ -231,7 +235,7 @@ class LineConfirmationTests(unittest.TestCase):
 
     def test_all_valid_lines_still_confirm_full_page_through_original_gate(self):
         self.confirm_partial()
-        lines = deepcopy(FIXTURE['lines'])
+        lines = deepcopy(self.partial_lines)
         lines[3] = dict(patterns=['125'], gaps_before=[])
         self.frame, self.source.cells, self.source.dots = captured_page(lines)
         for _ in range(5):
@@ -241,6 +245,18 @@ class LineConfirmationTests(unittest.TestCase):
         expected = 'กล่องของขวัญมีกบ\nกบ กระโดดออกจากกล่องของขวัญ\nแกะตกใจกระโดดกอด กา กับ ไก่\nห'
         self.assertEqual(self.scanner._confirmed_text, expected)
         self.assertEqual(self.scanner._ui._state['text'], expected)
+        self.assertFalse(self.scanner._ui._state['result_partial'])
+
+    def test_diag_039_standard_raw_now_confirms_all_four_lines(self):
+        # เก็บ fixture จาก Diagnostic เดิม ไม่แก้ raw ให้ตรงกับคำตอบที่ต้องการ
+        self.frame, self.source.cells, self.source.dots = captured_page(FIXTURE['lines'])
+        for _ in range(6):
+            result = self.feed()
+        expected = '\n'.join(line['text'] for line in FIXTURE['lines'])
+        self.assertEqual(result['status'], 'ok')
+        self.assertEqual([line['status'] for line in result['line_results']], ['ok'] * 4)
+        self.assertEqual(self.scanner._ui._state.get('confirmed_lines'), 4)
+        self.assertEqual(self.scanner._confirmed_text, expected)
         self.assertFalse(self.scanner._ui._state['result_partial'])
 
     def test_language_and_color_changes_clear_line_confirmation(self):

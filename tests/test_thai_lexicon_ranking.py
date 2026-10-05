@@ -36,7 +36,7 @@ class ThaiLexiconRankingTests(unittest.TestCase):
 
     def test_missing_lexical_evidence_preserves_unknown_valid_candidates(self):
         result = decode_thai_details(physical(['125', '15', '1235', '135', '1']),
-                                     lexicon={'กะ'})
+                                     compatibility=True, lexicon={'กะ'})
         self.assertEqual(result['text'], 'หัวเราะ')
         self.assertEqual(result['status'], 'NEEDS_REVIEW')
         self.assertEqual(result['lexicon_ranking'][0]['reason'], 'NO_LEXICAL_EVIDENCE')
@@ -119,7 +119,8 @@ class ThaiLexiconRankingTests(unittest.TestCase):
         self.addCleanup(default_lexicon.cache_clear)
         with patch.dict('sys.modules', {'pythainlp.corpus': None}):
             with self.assertLogs('thai_lexicon', 'WARNING'):
-                result = decode_thai_details(physical(['125', '15', '1235', '135', '1']))
+                result = decode_thai_details(physical(['125', '15', '1235', '135', '1']),
+                                             compatibility=True)
         self.assertEqual(result['text'], 'หัวเราะ')
         self.assertEqual(result['status'], 'NEEDS_REVIEW')
         self.assertFalse(result['lexicon_info']['available'])
@@ -128,7 +129,8 @@ class ThaiLexiconRankingTests(unittest.TestCase):
         default_lexicon.cache_clear()
         self.addCleanup(default_lexicon.cache_clear)
         with patch('urllib.request.urlopen', side_effect=AssertionError('runtime network access')):
-            result = decode_thai_details(physical(['125', '15', '1235', '135', '1']))
+            result = decode_thai_details(physical(['125', '15', '1235', '135', '1']),
+                                         compatibility=True)
         self.assertTrue(result['lexicon_info']['available'])
         self.assertEqual(result['text'], 'หัวเราะ')
         self.assertEqual(result['status'], 'NEEDS_REVIEW')
