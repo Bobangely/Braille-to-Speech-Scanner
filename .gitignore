@@ -28,3 +28,6 @@ datasets/
 runs/
 yolov8n.pt
 scratch/
+
+# เก็บไฟล์ export ชุดข้อมูลเฉพาะเครื่องไว้ แต่ไม่รวมในการ merge
+/data.yaml

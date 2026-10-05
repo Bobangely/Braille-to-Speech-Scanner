@@ -9,7 +9,8 @@ import time
 import cv2
 import numpy as np
 
-from frame_motion import cell_motion_mask, estimate_motion, full_size_motion, tracking_gray
+from frame_motion import cell_motion_mask, estimate_motion, full_size_motion, tracking_gray, tracking_width
+from cell_geometry import grid_bbox, validate_cell_grids
 
 
 def transform_grid(cell, matrix, shape):
@@ -25,8 +26,7 @@ def _geometry(cell, slots, quad, shape):
     axis = slots[3]-slots[0]
     spacing = float(np.linalg.norm(axis))
     scale = spacing / cell['dot_spacing']
-    bbox = (max(0, int(np.floor(quad[:, 0].min()))), max(0, int(np.floor(quad[:, 1].min()))),
-            min(shape[1], int(np.ceil(quad[:, 0].max()))), min(shape[0], int(np.ceil(quad[:, 1].max()))))
+    bbox = grid_bbox(slots, shape)
     return dict(cell, center=tuple(center), x=float(center[0]), y=float(center[1]),
         reading_x=float(np.dot(center, axis)/spacing), dot_spacing=spacing,
         cell_pitch=cell['cell_pitch']*scale, crop_quad=quad.tolist(),
@@ -142,13 +142,20 @@ class CellGridTracker:
         return evidence, assigned
 
     def update(self, measured, dots, image, context, color_mask=None):
+        if any('geometry_status' not in cell for cell in measured):
+            measured = validate_cell_grids(measured, image.shape)
+        if any(cell.get('geometry_status') == 'invalid' for cell in measured):
+            self.reset()
+            self.current_dots = dots
+            return measured, 'invalid'
         now = time.monotonic()
         context = (context, image.shape)
         if context != self.context or now-self.updated_at > .75 or not dots:
             self.reset()
         if not dots:
             return [], 'empty'
-        gray = tracking_gray(image)
+        width = self.reference.shape[1] if self.reference is not None else tracking_width(measured, image.shape)
+        gray = tracking_gray(image, width)
         motion = (estimate_motion(self.reference, gray, self.mask)
                   if self.reference is not None else None)
         if motion is None:
@@ -208,8 +215,17 @@ class CellGridTracker:
             pattern = frozenset(int(np.linalg.norm(slots-dots[i]['center'], axis=1).argmin())+1
                                 for i in indices)
             output.append(dict(cell, source_dot_ids=indices, dots=pattern))
-        self.cells, self.reference = chosen, gray
+        # Motion/blending can invalidate a previously valid layout. Validate
+        # current ownership and geometry again before color reading/decoding.
+        output = validate_cell_grids(output, image.shape, repair=False)
+        if any(cell['geometry_status'] == 'invalid' for cell in output):
+            self.reset()
+            self.current_dots = dots
+            return output, 'invalid'
+        next_width = tracking_width(chosen, image.shape, gray.shape[1])
+        self.cells = chosen
+        self.reference = gray if next_width == gray.shape[1] else tracking_gray(image, next_width)
         self.current_dots = dots
-        self.mask = cell_motion_mask(chosen, image.shape, gray.shape)
+        self.mask = cell_motion_mask(chosen, image.shape, self.reference.shape)
         self.context, self.updated_at = context, now
         return output, status

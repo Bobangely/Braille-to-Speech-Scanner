@@ -35,6 +35,23 @@ def mixed_page(lines, marked, pitch=95):
 
 
 class ColoredOnlyTests(unittest.TestCase):
+    def test_four_lines_with_smaller_last_line_keep_six_slots_from_color_pixels(self):
+        image = np.full((900, 900, 3), 245, np.uint8)
+        patterns = ('1245', '16', '135', '123456')
+        for top, spacing in ((60, 40), (200, 40), (340, 40), (650, 24)):
+            for cell_id, pattern in enumerate(patterns):
+                for dot in map(int, pattern):
+                    x = round(60+cell_id*2.375*spacing+(dot > 3)*spacing)
+                    y = top+((dot-1) % 3)*spacing
+                    cv2.circle(image, (x, y), 6, (255, 0, 0), -1)
+        cells, debug = ColoredCellStream().detect(image)
+        self.assertEqual(debug['line_count'], 4)
+        self.assertEqual([c['dots'] for c in cells],
+                         [frozenset(map(int, pattern)) for _ in range(4) for pattern in patterns])
+        self.assertEqual([c['line_id'] for c in cells], [i for i in range(4) for _ in patterns])
+        self.assertTrue(all(set(cell['grid']['slots']) == set(range(1, 7)) for cell in cells))
+        self.assertEqual(sum(len(c['source_dot_ids']) for c in cells), debug['colored_dots'])
+
     def test_many_unpainted_cells_do_not_reach_decoding(self):
         lines = [['123456']*12, ['1245', '6', '13456', '16'], ['123456']*10]
         image = mixed_page(lines, {(1, i) for i in range(4)})

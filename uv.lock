@@ -29,6 +29,7 @@ dependencies = [
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "pillow" },
+    { name = "pythainlp" },
     { name = "pyttsx3" },
     { name = "pyyaml" },
     { name = "ultralytics" },
@@ -40,6 +41,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.5.2" },
     { name = "opencv-python", specifier = ">=5.0.0.93" },
     { name = "pillow", specifier = ">=12.3.0" },
+    { name = "pythainlp", specifier = "==5.3.3" },
     { name = "pyttsx3", specifier = ">=2.99" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ultralytics", specifier = ">=8.4,<9" },
@@ -4058,6 +4060,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pythainlp"
+version = "5.3.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8b/38/df3a9f7042158269a758b975273fd06c7f2b1fb4a1153cabc78506e889f0/pythainlp-5.3.3.tar.gz", hash = "sha256:c7e5d43238ac882479dd3f303e76838255ba7358da77553ed2a1296395ffe7b5", size = 19306211, upload-time = "2026-03-26T11:53:28.159Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/c4/a24d9e3094487d2961a1c16f8ce659b45f4b2446b79c9de376035e846e7f/pythainlp-5.3.3-py3-none-any.whl", hash = "sha256:b223291af6dba4882702272812e5927fc2eb2848cd657c8c2a2a13ca50ed6161", size = 19849553, upload-time = "2026-03-26T11:53:25.404Z" },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -4283,6 +4297,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f6/cc/6253133b5bb138fc3306cebfbda2c520f545d36b5be2c7255cc528bb45d6/typing_extensions-4.16.0.tar.gz", hash = "sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5", size = 113555, upload-time = "2026-07-02T08:40:05.92Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl", hash = "sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8", size = 45571, upload-time = "2026-07-02T08:40:04.659Z" },
+]
+
+[[package]]
+name = "tzdata"
+version = "2026.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/68/f1b440335057bfce71b6e50a9d09445aa2ecbd08359a337976627b8409e7/tzdata-2026.5.tar.gz", hash = "sha256:8cc73c0a0bfca7dbfa59235d60b2eff82231dee33f53d206db1acd9173cfc0a7", size = 200404, upload-time = "2026-10-03T09:23:14.143Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/21/1e5995a1c920cce14e4bffae20c665ec10e7ed03ab25e006cd741092b718/tzdata-2026.5-py2.py3-none-any.whl", hash = "sha256:b683bd1b6659ddcd810ff02ad09ba821d4bf1065072805063eb35c49617905ac", size = 347996, upload-time = "2026-10-03T09:23:12.535Z" },
 ]
 
 [[package]]

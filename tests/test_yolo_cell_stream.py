@@ -45,6 +45,58 @@ def test_crop_predictor(crops):
 
 
 class CellStreamTests(unittest.TestCase):
+    def test_each_of_one_to_five_lines_has_its_own_complete_grid(self):
+        patterns = ('1245', '16', '135', '123456')
+        line_geometry = [(60, 40), (200, 40), (340, 40), (650, 24), (1000, 32)]
+
+        def make_dots(geometry):
+            dots, provenance = [], []
+            for line_id, (top, spacing) in enumerate(geometry):
+                for cell_id, pattern in enumerate(patterns):
+                    for dot in map(int, pattern):
+                        x = 60 + cell_id*2.375*spacing + (dot > 3)*spacing
+                        y = top + ((dot-1) % 3)*spacing
+                        dots.append(dict(center=(x, y), area=64,
+                                         bbox=(x-4, y-4, x+4, y+4)))
+                        provenance.append((line_id, cell_id))
+            return dots, provenance
+
+        shape = (1300, 900, 3)
+        for count in range(1, 6):
+            with self.subTest(lines=count):
+                dots, origin = make_dots(line_geometry[:count])
+                cells = plan_cells(dots, shape)
+                self.assertEqual(len(cells), count*len(patterns))
+                self.assertEqual([c['line_id'] for c in cells],
+                                 [i for i in range(count) for _ in patterns])
+                for index, cell in enumerate(cells):
+                    line_id, cell_id = divmod(index, len(patterns))
+                    self.assertEqual(set(cell['grid']['slots']), set(range(1, 7)))
+                    self.assertEqual(cell['dots'], frozenset(map(int, patterns[cell_id])))
+                    self.assertEqual({origin[i] for i in cell['source_dot_ids']},
+                                     {(line_id, cell_id)})
+                    self.assertAlmostEqual(cell['dot_spacing'], line_geometry[line_id][1], delta=1)
+
+    def test_missing_dot_is_inactive_slot_on_unevenly_spaced_lines(self):
+        geometry = [(60, 40), (205, 40), (380, 40), (690, 24)]
+        dots = []
+        for line_id, (top, spacing) in enumerate(geometry):
+            for cell_id, pattern in enumerate(('1', '1245', '6')):
+                for dot in map(int, pattern):
+                    x = 60 + cell_id*2.375*spacing + (dot > 3)*spacing
+                    y = top + ((dot-1) % 3)*spacing
+                    dots.append(dict(center=(x, y), area=64,
+                                     bbox=(x-4, y-4, x+4, y+4)))
+        cells = plan_cells(dots, (950, 900, 3))
+        self.assertEqual(len(cells), 12)
+        for line_id in range(4):
+            cell = cells[line_id*3]
+            self.assertEqual(cell['line_id'], line_id)
+            self.assertEqual(cell['dots'], frozenset({1}))
+            self.assertEqual(set(cell['grid']['slots']), set(range(1, 7)))
+            self.assertAlmostEqual(cell['grid']['slots'][6][1]-cell['grid']['slots'][4][1],
+                                   2*geometry[line_id][1], delta=2)
+
     def test_sparse_line_does_not_borrow_dots_from_next_line(self):
         image, dots, _ = page([['23', '23'], ['13456', '13456']], line_pitch=128)
         cells = list(CellStream(test_crop_predictor).iter_cells(image, dots))

@@ -28,6 +28,8 @@ THAI_TONE_MARKS = {dots(k): v for k, v in {
 }.items()}
 THAI_SPECIAL_MARKS = {dots(k): v for k, v in {
     '356': '์', '3': '็', '2': 'ๆ', '5': 'ํ',
+    # Standalone hyphen; complete adjacent 36-prefix consonants still win.
+    '36': '-',
 }.items()}
 THAI_MULTI_CELL = {}
 for prefix, mapping in [(PREFIX_6, THAI_CONSONANTS_PREFIX6),
@@ -44,6 +46,15 @@ THAI_READING_MULTI_CELL = dict(THAI_MULTI_CELL)
 THAI_READING_MULTI_CELL.update({(dots('456'), dots(body)): char for body, char in {
     '2': ',', '23': ';', '25': ':', '256': '.', '235': '!', '236': '?',
 }.items()})
+
+# Display output and spoken labels share one symbol definition. Extend the
+# existing reading table so every consumer sees the same multi-cell mapping.
+THAI_MULTI_CELL_SYMBOLS = {
+    (dots('5'), dots('126')): dict(
+        id='open_parenthesis', output='(', tts='วงเล็บเปิด', type='punctuation'),
+}
+THAI_READING_MULTI_CELL.update({sequence: symbol['output']
+                               for sequence, symbol in THAI_MULTI_CELL_SYMBOLS.items()})
 
 LEADING_VOWELS = {'เ', 'แ', 'โ', 'ไ', 'ใ'}
 COMPOUND_VOWELS = {'เ◌า', 'เ◌อ', 'เ◌ีย', 'เ◌ือ', '◌ัว'}

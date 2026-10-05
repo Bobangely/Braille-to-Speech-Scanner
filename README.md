@@ -2,6 +2,8 @@
 
 รีวิวก่อน merge: [บั๊กที่แก้ การเก็บโค้ด ผลตรวจ และข้อจำกัด](docs/PRE_MERGE_REVIEW_TH.md)
 
+หน้าจอกล้องใหม่: [Preview, ปุ่มควบคุม, การ resize และผลทดสอบ UI](docs/SCANNER_UI_TH.md) — แสดงชื่อเซลล์ จุด 1–6 และ pattern บน Preview โดยตรง กด `H` เพื่อเปิด/ปิดข้อมูลตรวจสอบเพิ่มเติม ปุ่มลัดเดิมยังใช้ได้ครบ
+
 เส้นทางกล้องและภาพเดี่ยวอ่าน **เฉพาะจุดที่แต้มสี** โดยค่าเริ่มต้นเป็นสีน้ำเงิน: ตรวจสี → กรอง noise → จัดกริดเซลล์ → ตำแหน่งจุด 1–6 → รวม marker → ข้อความไทย/อังกฤษ
 
 จุดนูนที่ไม่มีสีไม่ถูกนำมาสร้างเซลล์หรือ decode ค่าเริ่มต้น `--roi off` ไม่โหลด/รัน YOLO เปิด `--roi yolo` เพื่อทดลองใช้โมเดลตรวจจุดเสนอกรอบบริเวณข้อความก่อนอ่านสี ส่วนเส้นทาง YOLO เดิมยังเก็บไว้สำหรับประเมินและฝึกโมเดล โดยเรียก `YOLOBrailleDetector(dot_color=None)` อย่างชัดเจน ไม่ใช่ค่าเริ่มต้นของกล้อง
@@ -58,6 +60,58 @@
 ```
 
 โมเดลปัจจุบันตรวจ `braille_dot` จึงใช้กรอบรวมจุดพร้อมขอบเผื่อ ไม่ใช่โมเดลตรวจกรอบบรรทัด/ตัวอักษรโดยตรง ติดตาม ROI ระหว่างรอบ YOLO และค้นหาใหม่ทุกประมาณ 0.35 วินาทีหรือเมื่อ tracking หลุด ภายใน ROI อ่านเฉพาะจุดสีที่เลือก หาก YOLO หา ROI ไม่พบจะรอเฟรมใหม่ โหมดนี้ยังต้องเทียบกับ `--roi off` บนหนังสือจริง
+
+## Lexicon ช่วยจัดอันดับภาษาไทย
+
+ติดตั้ง dependencies จาก `requirements.txt` หรือ `uv sync --locked` เพื่อใช้ชุดคำทั่วไป
+ที่มากับ `pythainlp==5.3.3` ระบบโหลดชุดคำครั้งเดียวและไม่ดาวน์โหลดข้อมูลระหว่างอ่านกล้อง
+หากชุดคำใช้ไม่ได้ จะคงผลจาก structural parser พร้อมบันทึกคำเตือน
+
+- ตรวจโครงสร้างและ source cells ของทุก segmentation ก่อนให้คะแนน
+- จับคำที่ขอบพยางค์ภายในช่วงเดียวกัน ไม่จับข้ามช่องว่างหรือบรรทัด
+- คำที่ไม่มีในชุดคำยังเป็น candidate ได้ รวมถึงชื่อเฉพาะและคำใหม่
+- อันดับสูงกว่าเป็นเพียงหลักฐานสำหรับ display ไม่ได้ทำให้คู่แข่งผิดโดยอัตโนมัติ
+- หากมีหลายทางที่ยังเป็นไปได้ หรือค้น candidate ไม่ครบภายในขอบเขต 128 ทาง
+  จะคง `NEEDS_REVIEW` และไม่ยืนยันข้อความนั้น
+
+`decode_thai_details(cells, lexicon=ชุดคำ)` ใช้ชุดคำของผู้เรียกได้;
+ส่ง `lexicon=set()` เพื่อปิดหลักฐาน lexicon โดยคง parser เดิม
+ข้อมูล debug เดิมอยู่ใน `raw_patterns`, `parser_trace`, `semantic_tokens` และ
+`structural_syllables`; ทางเลือกทั้งหมดกับคะแนนอยู่ใน `segmentation_runs` และ
+`lexicon_ranking` ส่วน `syllables` แสดงทางที่เลือกสำหรับ renderer
+
+## มาตรฐาน raw Braille และ compatibility ภาษาไทย
+
+เส้นทาง scanner ใช้กฎ raw ของ Liblouis Thai Grade 1 เป็นหลัก โดยแยกจาก semantic
+compatibility ของโปรเจกต์ ลำดับเลือกคือ `standard > compatibility > lexicon`
+และเก็บ candidate ที่ถูกปฏิเสธไว้ใน `segmentation_runs` พร้อมเหตุผลของแต่ละ mode
+
+กฎ raw ที่ตรวจสอบและเพิ่มในรอบนี้อยู่ใน `thai_raw_rules.py`: `15` แทนรูปเขียน `ัว`
+จึงห้ามนำตัวสะกดจากพยางค์ถัดไปมาทำให้ `ัว` กลายเป็น `ว` โดยไม่มีหลักฐานจาก raw
+ส่วนอัวที่ลดรูปแล้วใช้ `ว` (`2456`) ยังคงอ่านผ่าน parser เดิม ไม่ห้ามตัวสะกด `ร`
+และไม่ใช้รายชื่อคำมาตัดสิน ดูแหล่งตารางที่ตรึง revision ไว้ใน `RAW_RULES_SOURCE`
+
+การเปลี่ยนนี้เป็น **scanner subset ที่ตรวจสอบกฎอัวแล้ว** ไม่ใช่การกลับตาราง Liblouis
+ทุกกฎแบบสมบูรณ์ กฎ segmentation/สระอื่นที่มีอยู่ยังคงเดิมเพื่อรักษา regression ของ P1
+
+ค่าเริ่มต้นไม่รับ raw รูปปิดที่อาศัย semantic compatibility เพียงอย่างเดียว หากเป็นข้อมูล
+legacy ที่ใช้ `15` เป็นสระอัวแบบปิด ให้เปิด mode อย่างชัดเจน:
+
+```python
+from thai_decoder import decode_thai_details
+
+result = decode_thai_details(cells, compatibility=True)
+```
+
+`decode_cells()` และ `decode_cells_verbose()` รับ keyword เดียวกัน ส่วน `compose_tokens()`
+เป็น semantic adapter จึงคง compatibility สำหรับ token เดิมที่ไม่มี raw encoding
+เมื่อทั้งสอง mode ให้คำตอบที่ต่างกันและยัง valid ระบบแสดง standard ก่อน แต่คืน
+`NEEDS_REVIEW`; lexicon จัดอันดับได้เฉพาะภายในระดับ mode เดียวกัน ไม่สามารถชุบ
+candidate ที่ผิดโครงสร้างหรือทำให้ compatibility แซง standard ได้
+
+debug มี `standard_valid`, `standard_error`, `compatibility_valid`,
+`compatibility_error`, `accepted_mode` และ `acceptance_reason` โดยไม่แก้ raw cells,
+patterns, source cell IDs หรือกฎ confirmation/Vision/Grid
 
 ## ตรวจสอบ
 

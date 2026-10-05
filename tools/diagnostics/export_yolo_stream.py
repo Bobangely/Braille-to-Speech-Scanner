@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from decoder import decode_cells, decode_cells_verbose
+from thai_decoder import decode_thai_details
 from yolo_cell_stream import crop_cell
 
 
@@ -70,11 +71,14 @@ def export_stream(image, cells, debug_info, output_dir, lang='thai', source=None
                   camera_roi_file='camera_roi.png' if captured_image is not None else None,
                   input_sha256=hashlib.sha256(image.tobytes()).hexdigest(),
                   text_trace=text_trace(decode_cells(cells, lang)),
-                  warning_counts=dict(Counter(token['warning'] for token in tokens
-                                              if token.get('warning') and not token.get('consumed'))),
+                  warning_counts=dict(Counter(token[key] for token in tokens
+                                              for key in ('warning', 'composition_warning')
+                                              if token.get(key) and not token.get('consumed'))),
                   metadata=metadata or {},
                   diagnostics={key: value for key, value in debug_info.items() if key not in ('dots', 'mask')},
                   cells=records)
+    if lang.lower() in ('thai', 'th'):
+        report['language_trace'] = decode_thai_details(cells)
     if detector is not None:
         font = detector._get_font(size=18, bold=True)
         color = debug_info.get('color', getattr(detector, 'dot_color', None))

@@ -10,6 +10,7 @@ import math
 
 import cv2
 import numpy as np
+from cell_geometry import grid_error, slot_points, validate_cell_grids
 
 
 class UnreadableBrailleFrame(ValueError):
@@ -27,7 +28,7 @@ def _clusters(values, tolerance):
     return groups
 
 
-def _spacing(points, diameters=None):
+def _spacing(points, diameters=None, *, nearest_out=None):
     if len(points) < 2:
         return None
     nearest = []
@@ -40,6 +41,8 @@ def _spacing(points, diameters=None):
             within_dot = .8*np.minimum(diameters[start:start+128, None], diameters[None, :])
             distances[distances < within_dot] = np.inf
         nearest.extend(distances.min(axis=1))
+    if nearest_out is not None:
+        nearest_out.extend(nearest)
     finite = np.asarray(nearest)[np.isfinite(nearest)]
     return float(np.percentile(finite, 25)) if len(finite) else None
 
@@ -157,6 +160,25 @@ def _band_angle(points, spacing, angle):
     return angle
 
 
+def _column_groups(columns, spacing):
+    """Prefer the measured dot pitch when adjacent candidate pairs overlap."""
+    groups, index = [], 0
+    while index < len(columns):
+        if index+1 < len(columns) and columns[index+1]-columns[index] <= 1.22*spacing:
+            gap = columns[index+1]-columns[index]
+            if (index+2 < len(columns) and columns[index+2]-columns[index+1] <= 1.22*spacing
+                    and abs(columns[index+2]-columns[index+1]-spacing) < abs(gap-spacing)):
+                groups.append([index])
+                index += 1
+                continue
+            groups.append([index, index+1])
+            index += 2
+        else:
+            groups.append([index])
+            index += 1
+    return groups
+
+
 def plan_cells(dots, image_shape, *, _basis=None):
     """Split rows into lines of at most three rows BEFORE assigning any cell.
 
@@ -167,7 +189,8 @@ def plan_cells(dots, image_shape, *, _basis=None):
         return []
     points = np.asarray([d['center'] for d in dots], dtype=float)
     diameters = np.sqrt([max(0, dot.get('area', 0)) for dot in dots])
-    spacing = _spacing(points, diameters) if _basis is None else _basis[0]
+    nearest = []
+    spacing = _spacing(points, diameters, nearest_out=nearest) if _basis is None else _basis[0]
     if spacing is None or spacing < 2:
         return []  # an isolated dot has no observable 2x3 reference grid
     angle = _angle(points, spacing) if _basis is None else _basis[1]
@@ -181,26 +204,32 @@ def plan_cells(dots, image_shape, *, _basis=None):
     breaks = np.flatnonzero(np.diff(rectified[order, 1]) > 3*spacing)+1
     if len(breaks) and _basis is None:
         cells, line_offset = [], 0
+        nearest = np.asarray(nearest)
         for band in np.split(order, breaks):
-            # Retain the shared pitch and orientation unless a local angle
-            # gives a complete, better-fitting three-row reference grid.
+            # A separated text band has its own measured dot pitch. Reusing
+            # the page-wide pitch can split a smaller line into several lines
+            # before the cell grid is ever estimated.
             band_points = points[band]
-            local_angle = _angle(band_points, spacing)
+            band_nearest = nearest[band]
+            band_nearest = band_nearest[np.isfinite(band_nearest)]
+            band_spacing = (float(np.percentile(band_nearest, 25))
+                            if len(band) > 1 and len(band_nearest) else spacing)
+            local_angle = _angle(band_points, band_spacing)
             def fit(candidate):
                 values = band_points @ np.array([-math.sin(candidate), math.cos(candidate)])
-                groups = _row_clusters(values, spacing)
+                groups = _row_clusters(values, band_spacing)
                 if len(groups) != 3:
                     return float('inf')
                 centers = np.array([np.median(values[g]) for g in groups])
                 dy = (centers[-1]-centers[0])/2
-                if not .65*spacing <= dy <= 1.6*spacing or np.max(np.abs(np.diff(centers)/dy-1)) > .25:
+                if not .65*band_spacing <= dy <= 1.6*band_spacing or np.max(np.abs(np.diff(centers)/dy-1)) > .25:
                     return float('inf')
                 return sum(np.sum((values[g]-c)**2) for g,c in zip(groups, centers))/len(values)
             best_angle = angle
             if not np.isfinite(fit(angle)):
-                candidates = [angle, local_angle, _band_angle(band_points, spacing, angle)]
+                candidates = [angle, local_angle, _band_angle(band_points, band_spacing, angle)]
                 best_angle = min(candidates, key=fit)
-            local = plan_cells([dots[i] for i in band], image_shape, _basis=(spacing, best_angle))
+            local = plan_cells([dots[i] for i in band], image_shape, _basis=(band_spacing, best_angle))
             for cell in local:
                 cell['source_dot_ids'] = [int(band[i]) for i in cell['source_dot_ids']]
                 cell['line_id'] += line_offset
@@ -235,12 +264,14 @@ def plan_cells(dots, image_shape, *, _basis=None):
         local_x = rectified[indices, 0]
         column_groups = _clusters(local_x, .45*spacing)
         columns = np.asarray([np.median(local_x[group]) for group in column_groups])
-        groups = []
-        for i, x in enumerate(columns):
-            if not groups or len(groups[-1]) == 2 or x-columns[groups[-1][-1]] > 1.22*spacing:
-                groups.append([])
-            groups[-1].append(i)
+        groups = _column_groups(columns, spacing)
         pair_widths = [columns[g[1]]-columns[g[0]] for g in groups if len(g) == 2]
+        # Nearest-dot distance can measure vertical pitch, not column pitch.
+        # Fit the horizontal scale from this line's observed complete pairs
+        # before deciding whether a sparse cell's two columns belong together.
+        if len(pair_widths) >= 2:
+            groups = _column_groups(columns, float(np.median(pair_widths)))
+            pair_widths = [columns[g[1]]-columns[g[0]] for g in groups if len(g) == 2]
         dx = float(np.median(pair_widths)) if pair_widths else spacing
         anchors = [float(columns[g[0]]) for g in groups if len(g) == 2]
         pitch = _cell_pitch(columns, anchors, dx)
@@ -267,6 +298,17 @@ def plan_cells(dots, image_shape, *, _basis=None):
                 else:
                     is_right, column_ambiguous = False, True
                 left, right = (x-dx, x) if is_right else (x, x+dx)
+                # A sparse column's opposite slots must fit between neighbouring
+                # cells. Only switch phase when the other phase uniquely fits.
+                low = ((columns[groups[line_cell_index-1][-1]]+x)/2
+                       if line_cell_index else -np.inf)
+                high = ((x+columns[groups[line_cell_index+1][0]])/2
+                        if line_cell_index+1 < len(groups) else np.inf)
+                fits = [low <= a and b <= high for a, b in ((x, x+dx), (x-dx, x))]
+                if sum(fits) == 1:
+                    is_right = fits[1]
+                    left, right = (x-dx, x) if is_right else (x, x+dx)
+                    column_ambiguous = False
             source_ids = [indices[i] for column in group for i in column_groups[column]]
             slot_uv = np.array([(left if d < 3 else right, expected_rows[d % 3]) for d in range(6)])
             source_slots = slot_uv @ rotation.T
@@ -299,7 +341,7 @@ def plan_cells(dots, image_shape, *, _basis=None):
                 grid=dict(expected_cols=[float(source_slots[1, 0]), float(source_slots[4, 0])],
                           expected_rows=[float(np.mean(source_slots[[r, r+3], 1])) for r in range(3)],
                           slots={d+1: tuple(p) for d, p in enumerate(source_slots)}, bbox=bbox)))
-    return cells
+    return validate_cell_grids(cells, image_shape)
 
 
 def crop_cell(image, cell, canvas_size=320):
@@ -328,7 +370,13 @@ def crop_cell(image, cell, canvas_size=320):
 
 def read_cell(cell, crop_dots, inverse):
     """Map isolated dot evidence through its transform to this cell's six slots."""
-    slots = np.asarray(list(cell['grid']['slots'].values()))
+    error = cell.get('geometry_error') or grid_error(cell)
+    if error:
+        return dict(cell, overview_dots=cell['dots'], dots=frozenset(), read_pattern=frozenset(),
+                    crop_status='invalid_grid', geometry_status='invalid', geometry_error=error,
+                    crop_diagnostics=dict(detections=0, matched_slots=0, outside_grid=0, duplicate_slots=0),
+                    read_dots=[], crop_disagreement=bool(cell['dots']))
+    slots = slot_points(cell)
     accepted = {}
     detections = outside_grid = duplicate_slots = 0
     for dot in crop_dots:
@@ -367,12 +415,19 @@ class CellStream:
             raise UnreadableBrailleFrame(f'{len(planned)} cell candidates exceed limit {self.max_cells}; narrow the camera ROI')
         iterator = iter(planned)
         while batch := list(islice(iterator, self.batch_size)):
-            crops = [crop_cell(image, cell) for cell in batch]
-            predictions = list(self.predict_crops([patch for patch, _ in crops]))
-            if len(predictions) != len(batch):
+            valid = [grid_error(cell, image.shape) is None for cell in batch]
+            readable = [cell for cell, ok in zip(batch, valid) if ok]
+            crops = [crop_cell(image, cell) for cell in readable]
+            predictions = list(self.predict_crops([patch for patch, _ in crops])) if crops else []
+            if len(predictions) != len(readable):
                 raise RuntimeError('YOLO crop result count does not match submitted cells')
-            for cell, dots, (_, inverse) in zip(batch, predictions, crops):
-                yield read_cell(cell, dots, inverse)
+            reads = iter(zip(predictions, crops))
+            for cell, ok in zip(batch, valid):
+                if not ok:
+                    yield read_cell(cell, [], np.eye(3))
+                else:
+                    dots, (_, inverse) = next(reads)
+                    yield read_cell(cell, dots, inverse)
 
 
 def pair_markers(cells, lang='thai'):

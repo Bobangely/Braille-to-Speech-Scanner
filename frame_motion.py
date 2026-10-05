@@ -4,6 +4,27 @@ import cv2
 import numpy as np
 
 
+def tracking_width(cells, image_shape, previous_width=640):
+    """Keep small Braille features visible within a bounded optical-flow budget.
+
+    Eight pixels is the feature detector's existing minimum separation.  Use
+    measured cell spacing, not camera distance, and hysteresis to avoid changing
+    working resolution when a measurement fluctuates near a level boundary.
+    """
+    spacings = [float(c['dot_spacing']) for c in cells
+                if np.isfinite(c.get('dot_spacing', 0)) and c.get('dot_spacing', 0) > 0]
+    if not spacings:
+        return min(image_shape[1], 640)
+    width = image_shape[1]
+    spacing = float(np.median(spacings))
+    levels = sorted({min(width, level) for level in (640, 960, 1280)})
+    current = min(levels, key=lambda level: abs(level-previous_width))
+    if spacing*current/width < 8:
+        return next((level for level in levels if spacing*level/width >= 8), levels[-1])
+    # Do not downshift until the lower resolution has spare feature separation.
+    return next((level for level in levels if level < current and spacing*level/width >= 10), current)
+
+
 def tracking_gray(image, max_width=640):
     height, width = image.shape[:2]
     scale = min(1.0, max_width / width)

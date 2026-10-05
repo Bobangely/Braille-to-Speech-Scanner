@@ -5,7 +5,8 @@ import time
 import cv2
 import numpy as np
 
-from frame_motion import estimate_motion, full_size_motion, tracking_gray
+from frame_motion import estimate_motion, full_size_motion, tracking_gray, tracking_width
+from cell_geometry import grid_bbox
 
 
 class GridStabilizer:
@@ -33,7 +34,8 @@ class GridStabilizer:
         now = time.monotonic()
         if context != self._context or now - self._updated_at > .75:
             self.reset()
-        gray = tracking_gray(image)
+        width = self._reference.shape[1] if self._reference is not None else tracking_width(cells, image.shape)
+        gray = tracking_gray(image, width)
         motion = estimate_motion(self._reference, gray) if self._reference is not None else None
         previous = self._cells
         if motion is None:
@@ -67,9 +69,7 @@ class GridStabilizer:
                 old_quad = cv2.perspectiveTransform(np.float32([old['crop_quad']]), motion)[0]
                 quad = .75 * old_quad + .25 * np.array(cell['crop_quad'])
                 center = slots.mean(axis=0)
-                h, w = image.shape[:2]
-                bbox = (max(0, int(np.floor(quad[:, 0].min()))), max(0, int(np.floor(quad[:, 1].min()))),
-                        min(w, int(np.ceil(quad[:, 0].max()))), min(h, int(np.ceil(quad[:, 1].max()))))
+                bbox = grid_bbox(slots, image.shape)
                 result.update(center=tuple(center), x=float(center[0]), y=float(center[1]),
                               crop_quad=quad.tolist(), track_id=old['track_id'],
                               grid=dict(cell['grid'], bbox=bbox,
@@ -82,6 +82,8 @@ class GridStabilizer:
             stable.append(result)
         # Preserve current spatial order and evidence. Track IDs, not list
         # positions, identify surviving cells after another cell disappears.
-        self._cells, self._reference = stable, gray
+        next_width = tracking_width(stable, image.shape, gray.shape[1])
+        self._cells = stable
+        self._reference = gray if next_width == gray.shape[1] else tracking_gray(image, next_width)
         self._context, self._updated_at = context, now
         return stable
