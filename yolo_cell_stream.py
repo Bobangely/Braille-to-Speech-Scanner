@@ -28,18 +28,24 @@ def _clusters(values, tolerance):
     return groups
 
 
-def _spacing(points, diameters=None, *, nearest_out=None):
+def _spacing(points, diameters=None, *, nearest_out=None, axis_angle=None):
     if len(points) < 2:
         return None
     nearest = []
+    basis = None
+    if axis_angle is not None:
+        cosine, sine = math.cos(axis_angle), math.sin(axis_angle)
+        basis = np.array([[cosine, -sine], [sine, cosine]])
     for start in range(0, len(points), 128):
         delta = points[start:start+128, None, :] - points[None, :, :]
-        distances = np.linalg.norm(delta, axis=2)
-        distances[distances < 1.0] = np.inf
+        measured = np.linalg.norm(delta, axis=2)
+        # วัดตามแกน Grid: คู่จุดทแยงมีระยะยุคลิดยาวกว่าระยะหนึ่งช่อง
+        distances = measured if basis is None else np.max(np.abs(delta @ basis), axis=2)
+        distances[measured < 1.0] = np.inf
         if diameters is not None:
             # Residual duplicate centres inside a dot cannot define grid pitch.
             within_dot = .8*np.minimum(diameters[start:start+128, None], diameters[None, :])
-            distances[distances < within_dot] = np.inf
+            distances[measured < within_dot] = np.inf
         nearest.extend(distances.min(axis=1))
     if nearest_out is not None:
         nearest_out.extend(nearest)
@@ -197,6 +203,8 @@ def plan_cells(dots, image_shape, *, _basis=None):
     cosine, sine = math.cos(angle), math.sin(angle)
     rotation = np.array([[cosine, -sine], [sine, cosine]])
     rectified = points @ rotation
+    if _basis is None:
+        spacing = _spacing(points, diameters, axis_angle=angle) or spacing
     # A mounted camera does not make a curved page's lines parallel. Separate
     # clearly distant text bands BEFORE fitting their individual angle/rows.
     # Smaller gaps keep the existing joint line-phase checks for sparse lines.
@@ -229,6 +237,7 @@ def plan_cells(dots, image_shape, *, _basis=None):
             if not np.isfinite(fit(angle)):
                 candidates = [angle, local_angle, _band_angle(band_points, band_spacing, angle)]
                 best_angle = min(candidates, key=fit)
+            band_spacing = _spacing(band_points, diameters[band], axis_angle=best_angle) or band_spacing
             local = plan_cells([dots[i] for i in band], image_shape, _basis=(band_spacing, best_angle))
             for cell in local:
                 cell['source_dot_ids'] = [int(band[i]) for i in cell['source_dot_ids']]
