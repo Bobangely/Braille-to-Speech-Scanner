@@ -65,7 +65,29 @@ def _angle(points, spacing):
 
 def _cell_pitch(column_centers, anchors, spacing):
     if len(anchors) < 2:
-        return 2.375 * spacing
+        fallback = 2.375 * spacing
+        if len(anchors) == 0 or len(column_centers) < 4:
+            return fallback
+        # anchor เดียววัด pitch ตรง ๆ ไม่ได้ ต้องให้คอลัมน์อื่นรองรับทุกตำแหน่ง
+        deltas = np.asarray(column_centers) - anchors[0]
+        candidates = {fallback}
+        for delta in np.abs(deltas):
+            for offset in (0, spacing, -spacing):
+                candidates.update((delta + offset) / divisor for divisor in range(1, 5)
+                                  if 1.8*spacing <= (delta + offset) / divisor <= 6*spacing)
+        supported = []
+        for pitch in sorted(candidates):
+            left_error = np.abs(deltas - np.round(deltas/pitch)*pitch)
+            right_delta = deltas - spacing
+            right_error = np.abs(right_delta - np.round(right_delta/pitch)*pitch)
+            residual = np.minimum(left_error, right_error) / spacing
+            if np.max(residual) <= .25:
+                supported.append((float(np.mean(residual**2)), pitch,
+                                  tuple(right_error < left_error)))
+        # หากระยะที่ยังเป็นไปได้กลับฝั่งคอลัมน์ต่างกัน ให้คงความไม่แน่นอนเดิม
+        if supported and len({phase for _, _, phase in supported}) == 1:
+            return min(supported, key=lambda item: (item[0], -item[1]))[1]
+        return fallback
     differences = np.diff(anchors)
     candidates = [2.375 * spacing]
     for difference in differences:
