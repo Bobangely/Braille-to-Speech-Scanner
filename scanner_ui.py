@@ -178,11 +178,13 @@ class ScannerUI:
         color = state.get('color', 'blue').capitalize()
         language = 'Thai' if state.get('lang') == 'thai' else 'English'
         controls = [(f'{color}  [C]', 'c'), (f'{language}  [L]', 'l'),
-                    ('Resolution  [V]', 'v'), (f"Sharp {state.get('sharp', 'OFF')}  [E]", 'e'),
+                    (f"{state.get('resolution_mode', 'Resolution')}  [V]", 'v'),
                     ('Zoom -  [X]', 'x'), ('Zoom +  [Z]', 'z'),
                     ('Reset zoom  [R]', 'r'), ('Save image  [P]', 'p'),
                     ('Diagnostic  [D]', 'd'), ('Details  [H]', 'h')]
         gap, left, bw = 6*s, x+10*s, (right-x-26*s)/2
+        if state.get('resolution_modes') == []:
+            controls = [control for control in controls if control[1] != 'v']
         for i, (label, key) in enumerate(controls):
             bx, by = left+(i % 2)*(bw+gap), y+(34+(i//2)*31)*s
             self._button(draw, (bx, by, bx+bw, by+26*s), label, ord(key), key == 'h' and state.get('details', False))

@@ -94,13 +94,13 @@ class RecognitionTraceTests(unittest.TestCase):
         original = frame.copy()
         worker.start()
         try:
-            worker.submit_frame(frame, frame_id=9, sharpness_strength=.7)
+            worker.submit_frame(frame, frame_id=9, sharpness_strength=0)
             frame[:] = 255
             result = await_condition(lambda: (r if
                 (r := worker.get_latest_results(include_frame=True))['frame_id'] == 9 else None))
             np.testing.assert_array_equal(result['camera_roi'], original)
             np.testing.assert_array_equal(result['inference_frame'], observed[0])
-            self.assertFalse(np.array_equal(result['inference_frame'], original))
+            np.testing.assert_array_equal(result['inference_frame'], original)
             self.assertNotIn('inference_frame', worker.get_latest_results())
         finally:
             worker.stop()

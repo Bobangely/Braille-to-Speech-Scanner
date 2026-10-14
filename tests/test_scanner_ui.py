@@ -67,7 +67,8 @@ class ScannerUITests(unittest.TestCase):
                 self.assertEqual(self.ui.result_card[2]-self.ui.result_card[0], 320)
                 self.assertEqual(self.ui.header_h, 110)
                 controls = {key for _, key in self.ui.buttons}
-                self.assertTrue({ord(k) for k in 'clvexzrpd hq'.replace(' ', '')} <= controls)
+                self.assertTrue({ord(k) for k in 'clvxzrpd hq'.replace(' ', '')} <= controls)
+                self.assertNotIn(ord('e'), controls)
                 left, top, right, bottom = self.ui.control_card
                 for box, key in self.ui.buttons:
                     if key in (ord('['), ord(']')):
@@ -108,6 +109,7 @@ class ScannerUITests(unittest.TestCase):
 
     def test_buttons_reuse_shortcuts_and_details_dont_reset_confirmation(self):
         scanner = RealTimeBrailleScanner(res_preset='480p')
+        scanner.available_resolutions = [('4K', 3840, 2160), ('1080p', 1920, 1080)]
         scanner._compose_dashboard(np.zeros((240, 320, 3), np.uint8), {})
         box, key = next(item for item in scanner._ui.buttons if item[1] == ord('c'))
         scanner._on_mouse(cv2.EVENT_LBUTTONDOWN, (box[0]+box[2])/2, (box[1]+box[3])/2, 0, None)
@@ -124,10 +126,11 @@ class ScannerUITests(unittest.TestCase):
 
     def test_compact_buttons_dispatch_existing_actions_and_snapshot_pixels(self):
         scanner = RealTimeBrailleScanner(res_preset='480p')
+        scanner.available_resolutions = [('4K', 3840, 2160), ('1080p', 1920, 1080)]
         frame = np.full((240, 320, 3), 100, np.uint8)
         annotated = scanner._compose_dashboard(frame, {})
         for key, method in [('c', 'cycle_dot_color'), ('v', 'cycle_resolution'),
-                            ('e', 'cycle_sharpness'), ('z', 'zoom_in'),
+                            ('z', 'zoom_in'),
                             ('x', 'zoom_out'), ('r', 'reset_zoom')]:
             box, _ = next(item for item in scanner._ui.buttons if item[1] == ord(key))
             scanner._on_mouse(cv2.EVENT_LBUTTONDOWN, (box[0]+box[2])/2, (box[1]+box[3])/2, 0, None)
