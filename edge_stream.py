@@ -2,16 +2,15 @@
 
 import asyncio
 import os
-import re
 import threading
 import time
 import wave
+from thai_speech import expand_thai_speech_units
 
 
 def prepare_edge_text(text, voice):
-    # Edge omits isolated ฃ; name the letter without altering words or display text.
     if voice.startswith('th-TH-'):
-        return re.sub(r'(?<![\w\u0e00-\u0e7f])ฃ(?![\w\u0e00-\u0e7f])', 'ขอ ขวด', text)
+        return expand_thai_speech_units(text)
     return text
 
 

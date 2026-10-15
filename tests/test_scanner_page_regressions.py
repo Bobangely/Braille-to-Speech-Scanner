@@ -48,13 +48,10 @@ class ScannerPageRegressions(unittest.TestCase):
             self.assertFalse(decode_cells_verbose(cells, 'thai')[-1]['consumed'])
         self.assertEqual(decode_cells(logical_cells(['345']), 'thai'), 'ั')
 
-    def test_edge_names_only_the_isolated_unsupported_letter(self):
+    def test_edge_names_isolated_consonants_without_changing_words(self):
         from edge_stream import prepare_edge_text
         source = 'ฃ พยัญชนะตัวที่ 3\n(ฃ) ข ค ฅ กฃ ฃา ฃ่ Aฃ'
-        expected = 'ขอ ขวด พยัญชนะตัวที่ 3\n(ขอ ขวด) ข ค ฅ กฃ ฃา ฃ่ Aฃ'
+        expected = 'ขอขวด พยัญชนะตัวที่ สาม\n(ขอขวด) ขอไข่ คอควาย คอคน กฃ ฃา ฃ่ Aฃ'
         self.assertEqual(prepare_edge_text(source, 'th-TH-PremwadeeNeural'), expected)
         self.assertEqual(prepare_edge_text(source, 'en-US-JennyNeural'), source)
-        consonants = ''.join(chr(i) for i in range(0x0e01, 0x0e2f) if i not in (0x0e24, 0x0e26))
-        for letter in consonants.replace('ฃ', ''):
-            self.assertEqual(prepare_edge_text(letter, 'th-TH-PremwadeeNeural'), letter)
-        self.assertEqual(prepare_thai_speech_text(source), source.replace('(ฃ)', ' วงเล็บเปิด ฃ วงเล็บปิด '))
+        self.assertEqual(prepare_thai_speech_text(source), expected.replace('(ขอขวด)', ' วงเล็บเปิด ขอขวด วงเล็บปิด '))

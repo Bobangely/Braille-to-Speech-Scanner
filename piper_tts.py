@@ -11,7 +11,7 @@ import tempfile
 import time
 import wave
 
-EDGE_VOICES = {'thai': 'th-TH-PremwadeeNeural', 'english': 'en-US-JennyNeural'}
+EDGE_VOICES = {'thai': 'th-TH-NiwatNeural', 'english': 'en-US-JennyNeural'}
 EDGE_RATE = '-15%'
 
 

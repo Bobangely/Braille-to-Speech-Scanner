@@ -121,7 +121,7 @@ class SpeechLatencyTests(unittest.TestCase):
             metrics = stream_edge_audio('ฃ เสื้อ\n\n  ภู่\n', 'th-TH-PremwadeeNeural', '-15%', output)
             with wave.open(str(output), 'rb') as wav:
                 self.assertEqual(wav.readframes(4), b'\x01\0\x02\0\x03\0\x04\0')
-            self.assertEqual(requests, ['ขอ ขวด เสื้อ\n\n  ภู่\n'])
+            self.assertEqual(requests, ['ขอขวด เสื้อ\n\n  ภู่\n'])
         self.assertEqual(first_play, [True])
         self.assertLess(metrics['first_audio_seconds'], metrics['network_seconds'])
 
