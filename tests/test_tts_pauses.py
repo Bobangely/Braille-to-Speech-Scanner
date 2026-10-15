@@ -9,12 +9,12 @@ class SpeechPauseTests(unittest.TestCase):
     def test_spaces_lines_and_sentences_choose_longest_boundary(self):
         source = '  เขียด เขียว  ขอน\r\nไข่.\nกิน! คน? จบฯ ต่อ  '
         self.assertEqual(plan_edge_chunks(source, 'th-TH-NiwatNeural'), [
-            ('เขียด', 80), ('เขียว', 150), ('ขอน', 200), ('ไข่.', 300),
-            ('กิน!', 300), ('คน?', 300), ('จบฯ', 300), ('ต่อ', 0)])
+            ('เขียด', 30), ('เขียว', 80), ('ขอน', 130), ('ไข่.', 200),
+            ('กิน!', 200), ('คน?', 200), ('จบฯ', 200), ('ต่อ', 0)])
 
     def test_no_split_inside_thai_words_or_decimal_numbers(self):
         self.assertEqual(plan_edge_chunks('กินคนเกี๊ยว 3.14 บาท', 'th-TH-NiwatNeural'),
-                         [('กินคนเกี๊ยว', 80), ('3.14', 80), ('บาท', 0)])
+                         [('กินคนเกี๊ยว', 30), ('3.14', 30), ('บาท', 0)])
         self.assertEqual(plan_edge_chunks('   \n\t', 'th-TH-NiwatNeural'), [])
         self.assertEqual(plan_edge_chunks('...!?', 'th-TH-NiwatNeural'), [])
 
@@ -23,7 +23,7 @@ class SpeechPauseTests(unittest.TestCase):
         prepared = prepare_thai_speech_text(source)
         chunks = plan_edge_chunks(prepared, 'th-TH-NiwatNeural')
         self.assertEqual([text for text, _ in chunks], list(THAI_CONSONANT_NAMES.values()))
-        self.assertEqual([pause for _, pause in chunks], [200]*43+[0])
+        self.assertEqual([pause for _, pause in chunks], [130]*43+[0])
         self.assertEqual(source, '\n'.join(THAI_CONSONANT_NAMES))
 
     def test_config_and_english_are_respected(self):
