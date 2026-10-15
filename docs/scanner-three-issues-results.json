@@ -1,0 +1,141 @@
+{
+  "branch": "feature/thai-offline-tts",
+  "base_main": "dcf146b",
+  "date": "2026-10-15",
+  "platform": "Windows x64 / Python 3.12.13",
+  "line2": {
+    "source": "tests/fixtures/obsolete_consonant_line.json",
+    "before": "(ปัจจุบันเลิกใช้แล้วํั",
+    "after": "(ปัจจุบันเลิกใช้แล้ว)",
+    "cause": "Missing close-parenthesis [5][345] mapping; singles became Thai combining marks. No detection/parser replacement.",
+    "source_table": "https://github.com/liblouis/liblouis/blob/master/tables/en-ueb-chardefs.uti#L116",
+    "limitation": "Patterns read from screenshot overlay, not original camera/diagnostic."
+  },
+  "edge_letter_before": {
+    "rare_letter": {
+      "text": "ฃ",
+      "normalized": "ฃ",
+      "bytes": 0,
+      "error": "NoAudioReceived: No audio was received. Please verify that your parameters are correct.",
+      "words": []
+    },
+    "common_letter": {
+      "text": "ข",
+      "normalized": "ข",
+      "bytes": 11520,
+      "words": [
+        "ข"
+      ]
+    },
+    "rare_phrase": {
+      "text": "ฃ พยัญชนะตัวที่ 3",
+      "normalized": "ฃ พยัญชนะตัวที่ 3",
+      "bytes": 18144,
+      "words": [
+        "พยัญชนะ",
+        "ตัว",
+        "ที่",
+        "3"
+      ]
+    },
+    "letter_name": {
+      "text": "ขอ ขวด",
+      "normalized": "ขอ ขวด",
+      "bytes": 12528,
+      "words": [
+        "ขอ",
+        "ขวด"
+      ]
+    }
+  },
+  "edge_letter_after": {
+    "rule": "Name isolated U+0E03 only for Thai Edge voices; do not change letters inside words, UI text, or local synthesis.",
+    "observed_first_segment": {
+      "text": "ขอ ขวด พยัญชนะตัวที่ 3\n",
+      "words": [
+        "ขอ",
+        "ขวด",
+        "พยัญชนะ",
+        "ตัว",
+        "ที่",
+        "3"
+      ],
+      "bytes": 21024
+    },
+    "whole_page_success": false,
+    "listener_validation": "Not performed; service metadata and returned audio bytes confirm named tokens, not pronunciation quality."
+  },
+  "latency_before": [
+    {
+      "case": "whole_page",
+      "text": "ฃ พยัญชนะตัวที่ 3\n(ปัจจุบันเลิกใช้แล้ว)\nนิทานตัว ค\nพยัญชนะตัวที่ 4",
+      "first_mp3_seconds": 3.6155901000020094,
+      "first_audio_seconds": 3.8845470000014757,
+      "network_seconds": 11.673721899998782,
+      "audio_seconds": 10.728,
+      "cached": false
+    },
+    {
+      "case": "first_line",
+      "text": "ฃ พยัญชนะตัวที่ 3",
+      "first_mp3_seconds": 2.151891200002865,
+      "first_audio_seconds": 2.1986736000035307,
+      "network_seconds": 2.645065800003067,
+      "audio_seconds": 2.976,
+      "cached": false
+    }
+  ],
+  "latency_trial": {
+    "kept": false,
+    "reason": "Line-split requests failed with NoAudioReceived; no successful complete-page latency comparison. Original single-request streaming/cache retained.",
+    "direct_segments": [
+      {
+        "text": " วงเล็บเปิด ปัจจุบันเลิกใช้แล้ว วงเล็บปิด ",
+        "bytes": 0,
+        "error": "NoAudioReceived"
+      },
+      {
+        "text": "นิทานตัว ค",
+        "bytes": 0,
+        "error": "NoAudioReceived"
+      },
+      {
+        "text": "พยัญชนะตัวที่ 4",
+        "bytes": 18288,
+        "first_mp3_seconds": 4.18792289999692
+      }
+    ],
+    "prepared_whole_page": {
+      "error": "NoAudioReceived: No audio was received. Please verify that your parameters are correct."
+    }
+  },
+  "live_short_read_repeat_stop_after": {
+    "s_call_seconds": 0.007668599995668046,
+    "pending_repeat_kept_pid": true,
+    "first_read": {
+      "first_mp3_seconds": 0.8604268000053708,
+      "first_audio_seconds": 0.8934246999997413,
+      "network_seconds": 1.1221485000060056,
+      "audio_seconds": 2.664,
+      "cached": false
+    },
+    "repeat_s_call_seconds": 0.005125399999087676,
+    "repeat_ready_marker_seconds": 0.12926039999729255,
+    "b_call_seconds": 0.002207799996540416,
+    "b_stopped_worker_tree": true,
+    "b_cleared_job_files": true,
+    "repeat_after_b": {
+      "cached": true
+    }
+  },
+  "timing_definition": "First audio is PCM submitted to playback, not acoustic onset; repeat ready is a marker proxy. Network trials differ; do not infer percent improvement.",
+  "tests": {
+    "red": "9 tests: 3 failures and 1 error before implementation; segmentation experiment later removed.",
+    "full_suite": 442
+  },
+  "remaining": [
+    "Full-page Edge service failures/latency remain; no auto retry or fallback added.",
+    "No actual board available.",
+    "No listener validation for the new letter name."
+  ]
+}

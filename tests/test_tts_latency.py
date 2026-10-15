@@ -78,9 +78,11 @@ class SpeechLatencyTests(unittest.TestCase):
         from edge_stream import stream_edge_audio
         network_finished = []
         first_play = []
+        requests = []
         class Communicate:
             def __init__(self, text, **kwargs):
                 self.text = text
+                requests.append(text)
             async def stream(self):
                 yield {'type': 'audio', 'data': b'\x01\0\x02\0'}
                 await asyncio.sleep(.1)
@@ -116,9 +118,10 @@ class SpeechLatencyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.dict('sys.modules', {
                 'miniaudio': audio, 'edge_tts': types.SimpleNamespace(Communicate=Communicate)}):
             output = Path(directory)/'speech.wav'
-            metrics = stream_edge_audio('ก่า ก้า ก๊า ก๋า', 'th-TH-PremwadeeNeural', '-15%', output)
+            metrics = stream_edge_audio('ฃ เสื้อ\n\n  ภู่\n', 'th-TH-PremwadeeNeural', '-15%', output)
             with wave.open(str(output), 'rb') as wav:
                 self.assertEqual(wav.readframes(4), b'\x01\0\x02\0\x03\0\x04\0')
+            self.assertEqual(requests, ['ขอ ขวด เสื้อ\n\n  ภู่\n'])
         self.assertEqual(first_play, [True])
         self.assertLess(metrics['first_audio_seconds'], metrics['network_seconds'])
 

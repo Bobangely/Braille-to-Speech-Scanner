@@ -2,9 +2,17 @@
 
 import asyncio
 import os
+import re
 import threading
 import time
 import wave
+
+
+def prepare_edge_text(text, voice):
+    # Edge omits isolated ฃ; name the letter without altering words or display text.
+    if voice.startswith('th-TH-'):
+        return re.sub(r'(?<![\w\u0e00-\u0e7f])ฃ(?![\w\u0e00-\u0e7f])', 'ขอ ขวด', text)
+    return text
 
 
 def stream_edge_audio(text, voice, rate, output):
@@ -24,7 +32,7 @@ def stream_edge_audio(text, voice, rate, output):
 
     def download():
         async def receive(writer):
-            async for chunk in edge_tts.Communicate(text, voice=voice, rate=rate).stream():
+            async for chunk in edge_tts.Communicate(prepare_edge_text(text, voice), voice=voice, rate=rate).stream():
                 if chunk['type'] == 'audio':
                     timings.setdefault('first_mp3_seconds', time.perf_counter()-started)
                     writer.write(chunk['data'])

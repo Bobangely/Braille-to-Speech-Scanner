@@ -60,6 +60,10 @@ class EdgeSpeechTests(unittest.TestCase):
             edge.Communicate.assert_called_once_with('คำที่มีใช้: ฐาน ฐิติ', voice='th-TH-PremwadeeNeural', rate='-15%')
             self.assertEqual(result['audio_seconds'], .1)
             self.assertFalse(output.with_suffix('.mp3').exists())
+            edge.Communicate.reset_mock()
+            with patch.dict('sys.modules', {'edge_tts': edge, 'soundfile': soundfile}):
+                synthesize_wav('', 'ฃ พยัญชนะตัวที่ 3', output, backend='edge', voice='th-TH-PremwadeeNeural')
+            edge.Communicate.assert_called_once_with('ขอ ขวด พยัญชนะตัวที่ 3', voice='th-TH-PremwadeeNeural', rate='-15%')
 
     def test_network_failure_is_an_error_without_another_voice_fallback(self):
         edge = Mock()

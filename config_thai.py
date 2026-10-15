@@ -52,6 +52,8 @@ THAI_READING_MULTI_CELL.update({(dots('456'), dots(body)): char for body, char i
 THAI_MULTI_CELL_SYMBOLS = {
     (dots('5'), dots('126')): dict(
         id='open_parenthesis', output='(', tts='วงเล็บเปิด', type='punctuation'),
+    (dots('5'), dots('345')): dict(
+        id='close_parenthesis', output=')', tts='วงเล็บปิด', type='punctuation'),
 }
 THAI_READING_MULTI_CELL.update({sequence: symbol['output']
                                for sequence, symbol in THAI_MULTI_CELL_SYMBOLS.items()})
