@@ -10,6 +10,38 @@ from tests.test_thai_syllable_boundaries import physical
 
 
 class ThaiCompoundBoundaryTests(unittest.TestCase):
+    def test_maihanakat_keeps_its_coda_before_post_onset_short_ae(self):
+        tokens = list('สัตว์ตัวใดมีลูกที่น่ารักลแะ')
+        self.assertEqual(compose_tokens(tokens)['text'], 'สัตว์ตัวใดมีลูกที่น่ารักและ')
+        cells = physical(['1345', '35', '16', '1235', '345', '1245', '123', '126', '1'])
+        original = deepcopy(cells)
+        parsed = parse_braille(cells)
+        self.assertEqual(render_thai(parsed)['text'], 'น่ารักและ')
+        self.assertEqual([(s['onset'], s['final']) for s in parsed['syllables']],
+                         [('น', None), ('ร', 'ก'), ('ล', None)])
+        self.assertEqual(cells, original)
+
+    def test_maihanakat_coda_does_not_break_real_clusters(self):
+        for tokens, expected in [(list('น่ารักแกล้ง'), 'น่ารักแกล้ง'),
+                                 (list('กลแะ'), 'แกละ'),
+                                 (list('นัดนแะ'), 'นัดแนะ')]:
+            with self.subTest(expected=expected):
+                self.assertEqual(compose_tokens(tokens)['text'], expected)
+
+    def test_maihanakat_cannot_take_a_coda_across_a_boundary(self):
+        for boundary in ('space', 'line'):
+            cells = physical(['1235', '345', '1245', '123', '126', '1'])
+            if boundary == 'space':
+                for cell in cells[2:]:
+                    cell['reading_x'] += 400
+            else:
+                for cell in cells[2:]:
+                    cell['line_id'] = 1
+            parsed = parse_braille(cells)
+            self.assertIsNone(parsed['syllables'][0]['final'])
+            self.assertEqual([s['onset'] for s in parsed['syllables'] if s.get('onset')],
+                             ['ร', 'กล'])
+
     def test_book_raw_cells_keep_the_next_onset_and_compound_vowel(self):
         # diag_038 / screenshot C61-C65 (also C71-C75), not inferred from text.
         patterns = ['125', '15', '1235', '135', '1']

@@ -241,6 +241,9 @@ def _compound_boundary(atoms, index, current):
 
 def _final_role(atoms, index, vowel, *, current=None, compare_boundaries=True):
     """Resolve the syllable boundary before a renderer can reduce its vowel."""
+    # Written ั needs a coda before the next onset can form a cluster.
+    if vowel == 'ั':
+        return dict(role='CODA_CONTEXT', review=False)
     if compare_boundaries and current is not None:
         decision = _compound_boundary(atoms, index, current)
         if decision is not None:
