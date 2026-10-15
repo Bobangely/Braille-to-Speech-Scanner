@@ -10,7 +10,7 @@ import time
 import wave
 from thai_speech import expand_thai_speech_units
 
-THAI_PAUSES_MS = dict(space=2, phrase=10, line=20, sentence=50)
+THAI_PAUSES_MS = dict(space=0.5, phrase=5, line=10, sentence=50)
 
 
 def pack_audio_frames(decoded):
@@ -55,8 +55,8 @@ def plan_edge_chunks(text, voice, pauses=None):
     if not voice.startswith('th-TH-'):
         return [(text, 0)] if text.strip() else []
     durations = {**THAI_PAUSES_MS, **(pauses or {})}
-    if any(type(value) is not int or not 0 <= value <= 5000 for value in durations.values()):
-        raise ValueError('Pause durations must be integer milliseconds from 0 to 5000')
+    if any(type(value) not in (int, float) or not 0 <= value <= 5000 for value in durations.values()):
+        raise ValueError('Pause durations must be finite milliseconds from 0 to 5000')
     chunks, start = [], 0
     for boundary in re.finditer(r'[ \t\r\n]+|[.!?ฯ]+', text):
         mark = boundary[0]
@@ -192,7 +192,7 @@ def stream_edge_audio(text, voice, rate, output, pauses=None):
                     readers.discard(reader)
                 if decoded_chunk is not None:
                     decoded_chunk.close()
-            remaining = pause * 24
+            remaining = round(pause * 24)
             while remaining:
                 count = min(requested, remaining)
                 requested = yield array('h', [0]) * count
