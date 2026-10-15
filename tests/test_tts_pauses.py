@@ -30,12 +30,12 @@ class SpeechPauseTests(unittest.TestCase):
     def test_spaces_lines_and_sentences_choose_longest_boundary(self):
         source = '  เขียด เขียว  ขอน\r\nไข่.\nกิน! คน? จบฯ ต่อ  '
         self.assertEqual(plan_edge_chunks(source, 'th-TH-NiwatNeural'), [
-            ('เขียด เขียว', 10), ('ขอน', 20), ('ไข่.', 50),
+            ('เขียด', 5), ('เขียว', 10), ('ขอน', 20), ('ไข่.', 50),
             ('กิน!', 50), ('คน?', 50), ('จบฯ', 50), ('ต่อ', 0)])
 
     def test_no_split_inside_thai_words_or_decimal_numbers(self):
         self.assertEqual(plan_edge_chunks('กินคนเกี๊ยว 3.14 บาท', 'th-TH-NiwatNeural'),
-                         [('กินคนเกี๊ยว 3.14 บาท', 0)])
+                         [('กินคนเกี๊ยว', 5), ('3.14', 5), ('บาท', 0)])
         self.assertEqual(plan_edge_chunks('   \n\t', 'th-TH-NiwatNeural'), [])
         self.assertEqual(plan_edge_chunks('...!?', 'th-TH-NiwatNeural'), [])
 
@@ -50,14 +50,16 @@ class SpeechPauseTests(unittest.TestCase):
     def test_standalone_list_markers_stay_with_the_following_words(self):
         source = '- คำควบกล้ำตัว กล เช่น กล่อ\nง\nนิทานตัว ข'
         chunks = plan_edge_chunks(prepare_thai_speech_text(source), 'th-TH-NiwatNeural')
-        self.assertEqual(chunks[0], ('- คำควบกล้ำตัว กล เช่น กล่อ', 20))
+        self.assertEqual(chunks[0], ('- คำควบกล้ำตัว', 5))
         self.assertTrue(all(any(char.isalnum() for char in text) for text, _ in chunks))
         self.assertIn(('งองู', 20), chunks)
-        self.assertEqual(chunks[-1], ('นิทานตัว ขอไข่', 0))
+        self.assertEqual(chunks[-1], ('ขอไข่', 0))
         self.assertEqual(plan_edge_chunks('คำ\n• ต่อ -', 'th-TH-NiwatNeural'),
                          [('คำ', 20), ('• ต่อ -', 0)])
 
     def test_config_and_english_are_respected(self):
+        self.assertEqual(plan_edge_chunks('กิน คน', 'th-TH-NiwatNeural', dict(space=0)),
+                         [('กิน คน', 0)])
         self.assertEqual(plan_edge_chunks('กิน คน\nไข่.', 'th-TH-NiwatNeural',
                          dict(space=200, phrase=350, line=500, sentence=600)),
                          [('กิน', 200), ('คน', 500), ('ไข่.', 0)])

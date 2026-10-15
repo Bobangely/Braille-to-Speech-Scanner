@@ -36,7 +36,7 @@ class SpeechLatencyTests(unittest.TestCase):
             return process
         with patch('piper_tts.subprocess.Popen', side_effect=start):
             speaker.speak('ศักดิ์', 'thai')
-            self.assertEqual(jobs[-1]['rate'], '+0%')
+            self.assertEqual(jobs[-1]['rate'], '+10%')
             directory = Path(speaker._workspace.name)
             with wave.open(str(directory/'speech.wav'), 'wb') as wav:
                 wav.setnchannels(1)
@@ -128,10 +128,10 @@ class SpeechLatencyTests(unittest.TestCase):
             with wave.open(str(output), 'rb') as wav:
                 block = b'\x01\0\x02\0\x03\0\x04\0'
                 self.assertEqual(wav.readframes(wav.getnframes()),
-                                 block + b'\0\0'*240 + block
+                                 block + b'\0\0'*120 + block + b'\0\0'*240 + block
                                  + b'\0\0'*480 + block + b'\0\0'*1200 + block)
-            self.assertEqual(requests, ['ขอขวด เสื้อ', 'ภู่', 'กิน.', 'คน'])
-            self.assertEqual(metrics['inserted_silence_seconds'], .08)
+            self.assertEqual(requests, ['ขอขวด', 'เสื้อ', 'ภู่', 'กิน.', 'คน'])
+            self.assertEqual(metrics['inserted_silence_seconds'], .085)
         self.assertEqual(len(devices), 1)
         self.assertEqual(first_play, [True])
         self.assertLess(metrics['first_audio_seconds'], metrics['network_seconds'])
