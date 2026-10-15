@@ -10,7 +10,7 @@ import time
 import wave
 from thai_speech import expand_thai_speech_units
 
-THAI_PAUSES_MS = dict(space=30, phrase=80, line=130, sentence=200)
+THAI_PAUSES_MS = dict(space=10, phrase=30, line=50, sentence=100)
 
 
 def plan_edge_chunks(text, voice, pauses=None):
