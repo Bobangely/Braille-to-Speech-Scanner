@@ -26,6 +26,16 @@ class SpeechPauseTests(unittest.TestCase):
         self.assertEqual([pause for _, pause in chunks], [130]*43+[0])
         self.assertEqual(source, '\n'.join(THAI_CONSONANT_NAMES))
 
+    def test_standalone_list_markers_stay_with_the_following_words(self):
+        source = '- คำควบกล้ำตัว กล เช่น กล่อ\nง\nนิทานตัว ข'
+        chunks = plan_edge_chunks(prepare_thai_speech_text(source), 'th-TH-NiwatNeural')
+        self.assertEqual(chunks[0], ('- คำควบกล้ำตัว', 30))
+        self.assertTrue(all(any(char.isalnum() for char in text) for text, _ in chunks))
+        self.assertIn(('งองู', 130), chunks)
+        self.assertEqual(chunks[-1], ('ขอไข่', 0))
+        self.assertEqual(plan_edge_chunks('คำ\n• ต่อ -', 'th-TH-NiwatNeural'),
+                         [('คำ', 130), ('• ต่อ -', 0)])
+
     def test_config_and_english_are_respected(self):
         self.assertEqual(plan_edge_chunks('กิน คน\nไข่.', 'th-TH-NiwatNeural',
                          dict(space=200, phrase=350, line=500, sentence=600)),

@@ -38,6 +38,20 @@ def plan_edge_chunks(text, voice, pauses=None):
         start = boundary.end()
     if text[start:].strip():
         chunks.append([text[start:], 0])
+    # Edge returns no audio for standalone bullets/punctuation; keep them with words.
+    spoken, prefix, prefix_pause = [], '', 0
+    for fragment, pause in chunks:
+        if not any(char.isalnum() for char in fragment):
+            prefix += fragment + ' '
+            prefix_pause = max(prefix_pause, pause)
+            continue
+        if spoken and prefix:
+            spoken[-1][1] = max(spoken[-1][1], prefix_pause)
+        spoken.append([prefix + fragment, pause])
+        prefix, prefix_pause = '', 0
+    if spoken and prefix:
+        spoken[-1][0] += ' ' + prefix.rstrip()
+    chunks = spoken
     if chunks:
         chunks[-1][1] = 0
     return [tuple(chunk) for chunk in chunks]
