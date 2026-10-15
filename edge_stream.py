@@ -13,6 +13,24 @@ from thai_speech import expand_thai_speech_units
 THAI_PAUSES_MS = dict(space=10, phrase=30, line=50, sentence=100)
 
 
+def trim_edge_padding(blocks):
+    """Drop only digital silence at chunk edges; preserve every nonzero sample."""
+    started, pending = False, 0
+    for block in blocks:
+        first = next((i for i, value in enumerate(block) if value), len(block))
+        if first == len(block):
+            if started:
+                pending += len(block)
+            continue
+        end = len(block)
+        while not block[end-1]:
+            end -= 1
+        samples = array('h', [0])*pending + block[first if not started else 0:end]
+        pending = len(block)-end
+        started = True
+        yield samples
+
+
 def plan_edge_chunks(text, voice, pauses=None):
     if not voice.startswith('th-TH-'):
         return [(text, 0)] if text.strip() else []
@@ -127,8 +145,19 @@ def stream_edge_audio(text, voice, rate, output, pauses=None):
             try:
                 decoded_chunk = miniaudio.stream_any(Source(reader), miniaudio.FileFormat.MP3,
                                                      nchannels=1, sample_rate=24000)
-                while True:
-                    requested = yield decoded_chunk.send(requested)
+                def blocks():
+                    try:
+                        while True:
+                            yield decoded_chunk.send(2048)
+                    except StopIteration:
+                        return
+                audio = trim_edge_padding(blocks()) if voice.startswith('th-TH-') else blocks()
+                for block in audio:
+                    offset = 0
+                    while offset < len(block):
+                        count = min(requested, len(block)-offset)
+                        requested = yield block[offset:offset+count]
+                        offset += count
             except StopIteration:
                 pass
             finally:

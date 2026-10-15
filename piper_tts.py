@@ -13,7 +13,7 @@ import wave
 from edge_stream import THAI_PAUSES_MS
 
 EDGE_VOICES = {'thai': 'th-TH-NiwatNeural', 'english': 'en-US-JennyNeural'}
-EDGE_RATE = '+0%'
+EDGE_RATE = '-20%'
 
 
 class PiperSpeech:

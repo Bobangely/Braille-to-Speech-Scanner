@@ -1,11 +1,20 @@
 import unittest
+from array import array
 
-from edge_stream import plan_edge_chunks
+from edge_stream import plan_edge_chunks, trim_edge_padding
 from tts import prepare_thai_speech_text
 from thai_speech import THAI_CONSONANT_NAMES
 
 
 class SpeechPauseTests(unittest.TestCase):
+    def test_only_exact_zero_padding_is_removed_and_internal_silence_is_preserved(self):
+        blocks = [array('h', [0, 0, 1, 0]), array('h', [0, 0]), array('h', [-1, 0, 0])]
+        result = array('h')
+        for block in trim_edge_padding(blocks):
+            result.extend(block)
+        self.assertEqual(result.tolist(), [1, 0, 0, 0, -1])
+        self.assertEqual(list(trim_edge_padding([array('h', [0, 0])])), [])
+
     def test_spaces_lines_and_sentences_choose_longest_boundary(self):
         source = '  เขียด เขียว  ขอน\r\nไข่.\nกิน! คน? จบฯ ต่อ  '
         self.assertEqual(plan_edge_chunks(source, 'th-TH-NiwatNeural'), [

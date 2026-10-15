@@ -36,7 +36,7 @@ class SpeechLatencyTests(unittest.TestCase):
             return process
         with patch('piper_tts.subprocess.Popen', side_effect=start):
             speaker.speak('ศักดิ์', 'thai')
-            self.assertEqual(jobs[-1]['rate'], '+0%')
+            self.assertEqual(jobs[-1]['rate'], '-20%')
             directory = Path(speaker._workspace.name)
             with wave.open(str(directory/'speech.wav'), 'wb') as wav:
                 wav.setnchannels(1)
@@ -90,9 +90,9 @@ class SpeechLatencyTests(unittest.TestCase):
                 self.text = text
                 requests.append(text)
             async def stream(self):
-                yield {'type': 'audio', 'data': b'\x01\0\x02\0'}
+                yield {'type': 'audio', 'data': b'\0\0\x01\0\x02\0'}
                 await asyncio.sleep(.1)
-                yield {'type': 'audio', 'data': b'\x03\0\x04\0'}
+                yield {'type': 'audio', 'data': b'\x03\0\x04\0\0\0'}
                 network_finished.append(True)
         def decode(source, *args, **kwargs):
             def samples():
