@@ -246,9 +246,9 @@ class WorkerRecoveryTests(unittest.TestCase):
                 result = self.result(worker, i)
                 self.assertEqual((result['status'], result['stage']), ('unreadable', 'preprocessing'))
             detector.detect.assert_not_called()
-            with patch('camera_reader.cv2.GaussianBlur', side_effect=cv2.error('filter failure')), \
+            with patch('camera_reader._valid_frame', side_effect=[cv2.error('validation failure'), True, True]), \
                     self.assertLogs('camera_reader', 'ERROR'):
-                worker.submit_frame(FRAME, sharpness_strength=.35)
+                worker.submit_frame(FRAME, sharpness_strength=0)
                 result = self.result(worker, 4)
                 self.assertEqual((result['status'], result['stage']), ('error', 'preprocessing'))
             with patch('camera_reader.decode_cells', side_effect=RuntimeError('decode failure')), \

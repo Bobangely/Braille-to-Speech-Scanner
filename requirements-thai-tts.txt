@@ -1,0 +1,6 @@
+# Optional local MMS Thai runtime and CPU benchmark; keep scanner .venv separate.
+-r requirements-piper.txt
+torch==2.8.0
+transformers==4.57.1
+scipy==1.16.2
+psutil==7.1.0

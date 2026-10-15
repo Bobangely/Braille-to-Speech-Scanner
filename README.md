@@ -1,8 +1,12 @@
 # Thai Braille Reader — Painted Dots
 
+กล้องเริ่มด้วย `--res auto`: ตรวจเฟรมจริงของ 4K / 2K / 1080p แล้วเลือกโหมดสูงสุดที่ใช้ได้ ปุ่ม `V` วนเฉพาะโหมดที่ตรวจผ่าน หากเปิดไม่ได้จะลองโหมดต่ำกว่า; CLI ที่ระบุ preset/ขนาดเองยังใช้ได้เป็น override
+
+ถอด Sharpness และปุ่ม `E` แล้ว ส่ง pixel ต้นฉบับเข้า Detection โดยตรง คง `--sharp 0` เพื่อ compatibility; ค่าอื่นไม่รองรับ ไม่ได้เปลี่ยนกฎ Parser ไทย/อังกฤษ
+
 รีวิวก่อน merge: [บั๊กที่แก้ การเก็บโค้ด ผลตรวจ และข้อจำกัด](docs/PRE_MERGE_REVIEW_TH.md)
 
-หน้าจอกล้องใหม่: [Preview, ปุ่มควบคุม, การ resize และผลทดสอบ UI](docs/SCANNER_UI_TH.md) — แสดงชื่อเซลล์ จุด 1–6 และ pattern บน Preview โดยตรง กด `H` เพื่อเปิด/ปิดข้อมูลตรวจสอบเพิ่มเติม ปุ่มลัดเดิมยังใช้ได้ครบ
+หน้าจอกล้องใหม่: [Preview, ปุ่มควบคุม, การ resize และผลทดสอบ UI](docs/SCANNER_UI_TH.md) — แสดงชื่อเซลล์ จุด 1–6 และ pattern บน Preview โดยตรง กด `H` เพื่อเปิด/ปิดข้อมูลตรวจสอบเพิ่มเติม ปุ่ม Sharpness เดิมถูกยกเลิกแล้ว
 
 เส้นทางกล้องและภาพเดี่ยวอ่าน **เฉพาะจุดที่แต้มสี** โดยค่าเริ่มต้นเป็นสีน้ำเงิน: ตรวจสี → กรอง noise → จัดกริดเซลล์ → ตำแหน่งจุด 1–6 → รวม marker → ข้อความไทย/อังกฤษ
 
@@ -44,7 +48,29 @@
 
 ## ใช้งานกล้องและภาพเดี่ยว
 
-เปิด `Start_Scanner_YOLO.bat` หรือ:
+ดับเบิลคลิก `main.bat` เพื่อเปิดเมนูเดียว: scanner, scanner พร้อม Piper offline หรือ Edge online,
+ตรวจกล้อง, ทดสอบภาพ/ภาพตัวอย่างเดิม และติดตั้ง dependencies ลง `.venv` แบบเลือกเอง
+ลากไฟล์ภาพมาวางบน `main.bat` ได้ หรือเรียกคำสั่งโดยตรง:
+
+```powershell
+.\main.bat scan
+.\main.bat scan --res 1080p --camera 0
+.\main.bat piper
+.\main.bat edge
+.\main.bat camera-test
+.\main.bat image "path/to/image.png" --lang thai --no-show
+.\main.bat setup
+```
+
+โหมด `scan` ไม่เปิดเสียง; เลือก `piper` เพื่อเปิดปุ่ม S อ่าน/อ่านซ้ำ และ B หยุดเสียง
+โดยต้องมี environment/โมเดลในเครื่องก่อน ไม่มีการดาวน์โหลดอัตโนมัติหรือ Cloud fallback
+ดู [Piper offline](docs/PIPER_OFFLINE_TTS_TH.md), [Edge online ไทย/อังกฤษและวิธีติดตั้งหลัง pull](docs/EDGE_TTS_TH.md) และ [ผล audit launcher](docs/MAIN_LAUNCHER_AUDIT_TH.md)
+
+`main.bat` หาไฟล์โปรเจกต์จากตำแหน่งของตัวเอง จึงเรียกจากโฟลเดอร์อื่นได้
+path ภาพแบบ relative อ้างอิงโฟลเดอร์ที่เรียกคำสั่ง ส่วน scanner options ส่งต่อให้ CLI เดิม
+หาก dependencies ไม่ครบ จะแจ้งให้รัน `main.bat setup` โดยไม่ติดตั้งเอง
+
+คำสั่ง Python เดิมยังใช้ได้สำหรับงานพัฒนา:
 
 ```powershell
 .venv\Scripts\python.exe camera_reader.py --lang thai --res fhd --sharp 0 --dot-color blue

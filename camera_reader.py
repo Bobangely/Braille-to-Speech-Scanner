@@ -78,9 +78,9 @@ def _valid_frame(frame):
 
 # รายการความละเอียดมาตรฐานที่สามารถสลับใช้งานได้
 RESOLUTION_LIST = [
-    ("4K UHD", 3840, 2160),
-    ("Full HD", 1920, 1080),
-    ("HD 720p", 1280, 720),
+    ("4K", 3840, 2160),
+    ("2K", 2560, 1440),
+    ("1080p", 1920, 1080),
 ]
 
 RESOLUTION_PRESETS = {
@@ -93,14 +93,6 @@ RESOLUTION_PRESETS = {
     '480p': (640, 480),
 }
 
-# ระดับความคมชัด (Level, Display Name, Unsharp Strength)
-SHARPNESS_LEVELS = [
-    (0, "OFF", 0.0),
-    (1, "LOW (1.2x)", 0.35),
-    (2, "MED (1.6x)", 0.70),
-    (3, "HIGH (2.2x)", 1.15),
-    (4, "ULTRA (3.0x)", 1.65),
-]
 
 
 class ThreadedCameraCapture:
@@ -110,10 +102,12 @@ class ThreadedCameraCapture:
     RETRY_AFTER = 3.0
     MAX_RECONNECTS = 3
 
-    def __init__(self, camera_id=0, target_width=1920, target_height=1080, target_fps=60):
+    def __init__(self, camera_id=0, target_width=1920, target_height=1080, target_fps=60,
+                 preferred_resolution=None):
         self.camera_id = camera_id
         self.target_width, self.target_height = target_width, target_height
         self.target_fps = target_fps
+        self.preferred_resolution = preferred_resolution
         self.actual_width, self.actual_height, self.actual_fps = target_width, target_height, target_fps
         self.cap = None
         self.frame, self.ret, self.frame_id = None, False, 0
@@ -121,6 +115,9 @@ class ThreadedCameraCapture:
         self._lifecycle_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._pending_resolution = None
+        self.available_resolutions = []
+        self._needs_probe = False
+        self._last_probe_frame = None
         self._last_frame_at = None
         self._status, self._error = 'starting', None
         self.running, self.thread = False, None
@@ -156,11 +153,70 @@ class ThreadedCameraCapture:
                 self._status, self._error = 'unavailable', 'Unable to open camera'
             return False
         self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-        self._configure(self.target_width, self.target_height, self.target_fps)
+        self._needs_probe = True
         # First read belongs to the worker too: a slow driver must not block UI setup.
         with self.lock:
             self._status, self._error = 'waiting', None
         return True
+
+    def _read_resolution(self, width, height, fps):
+        """ยืนยันสองเฟรมติดกัน ป้องกันเฟรมเก่าหลัง driver เปลี่ยนโหมด"""
+        if self._stop_event.is_set():
+            return None
+        try:
+            self._configure(width, height, fps)
+            consecutive = 0
+            # shortcut: จำกัด 5 reads; กล้องที่ warm-up นานต้องปรับ budget จากการทดสอบจริง
+            for _ in range(5):
+                if self._stop_event.is_set():
+                    return None
+                ret, frame = self.cap.read()
+                if ret and _valid_frame(frame):
+                    if self._needs_probe:
+                        self._last_probe_frame = frame
+                    consecutive = consecutive + 1 if frame.shape[:2] == (height, width) else 0
+                    if consecutive == 2:
+                        with self.lock:
+                            self.actual_width, self.actual_height = width, height
+                        return frame
+                else:
+                    consecutive = 0
+        except Exception:
+            logger.warning('Camera mode %sx%s failed', width, height, exc_info=True)
+        return None
+
+    def _activate_resolution(self, width, height, fps):
+        choices = [(width, height)] + [(w, h) for _, w, h in self.available_resolutions
+                                      if w*h < width*height]
+        for w, h in choices:
+            if self._read_resolution(w, h, fps) is not None:
+                return True
+            with self.lock:
+                self.available_resolutions = [m for m in self.available_resolutions
+                                              if m[1:] != (w, h)]
+        return False
+
+    def _probe_resolutions(self):
+        self._last_probe_frame = None
+        with self.lock:
+            self.available_resolutions = []
+        supported = []
+        for mode in RESOLUTION_LIST:
+            if self._read_resolution(mode[1], mode[2], self.target_fps) is not None:
+                supported.append(mode)
+        with self.lock:
+            self.available_resolutions = supported
+        if self.preferred_resolution is not None:
+            self._activate_resolution(*self.preferred_resolution, self.target_fps)
+        elif supported:
+            _, width, height = supported[0]
+            self._activate_resolution(width, height, self.target_fps)
+        elif self._last_probe_frame is not None:
+            # กล้องต่ำกว่า 1080p ใช้เฟรม native แต่ไม่แสดงชื่อโหมดที่ไม่รองรับ
+            height, width = self._last_probe_frame.shape[:2]
+            self._read_resolution(width, height, self.target_fps)
+        self._needs_probe = False
+        self._last_probe_frame = None
 
     def start(self):
         with self._lifecycle_lock:
@@ -179,11 +235,13 @@ class ThreadedCameraCapture:
         last_error = None
         try:
             while self.running and not self._stop_event.is_set():
+                if self._needs_probe and self.cap is not None:
+                    self._probe_resolutions()
                 with self.lock:
                     resolution, self._pending_resolution = self._pending_resolution, None
                 if resolution is not None and self.cap is not None:
                     try:
-                        self._configure(*resolution)
+                        self._activate_resolution(*resolution)
                     except Exception:
                         logger.exception("Camera resolution change failed")
                 if self._stop_event.is_set() or not self.running:
@@ -233,6 +291,7 @@ class ThreadedCameraCapture:
                     if self._pending_resolution is not None:
                         continue  # This read began before the requested resolution change.
                     self.ret, self.frame = True, frame
+                    self.actual_height, self.actual_width = frame.shape[:2]
                     self.frame_id += 1
                     self._last_frame_at = time.monotonic()
                     self._status, self._error = 'ready', None
@@ -316,7 +375,6 @@ class AsyncBrailleWorker:
         self._new_frame_event = threading.Event()
         self._input_lock = threading.Lock()
         self._pending_frame = None
-        self._pending_strength = 0.0
         self._pending_context = None
         self._pending_frame_id = None
         self._pending_color = None
@@ -335,7 +393,6 @@ class AsyncBrailleWorker:
         self.busy_since = None
         self.result_frame_id = None
         self.result_frame = self.result_camera_roi = None
-        self.result_strength = 0.0
         self.source_shape = None
         self.result_context = None
         self.result_color = None
@@ -364,16 +421,17 @@ class AsyncBrailleWorker:
     def submit_frame(self, frame, lang=None, sharpness_strength=0.0, context=None, frame_id=None,
                      dot_color=None):
         """Keep one owned pending snapshot; never run concurrent model calls."""
+        if sharpness_strength != 0:
+            raise ValueError('Sharpness has been removed; use sharpness_strength=0')
         with self._input_lock:
             if self._stop_event.is_set():
                 return False
             frame_lang = lang or self.lang
-            identity = (frame_id, frame_lang, sharpness_strength, context, dot_color)
+            identity = (frame_id, frame_lang, context, dot_color)
             if frame_id is not None and identity == self._last_submission:
                 return False
             self.lang = frame_lang
             self._pending_frame = frame.copy() if isinstance(frame, np.ndarray) else frame
-            self._pending_strength = sharpness_strength
             self._pending_context = context
             self._pending_frame_id = frame_id
             self._pending_color = dot_color
@@ -405,7 +463,7 @@ class AsyncBrailleWorker:
                 'reason': self.reason,
                 'stage': self.stage,
                 'frame_id': self.result_frame_id,
-                'sharpness_strength': self.result_strength,
+                'sharpness_strength': 0.0,  # คง schema ของ Diagnostic เดิม ไม่มีการเพิ่มความคม
                 'busy_seconds': (time.monotonic() - self.busy_since) if self.busy_since is not None else 0.0,
             }
             if include_frame:
@@ -427,7 +485,7 @@ class AsyncBrailleWorker:
                         continue
                     frame_to_process = self._pending_frame
                     camera_roi = frame_to_process
-                    frame_lang, strength = self.lang, self._pending_strength
+                    frame_lang = self.lang
                     frame_context, frame_id = self._pending_context, self._pending_frame_id
                     frame_color, submitted_at = self._pending_color, self._pending_submitted_at
                     self._pending_frame = None
@@ -443,11 +501,6 @@ class AsyncBrailleWorker:
                     if not _valid_frame(frame_to_process):
                         raise UnreadableBrailleFrame('Expected a nonempty BGR uint8 camera frame')
                     source_shape = frame_to_process.shape
-                    if strength:
-                        h, w = frame_to_process.shape[:2]
-                        small = cv2.resize(frame_to_process, (max(1, w//2), max(1, h//2)))
-                        blur = cv2.resize(cv2.GaussianBlur(small, (5, 5), 0), (w, h))
-                        frame_to_process = cv2.addWeighted(frame_to_process, 1 + strength, blur, -strength, 0)
                     stage = 'detection'
                     detect_options = {'lang': frame_lang} if self._detect_accepts_lang else {}
                     options = dict(dot_color=frame_color, context=frame_context)
@@ -497,7 +550,6 @@ class AsyncBrailleWorker:
                     self.result_lang, self.result_frame_id = frame_lang, frame_id
                     self.result_frame = frame_to_process if _valid_frame(frame_to_process) else None
                     self.result_camera_roi = camera_roi if _valid_frame(camera_roi) else None
-                    self.result_strength = strength
                     self.error, self.status, self.reason, self.stage = error, status, reason, stage
                     self.source_shape, self.result_context = source_shape, frame_context
                     self.result_color, self.result_submitted_at = frame_color, submitted_at
@@ -540,7 +592,7 @@ class RealTimeBrailleScanner:
         camera_id=0,
         lang='thai',
         stability_threshold=6,
-        res_preset='4k',
+        res_preset='auto',
         width=None,
         height=None,
         initial_zoom=1.0,
@@ -557,7 +609,15 @@ class RealTimeBrailleScanner:
         dot_color='blue',
         roi_mode='off',
         scan_roi=None,
+        tts_models=None,
+        tts_python=None,
+        tts_thai_backend='piper',
+        tts_backend='local',
     ):
+        self._speech = None
+        if tts_models or tts_backend == 'edge':
+            from piper_tts import PiperSpeech
+            self._speech = PiperSpeech(tts_models or {}, python_executable=tts_python, thai_backend=tts_thai_backend, backend=tts_backend)
         self.camera_id = camera_id
         self.lang = lang.lower()
         self.stability_threshold = stability_threshold
@@ -574,10 +634,11 @@ class RealTimeBrailleScanner:
             scan_roi = tuple(map(float, scan_roi))
         self.scan_roi = scan_roi
 
-        # กำหนดระดับความคมชัดเริ่มต้น (0 ถึง 4)
-        self.sharpness_idx = max(0, min(len(SHARPNESS_LEVELS) - 1, int(sharpness_level)))
+        if sharpness_level != 0:
+            raise ValueError('Sharpness has been removed; use sharpness_level=0')
 
-        self.available_resolutions = list(RESOLUTION_LIST)
+        self.available_resolutions = []
+        self._auto_resolution = width is None and res_preset in (None, 'auto')
         if (width is None) != (height is None):
             raise ValueError('Provide both camera width and height')
         if width is not None:
@@ -585,7 +646,7 @@ class RealTimeBrailleScanner:
                 raise ValueError('Camera dimensions must be positive')
             self.target_width, self.target_height = int(width), int(height)
         else:
-            preset = (res_preset or '4k').lower()
+            preset = ('4k' if res_preset in (None, 'auto') else res_preset).lower()
             if preset not in RESOLUTION_PRESETS:
                 raise ValueError(f'Unknown camera resolution: {res_preset}')
             self.target_width, self.target_height = RESOLUTION_PRESETS[preset]
@@ -653,12 +714,6 @@ class RealTimeBrailleScanner:
         self.history.clear()
         self._line_confirmation.reset()
 
-    def cycle_sharpness(self):
-        """สลับระดับความคมชัด: OFF -> LOW -> MED -> HIGH -> ULTRA"""
-        self.sharpness_idx = (self.sharpness_idx + 1) % len(SHARPNESS_LEVELS)
-        lvl_num, lvl_name, _ = SHARPNESS_LEVELS[self.sharpness_idx]
-        self._reset_confirmation()
-        print(f"   ปรับระดับความคมชัด (Sharpness): Level {lvl_num} [{lvl_name}]")
 
     def cycle_dot_color(self):
         self.dot_color = DOT_COLORS[(DOT_COLORS.index(self.dot_color) + 1) % len(DOT_COLORS)]
@@ -667,7 +722,9 @@ class RealTimeBrailleScanner:
         print(f"  สีจุดที่อ่าน: {self.dot_color.upper()} [C]")
 
     def cycle_resolution(self):
-        """สลับความละเอียดแบบสดระหว่าง 4K UHD <-> Full HD 1080p <-> HD 720p"""
+        """สลับเฉพาะโหมด 4K / 2K / 1080p ที่ตรวจจากเฟรมจริงแล้ว"""
+        if len(self.available_resolutions) < 2:
+            return
         self.curr_res_idx = (self.curr_res_idx + 1) % len(self.available_resolutions)
         name, target_w, target_h = self.available_resolutions[self.curr_res_idx]
 
@@ -789,7 +846,8 @@ class RealTimeBrailleScanner:
             display_text = '\n'.join(display)
         state = dict(text=display_text, result_held=bool(display_text) and not is_locked and not partial, lang=self.lang,
             result_partial=partial, confirmed_lines=confirmed_lines, line_total=len(lines),
-            color=self.dot_color, sharp=SHARPNESS_LEVELS[self.sharpness_idx][1].split()[0],
+            color=self.dot_color, resolution_mode=self.res_name,
+            resolution_modes=[name for name, _, _ in self.available_resolutions],
             details=self.show_details, zoom=self.zoom_level, status=status,
             resolution=f'{self.actual_width} x {self.actual_height}',
             mode=('YOLO ROI / ' if getattr(self.detector, 'roi_mode', 'off') == 'yolo'
@@ -797,7 +855,9 @@ class RealTimeBrailleScanner:
             cells=len(cells), dots=len(result.get('dots', [])),
             lines=len({cell.get('line_id', 0) for cell in cells}),
             confirmed=len(self.history) if is_locked or current_text else 0,
-            required=self.stability_threshold)
+            required=self.stability_threshold,
+            tts_enabled=self._speech is not None,
+            tts_status=self._speech.status if self._speech is not None else '')
         return self._ui.compose(preview, state)
 
     def _draw_top_hud(self, image, current_text, is_locked):
@@ -854,11 +914,18 @@ class RealTimeBrailleScanner:
         if not _valid_frame(frame):
             raise UnreadableBrailleFrame('Invalid camera frame')
         self.actual_height, self.actual_width = frame.shape[:2]
+        modes = getattr(self.camera, 'available_resolutions', None)
+        if isinstance(modes, list):
+            self.available_resolutions = list(modes)
+            self.curr_res_idx = next((i for i, (_, w, h) in enumerate(modes)
+                                      if (w, h) == (self.actual_width, self.actual_height)), 0)
+            self.res_name = next((name for name, w, h in modes
+                                  if (w, h) == (self.actual_width, self.actual_height)), 'Native')
         now = time.monotonic()
         self.display_fps = .9*self.display_fps + .1/max(now-self._prev_frame_time, 1e-5)
         self._prev_frame_time = now
         enhanced_frame, crop_box = self._apply_zoom(frame)
-        context = (self._context_generation, self.lang, self.detector_mode, self.sharpness_idx,
+        context = (self._context_generation, self.lang, self.detector_mode,
                    tuple(crop_box) if crop_box is not None else None, enhanced_frame.shape, self.dot_color)
         if context != self._confirmed_context:
             # Historical text belongs to this language/color/camera crop only.
@@ -868,7 +935,6 @@ class RealTimeBrailleScanner:
             self._last_stability_result_id = 0
         if frame_id != self._last_submitted_frame_id or context != self._last_submitted_context:
             self.ai_worker.submit_frame(enhanced_frame, lang=self.lang,
-                sharpness_strength=SHARPNESS_LEVELS[self.sharpness_idx][2],
                 context=context, frame_id=frame_id, dot_color=self.dot_color)
             self._last_submitted_frame_id, self._last_submitted_context = frame_id, context
         result = self.ai_worker.get_latest_results(include_frame=True)
@@ -971,18 +1037,29 @@ class RealTimeBrailleScanner:
 
     def _handle_key(self, key, enhanced_frame, annotated):
         if key in (ord('q'), ord('Q'), 27):
+            if self._speech is not None:
+                self._speech.stop()
             return False
-        if key in (ord('h'), ord('H')):
+        if key in (ord('s'), ord('S')):
+            if self._speech is not None and self._confirmed_text:
+                text = self._confirmed_text
+                if self.lang in ('thai', 'th'):
+                    from tts import prepare_thai_speech_text
+                    text = prepare_thai_speech_text(text)
+                self._speech.speak(text, self.lang)
+        elif key in (ord('b'), ord('B')):
+            if self._speech is not None:
+                self._speech.stop()
+        elif key in (ord('h'), ord('H')):
             self.show_details = not self.show_details
         elif key in (ord('['), ord(']')):
             self._ui.scroll(-1 if key == ord('[') else 1)
         elif key in (ord('c'), ord('C')):
             self.cycle_dot_color()
         elif key in (ord('v'), ord('V'), ord('f'), ord('F')):
-            self.cycle_resolution()
-            self._context_generation += 1
-        elif key in (ord('e'), ord('E')):
-            self.cycle_sharpness()
+            if len(self.available_resolutions) > 1:
+                self.cycle_resolution()
+                self._context_generation += 1
         elif key in (ord('z'), ord('Z'), ord('+'), ord('='), ord('i'), ord('I')):
             self.zoom_in()
         elif key in (ord('x'), ord('X'), ord('-'), ord('_'), ord('o'), ord('O')):
@@ -990,6 +1067,8 @@ class RealTimeBrailleScanner:
         elif key in (ord('r'), ord('R'), ord('0')):
             self.reset_zoom()
         elif key in (ord('l'), ord('L')):
+            if self._speech is not None:
+                self._speech.stop()
             self.lang = 'english' if self.lang == 'thai' else 'thai'
             self._reset_confirmation()
             print(f"  🌐 สลับภาษาเป็น: {self.lang.upper()}")
@@ -1038,19 +1117,16 @@ class RealTimeBrailleScanner:
             self._session_lock.release()
 
     def _run_session(self):
-        lvl_num, lvl_name, _ = SHARPNESS_LEVELS[self.sharpness_idx]
         print("=" * 70)
         print("   Painted Braille Real-Time Scanner (Async Preview)")
         print("=" * 70)
         print(f"  เปิดกล้อง ID:        Camera Index {self.camera_id}")
         print(f"  ความละเอียดเป้าหมาย:  {self.target_width}x{self.target_height} ({self.res_name})")
-        print(f"  ระดับความคมชัด:      Level {lvl_num} [{lvl_name}]")
         print(f"  ภาษาเริ่มต้น:        {self.lang.upper()}")
         print(f"  อัตราการซูมเริ่มต้น:  {self.zoom_level:.1f}x")
         print()
         print("  คีย์ลัดและควบคุม:")
-        print("    [V] / [F]       - สลับความละเอียด (4K UHD <-> Full HD 1080p <-> HD 720p)")
-        print("    [E]             - ปรับระดับความคมชัด (OFF -> LOW -> MED -> HIGH -> ULTRA)")
+        print("    [V] / [F]       - สลับเฉพาะโหมดที่ตรวจแล้ว: 4K / 2K / 1080p")
         print("    [Z] / [+]       - ซูมเข้า (Zoom In)")
         print("    [X] / [-]       - ซูมออก (Zoom Out)")
         print("    [R] / [0]       - รีเซ็ตการซูม (Reset Zoom 1.0x)")
@@ -1075,7 +1151,9 @@ class RealTimeBrailleScanner:
         self._ui_pending_key = None
         try:
             self.camera = ThreadedCameraCapture(camera_id=self.camera_id,
-                target_width=self.target_width, target_height=self.target_height, target_fps=60)
+            target_width=self.target_width, target_height=self.target_height, target_fps=60,
+            preferred_resolution=None if self._auto_resolution else
+            (self.target_width, self.target_height))
             if not self.camera.is_opened():
                 print(f"[ERR] ไม่สามารถเปิดกล้อง ID: {self.camera_id}; ตรวจสอบการเชื่อมต่อหรือ --camera")
                 return
@@ -1147,7 +1225,7 @@ class RealTimeBrailleScanner:
                     action_error = 'ACTION FAILED - camera remains live; see console'
         finally:
             self._window_name = None
-            for owner, method in ((self.ai_worker, 'stop'), (self.camera, 'release')):
+            for owner, method in ((self._speech, 'stop'), (self.ai_worker, 'stop'), (self.camera, 'release')):
                 if owner is not None:
                     try:
                         getattr(owner, method)()
@@ -1159,21 +1237,21 @@ class RealTimeBrailleScanner:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Braille Reader — ระบบสแกนอักษรเบรลล์ Real-Time รองรับ 4K UHD / Full HD พร้อมปรับระดับความคมชัด & Digital Zoom',
+        description='Braille Reader — ตรวจโหมดกล้องจริงและอ่านจากภาพต้นฉบับ',
     )
     parser.add_argument(
         '--camera', '--source', type=int, default=0, dest='camera',
         help='ID ของกล้อง Webcam (default: 0)',
     )
     parser.add_argument(
-        '--res', type=str, default='4k',
-        choices=['4k', '2k', '1080p', 'fhd', '720p', 'hd', '480p'],
-        help='ความละเอียดเริ่มต้น: 4k (3840x2160), fhd/1080p (1920x1080), 720p (default: 4k)',
+        '--res', type=str, default='auto',
+        choices=['auto', '4k', '2k', '1080p', 'fhd', '720p', 'hd', '480p'],
+        help='auto: เริ่มโหมดสูงสุดที่ตรวจจากเฟรมจริง; ระบุ preset/ขนาดเองเพื่อเลือกโหมด',
     )
     parser.add_argument(
         '--sharp', type=int, default=0,
-        choices=[0, 1, 2, 3, 4],
-        help='ระดับความคมชัดเริ่มต้น: 0=OFF, 1=LOW, 2=MED, 3=HIGH, 4=ULTRA (default: 0)',
+        choices=[0],
+        help='เลิกใช้ Sharpness แล้ว; คง --sharp 0 สำหรับคำสั่งเดิมเท่านั้น',
     )
     parser.add_argument(
         '--lang', type=str, default='thai',
@@ -1213,6 +1291,11 @@ def main():
     parser.add_argument('--max-cells', type=int, default=256, help='Maximum cells per frame')
     parser.add_argument('--proposal-conf', type=float, default=None, help='Overview threshold (default: min(0.3, conf))')
     parser.add_argument('--model', default=None, help='Local YOLO weights')
+    parser.add_argument('--tts-thai-backend', choices=['piper', 'mms'], default='piper')
+    parser.add_argument('--tts-backend', choices=['local', 'edge'], default='local')
+    parser.add_argument('--tts-thai-model', help='Local Thai Piper .onnx or MMS model directory')
+    parser.add_argument('--tts-english-model', help='Local Piper English .onnx; requires matching .onnx.json')
+    parser.add_argument('--tts-python', help='Python executable in the optional Piper environment')
     parser.add_argument('--dot-color', choices=DOT_COLORS, default='blue', help='Read only painted dots of this color')
     parser.add_argument('--roi', choices=['off', 'yolo'], default='off', help='Optional YOLO-dot ROI with tracking')
     parser.add_argument('--scan-roi', nargs=4, type=float, metavar=('X1', 'Y1', 'X2', 'Y2'),
@@ -1240,6 +1323,11 @@ def main():
         dot_color=args.dot_color,
         roi_mode=args.roi,
         scan_roi=args.scan_roi,
+        tts_models=({'thai': args.tts_thai_model, 'english': args.tts_english_model}
+                    if args.tts_thai_model or args.tts_english_model else None),
+        tts_python=args.tts_python,
+        tts_thai_backend=args.tts_thai_backend,
+        tts_backend=args.tts_backend,
     )
     scanner.run()
 

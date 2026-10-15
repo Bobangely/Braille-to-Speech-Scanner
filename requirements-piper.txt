@@ -1,0 +1,4 @@
+# ใช้ environment ทดลองแยก ไม่เปลี่ยน dependencies ของระบบอ่านเบรลล์เดิม
+piper-tts[th]==1.8.0
+# TLTK 1.10 เรียกใช้ requests แต่ไม่ได้ประกาศ dependency นี้
+requests>=2.32,<3

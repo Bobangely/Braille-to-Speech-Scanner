@@ -72,8 +72,8 @@ class ThaiHyphenTests(unittest.TestCase):
             self.assertFalse(tokens[1]['consumed'])
             self.assertEqual(decode_cells(cells, 'thai'), '-�')
 
-    def test_english_mapping_is_unchanged(self):
-        self.assertEqual(decode_cells(logical_cells(['36']), 'english'), '[3,6]')
+    def test_english_grade_one_hyphen_stays_independent_of_thai_pairs(self):
+        self.assertEqual(decode_cells(logical_cells(['36']), 'english'), '-')
         self.assertEqual(decode_cells(logical_cells(['145', '1']), 'english'), 'da')
 
 
