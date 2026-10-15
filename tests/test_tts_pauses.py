@@ -7,6 +7,15 @@ from thai_speech import THAI_CONSONANT_NAMES
 
 
 class SpeechPauseTests(unittest.TestCase):
+    def test_default_reads_whole_lines_and_keeps_all_44_spoken_names(self):
+        voice = 'th-TH-NiwatNeural'
+        self.assertEqual(plan_edge_chunks('เขียด เขียว  ขอน\nไข่. คน กิน', voice),
+                         [('เขียด เขียว ขอน', 10), ('ไข่.', 50), ('คน กิน', 0)])
+        source = ' '.join(THAI_CONSONANT_NAMES)
+        spoken = prepare_thai_speech_text(source)
+        self.assertEqual(plan_edge_chunks(spoken, voice),
+                         [(' '.join(THAI_CONSONANT_NAMES.values()), 0)])
+
     def test_playback_buffers_are_full_until_the_final_audio_block(self):
         def fragments():
             yield array('h')
@@ -30,12 +39,12 @@ class SpeechPauseTests(unittest.TestCase):
     def test_spaces_lines_and_sentences_choose_longest_boundary(self):
         source = '  เขียด เขียว  ขอน\r\nไข่.\nกิน! คน? จบฯ ต่อ  '
         self.assertEqual(plan_edge_chunks(source, 'th-TH-NiwatNeural'), [
-            ('เขียด', 0.5), ('เขียว', 5), ('ขอน', 10), ('ไข่.', 50),
+            ('เขียด เขียว ขอน', 10), ('ไข่.', 50),
             ('กิน!', 50), ('คน?', 50), ('จบฯ', 50), ('ต่อ', 0)])
 
     def test_no_split_inside_thai_words_or_decimal_numbers(self):
         self.assertEqual(plan_edge_chunks('กินคนเกี๊ยว 3.14 บาท', 'th-TH-NiwatNeural'),
-                         [('กินคนเกี๊ยว', 0.5), ('3.14', 0.5), ('บาท', 0)])
+                         [('กินคนเกี๊ยว 3.14 บาท', 0)])
         self.assertEqual(plan_edge_chunks('   \n\t', 'th-TH-NiwatNeural'), [])
         self.assertEqual(plan_edge_chunks('...!?', 'th-TH-NiwatNeural'), [])
 
@@ -50,10 +59,10 @@ class SpeechPauseTests(unittest.TestCase):
     def test_standalone_list_markers_stay_with_the_following_words(self):
         source = '- คำควบกล้ำตัว กล เช่น กล่อ\nง\nนิทานตัว ข'
         chunks = plan_edge_chunks(prepare_thai_speech_text(source), 'th-TH-NiwatNeural')
-        self.assertEqual(chunks[0], ('- คำควบกล้ำตัว', 0.5))
+        self.assertEqual(chunks[0], ('- คำควบกล้ำตัว กล เช่น กล่อ', 10))
         self.assertTrue(all(any(char.isalnum() for char in text) for text, _ in chunks))
         self.assertIn(('งองู', 10), chunks)
-        self.assertEqual(chunks[-1], ('ขอไข่', 0))
+        self.assertEqual(chunks[-1], ('นิทานตัว ขอไข่', 0))
         self.assertEqual(plan_edge_chunks('คำ\n• ต่อ -', 'th-TH-NiwatNeural'),
                          [('คำ', 10), ('• ต่อ -', 0)])
 

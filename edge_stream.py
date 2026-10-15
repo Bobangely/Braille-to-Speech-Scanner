@@ -10,7 +10,7 @@ import time
 import wave
 from thai_speech import expand_thai_speech_units
 
-THAI_PAUSES_MS = dict(space=0.5, phrase=5, line=10, sentence=50)
+THAI_PAUSES_MS = dict(space=0, phrase=0, line=10, sentence=50)
 
 
 def pack_audio_frames(decoded):
