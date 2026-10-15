@@ -10,7 +10,27 @@ import time
 import wave
 from thai_speech import expand_thai_speech_units
 
-THAI_PAUSES_MS = dict(space=10, phrase=30, line=50, sentence=100)
+THAI_PAUSES_MS = dict(space=0, phrase=10, line=20, sentence=50)
+
+
+def pack_audio_frames(decoded):
+    """Fill device requests so short trimmed blocks do not leave silent gaps."""
+    pending = array('h')
+    try:
+        next(decoded)
+        requested = yield array('h')
+        while True:
+            while len(pending) < requested:
+                try:
+                    pending.extend(decoded.send(requested-len(pending)))
+                except StopIteration:
+                    if pending:
+                        yield pending
+                    return
+            frames, pending = pending[:requested], pending[requested:]
+            requested = yield frames
+    finally:
+        decoded.close()
 
 
 def trim_edge_padding(blocks):
@@ -72,7 +92,13 @@ def plan_edge_chunks(text, voice, pauses=None):
     chunks = spoken
     if chunks:
         chunks[-1][1] = 0
-    return [tuple(chunk) for chunk in chunks]
+    merged = []
+    for fragment, pause in chunks:
+        if merged and merged[-1][1] == 0:
+            merged[-1] = (merged[-1][0] + ' ' + fragment, pause)
+        else:
+            merged.append((fragment, pause))
+    return merged
 
 
 def prepare_edge_text(text, voice):
@@ -176,7 +202,7 @@ def stream_edge_audio(text, voice, rate, output, pauses=None):
     producer.start()
     decoded = None
     try:
-        decoded = decode_chunks()
+        decoded = pack_audio_frames(decode_chunks())
         next(decoded)
         with wave.open(str(output), 'wb') as wav:
             wav.setnchannels(1)
