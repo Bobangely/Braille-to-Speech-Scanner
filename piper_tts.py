@@ -39,6 +39,8 @@ class PiperSpeech:
         self._workspace = None
         self._log = None
         self.error = ''
+        self._active_key = self._cache_key = None
+        self._cache_audio = None
 
     @property
     def status(self):
@@ -60,13 +62,23 @@ class PiperSpeech:
             return False
         if lang not in (EDGE_VOICES if self.backend == 'edge' else self.models):
             raise ValueError(f'No speech voice configured for {lang}')
+        key = (text, lang, self.backend, self.thai_backend, str(self.models.get(lang, '')),
+               EDGE_VOICES.get(lang), EDGE_RATE)
+        self._remember_audio()
+        if (key == self._active_key and self._process is not None
+                and self._process.poll() is None and self._cache_key != key):
+            return True
         self.stop()
+        self._active_key = key
         self.error = ''
         self._workspace = tempfile.TemporaryDirectory(prefix='braille-piper-')
         self._log = tempfile.TemporaryFile()
         job = dict(model='' if self.backend == 'edge' else str(self.models[lang]), text=text,
                    backend='edge' if self.backend == 'edge' else self.thai_backend if lang == 'thai' else 'piper',
                    output=str(Path(self._workspace.name) / 'speech.wav'))
+        job['cached'] = key == self._cache_key
+        if job['cached']:
+            Path(job['output']).write_bytes(self._cache_audio)
         if self.backend == 'edge':
             job['voice'] = EDGE_VOICES[lang]
         options = ({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt'
@@ -84,7 +96,15 @@ class PiperSpeech:
             raise
         return True
 
+    def _remember_audio(self):
+        if self._workspace is not None and self._active_key != self._cache_key:
+            directory = Path(self._workspace.name)
+            if (directory/'ready').is_file():
+                self._cache_audio = (directory/'speech.wav').read_bytes()
+                self._cache_key = self._active_key
+
     def stop(self):
+        self._remember_audio()
         proc = self._process
         if proc is not None and proc.poll() is None:
             try:
@@ -104,6 +124,7 @@ class PiperSpeech:
             except ProcessLookupError:
                 pass
         self._process = None
+        self._active_key = None
         if self._log is not None:
             self._log.close()
             self._log = None
@@ -165,8 +186,18 @@ def synthesize_wav(model, text, output, backend='piper', voice=None):
 def _worker():
     job = json.load(sys.stdin)
     output = job['output']
-    metrics = synthesize_wav(job['model'], job['text'], output, backend=job.get('backend', 'piper'), voice=job.get('voice'))
+    backend = job.get('backend', 'piper')
+    if job.get('cached'):
+        metrics = dict(cached=True)
+    elif backend == 'edge':
+        from edge_stream import stream_edge_audio
+        metrics = stream_edge_audio(job['text'], job['voice'], EDGE_RATE, output)
+    else:
+        metrics = synthesize_wav(job['model'], job['text'], output, backend=backend, voice=job.get('voice'))
+    Path(output).with_name('ready').touch()
     print(json.dumps(metrics), flush=True)
+    if backend == 'edge' and not job.get('cached'):
+        return
     if sys.platform == 'win32':
         import winsound
         winsound.PlaySound(output, winsound.SND_FILENAME | winsound.SND_NODEFAULT)

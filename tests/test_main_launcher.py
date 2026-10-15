@@ -165,7 +165,7 @@ class MainLauncherTests(unittest.TestCase):
         missing = self.run_bat('edge')
         self.assertNotEqual(missing.returncode, 0)
         self.make_python(self.root/'scratch/edge-tts-env')
-        for module in ('edge_tts', 'soundfile'):
+        for module in ('edge_tts', 'soundfile', 'miniaudio'):
             (self.root/(module+'.py')).write_text('')
         args = self.launch(self.run_bat('edge', '--res', '1080p'))['args']
         self.assertEqual(args[args.index('--tts-backend')+1], 'edge')

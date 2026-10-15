@@ -112,7 +112,7 @@ def scan(args, piper=False):
             python = voices.tts_python or str(ROOT/'scratch/edge-tts-env/Scripts/python.exe')
             if not Path(python).is_file():
                 raise FileNotFoundError('Missing Edge environment. See docs/EDGE_TTS_TH.md; no installation was attempted.')
-            if code := check_modules(python, ('edge_tts', 'soundfile'),
+            if code := check_modules(python, ('edge_tts', 'soundfile', 'miniaudio'),
                                      'Install requirements-edge-tts.txt; see docs/EDGE_TTS_TH.md'):
                 return code
             options += ['--tts-python', python, '--tts-backend', 'edge']

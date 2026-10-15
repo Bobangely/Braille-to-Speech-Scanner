@@ -27,7 +27,7 @@ Edge เป็น online ทั้งไทยและอังกฤษตา�
 
 ## Flow ที่ตรวจ
 
-cells/dots → decoder.decode_cells('thai') → thai_decoder/Thai parser/renderer → confirmation gate → scanner._confirmed_text → ปุ่ม S → prepare_thai_speech_text → job ผ่าน stdin JSON → worker Edge → MP3 → PCM16 WAV → ตัวเล่นเดิม
+cells/dots → decoder.decode_cells('thai') → thai_decoder/Thai parser/renderer → confirmation gate → scanner._confirmed_text → ปุ่ม S → prepare_thai_speech_text → job ผ่าน stdin JSON → worker Edge → MP3 streaming → miniaudio PCM playback พร้อมบันทึก WAV สำหรับอ่านซ้ำ
 
 1. กดอ่านแล้วส่งเฉพาะข้อความที่ผ่าน confirmation เดิม ไม่ส่ง frame/cells ไป Microsoft ไม่เริ่มสังเคราะห์อัตโนมัติทุกเฟรม
 2. ตรวจว่า decoded/ข้อความ UI/ข้อความ job ตรงกับ expected และ cells ไม่ถูกแก้ระหว่าง decode หรือส่งเสียง
@@ -87,3 +87,16 @@ edge-tts 7.3.1: LGPLv3 (ส่วน srt_composer เป็น MIT), soundfile 0
 - [edge-tts README/API](https://github.com/rany2/edge-tts) · [license](https://github.com/rany2/edge-tts/blob/master/LICENSE)
 - [เสียงภาษาไทย Microsoft](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=tts)
 - [soundfile](https://pypi.org/project/soundfile/0.13.1/)
+
+
+## ลดเวลาเริ่มอ่าน (2026-10-15)
+
+ผลก่อนแก้พบว่า worker รอ MP3 ทั้งชุดและแปลง WAV จบก่อนเล่น; S ซ้ำยังยกเลิกงานที่รอและเริ่มสังเคราะห์ใหม่ ปัจจุบัน Edge เล่น PCM ระหว่างรับ MP3 ผ่าน miniaudio 1.71 (MIT) ใน worker เดิม ไม่บล็อก scanner และไม่เปลี่ยนข้อความ เสียง หรือความเร็ว
+
+ติดตั้ง dependency เพิ่มใน Edge environment ด้วย `python -m pip install -r requirements-edge-tts.txt` โดยใช้ Python ของ environment นั้น การอ่านซ้ำใช้ WAV ล่าสุดที่สร้างสำเร็จในหน่วยความจำของ session; key รวมข้อความ ภาษา backend model voice และ rate ไม่ใช้ไฟล์ที่หยุดกลางทาง กด S ขณะคำขอเดิมกำลังรอจะคง worker เดิม; B หยุด worker และล้างไฟล์งาน โดยเก็บ cache ที่สมบูรณ์ไว้ให้อ่านซ้ำ
+
+ก่อนแก้ข้อความยาวรับ MP3 ครบที่ 22.334 s จึงเริ่มเตรียมเล่นได้ หลังแก้รอบสุดท้ายส่ง PCM ให้ตัวเล่นที่ 0.859 s และรับครบที่ 11.149 s (คนละรอบเครือข่าย จึงไม่ใช้คำนวณเปอร์เซ็นต์ความเร็ว) S คืนใน 7.4 ms, repeat cache พร้อมใน 129 ms, B คืนใน 2.7 ms และตรวจว่า worker หยุดจริง ตัวเลข PCM/ready marker ไม่ใช่เวลาที่วัดเสียงออกลำโพง
+
+เทียบ PCM จาก MP3 เดียวกันพบความต่างสูงสุด 1 หน่วยหลังจัดแนว; ส่วนต้นที่หาย 48 ms เป็น silence ล้วนและไม่มีส่วนท้ายหาย Regression ที่เกี่ยวข้อง 155 tests ผ่าน รวม pending S, cache invalidation, B, partial WAV, ลำดับ PCM และ decoder failure ไม่ค้าง ผลดิบแบบย่ออยู่ใน [tts-latency-results.json](tts-latency-results.json)
+
+ผลจริงนี้ทดสอบ Windows x64 เท่านั้น ยังไม่ได้ทดสอบบอร์ด Linux ARM64; network/service latency และ NoAudioReceived ยังเกิดได้ การเล่น Edge ครั้งแรกใช้ miniaudio ส่วน cache/offline ใช้ตัวเล่น WAV เดิม คำอธิบาย flow/latency ก่อนหน้านี้เป็นผล baseline ก่อนปรับ streaming
