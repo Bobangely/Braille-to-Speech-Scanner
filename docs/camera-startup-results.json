@@ -274,5 +274,19 @@
       "released": true,
       "thread_alive": false
     }
-  ]
+  ],
+  "historical_native_preview_trial": true,
+  "current_behavior": "Native preview during probing removed at user request; waiting dashboard shows initialization message until verified camera frames are ready.",
+  "current_waiting_screen_validation": {
+    "starting_screen": true,
+    "probe_frames_rendered": 0,
+    "stable_preview_seconds": 11.703999999997905,
+    "final_resolution": [
+      3840,
+      2160
+    ],
+    "camera_released": true,
+    "camera_thread_alive": false,
+    "inference_thread_alive": false
+  }
 }

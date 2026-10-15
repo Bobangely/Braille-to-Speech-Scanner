@@ -1,17 +1,16 @@
-"""Preview may start during mode probing; inference still waits for stable input."""
+"""Keep the waiting dashboard until mode probing produces stable input."""
 from types import SimpleNamespace
 import threading
-import time
 import unittest
 from unittest.mock import Mock, patch
 
-from camera_reader import AsyncBrailleWorker, RealTimeBrailleScanner, ThreadedCameraCapture
+from camera_reader import RealTimeBrailleScanner, ThreadedCameraCapture
 from tests.test_camera_modes import ModeCapture
 from tests.test_camera_recovery import FRAME, await_condition
 
 
 class CameraStartupTests(unittest.TestCase):
-    def test_first_frame_is_available_before_slow_resolution_probe_finishes(self):
+    def test_preview_waits_until_slow_resolution_probe_finishes(self):
         cap = ModeCapture([(3840, 2160), (2560, 1440), (1920, 1080)])
         entered, resume = threading.Event(), threading.Event()
         real_read = cap.read
@@ -28,13 +27,7 @@ class CameraStartupTests(unittest.TestCase):
         try:
             camera.start()
             self.assertTrue(entered.wait(2))
-            ret, frame = camera.read_latest()
-            self.assertTrue(ret, 'valid initial frame was hidden behind resolution probing')
-            self.assertEqual(frame.shape[:2], (1080, 1920))
-            self.assertEqual(camera.get_status()[0], 'probing')
-            with camera.lock:
-                camera._last_frame_at = time.monotonic()-3
-            self.assertTrue(camera.read_latest()[0], 'probing must hold its preview during a slow driver call')
+            self.assertFalse(camera.read_latest()[0], 'transitional native frames must not be displayed')
             resume.set()
             await_condition(lambda: camera.get_status()[0] == 'ready')
             self.assertEqual((camera.actual_width, camera.actual_height), (3840, 2160))
@@ -71,16 +64,16 @@ class CameraStartupTests(unittest.TestCase):
                 resume.set()
                 camera.release()
 
-    def test_dashboard_renders_probe_frame_without_submitting_it_for_detection(self):
+    def test_dashboard_explains_startup_then_clears_message_for_stable_preview(self):
         scanner = RealTimeBrailleScanner(res_preset='480p')
         scanner.camera = SimpleNamespace(_needs_probe=True, available_resolutions=[])
-        scanner.ai_worker = AsyncBrailleWorker(Mock())
-        scanner.ai_worker.submit_frame = Mock()
-        scanner._prev_frame_time = time.monotonic()
-        annotated, source = scanner._render_frame(FRAME, 1)
-        self.assertTrue(annotated.size)
-        self.assertEqual(source.shape, FRAME.shape)
-        scanner.ai_worker.submit_frame.assert_not_called()
-        scanner.camera._needs_probe = False
-        scanner._render_frame(FRAME, 1)
-        scanner.ai_worker.submit_frame.assert_called_once()
+        with patch.object(scanner._ui, '_label', wraps=scanner._ui._label) as labels:
+            scanner._compose_dashboard(None, {})
+            self.assertEqual(scanner._ui._state['status'], 'Starting')
+            self.assertIn('กำลังเปิดระบบอ่าน', [call.args[2] for call in labels.call_args_list])
+            self.assertIsNone(scanner._ui.preview_rect)
+            labels.reset_mock()
+            scanner.camera._needs_probe = False
+            scanner._compose_dashboard(FRAME, {})
+            self.assertNotIn('กำลังเปิดระบบอ่าน', [call.args[2] for call in labels.call_args_list])
+            self.assertIsNotNone(scanner._ui.preview_rect)

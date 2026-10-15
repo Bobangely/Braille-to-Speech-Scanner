@@ -13,7 +13,7 @@ from result_text import ResultText
 # RGB palette. Status is also written in text, never conveyed by color alone.
 BG, CARD, BORDER = '#0e141e', '#171f2c', '#2b3749'
 TEXT, MUTED, ACCENT = '#edf3fb', '#94a5ba', '#67cfca'
-STATUS = {'Ready': MUTED, 'Scanning': '#76baff', 'Detected': '#67d9af',
+STATUS = {'Ready': MUTED, 'Starting': '#76baff', 'Scanning': '#76baff', 'Detected': '#67d9af',
           'Check image': '#efbc68', 'Error': '#f18f96'}
 
 
@@ -131,6 +131,16 @@ class ScannerUI:
         summary = f"{state.get('cells', 0)} cells  /  {state.get('dots', 0)} dots  /  {state.get('lines', 0)} lines"
         self._label(draw, (right-self._font(12).getlength(summary)-10*s, y+7*s), summary, 12, MUTED)
         draw.rectangle(self.video_box, fill='#080d14')
+        if state.get('camera_starting'):
+            left, top, right, bottom = self.video_box
+            messages = (('กำลังเปิดระบบอ่าน', 'กำลังเตรียมกล้อง กรุณารอสักครู่')
+                        if state.get('lang') == 'thai' else
+                        ('Starting the reader', 'Preparing camera, please wait'))
+            for message, size, offset, color in ((messages[0], 20, -20, TEXT),
+                                                  (messages[1], 13, 16, MUTED)):
+                width = self._font(size).getlength(message)
+                self._label(draw, ((left+right-width)/2, (top+bottom)/2+offset*s),
+                            message, size, color)
 
         x, y, right, bottom = self.result_card
         self._label(draw, (x+10*s, y+10*s), 'DETECTION RESULT', 12, MUTED, True)
