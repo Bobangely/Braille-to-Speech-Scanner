@@ -161,6 +161,20 @@ class MainLauncherTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn('LAUNCH:', result.stdout)
 
+    def test_edge_requires_only_its_environment_and_no_offline_models(self):
+        missing = self.run_bat('edge')
+        self.assertNotEqual(missing.returncode, 0)
+        self.make_python(self.root/'scratch/edge-tts-env')
+        for module in ('edge_tts', 'soundfile'):
+            (self.root/(module+'.py')).write_text('')
+        args = self.launch(self.run_bat('edge', '--res', '1080p'))['args']
+        self.assertEqual(args[args.index('--tts-backend')+1], 'edge')
+        self.assertNotIn('--tts-thai-model', args)
+        self.assertNotIn('--tts-english-model', args)
+        self.assertEqual(args[-2:], ['--res', '1080p'])
+        menu = self.launch(self.run_bat(input='6\nq\n'))['args']
+        self.assertEqual(menu[menu.index('--tts-backend')+1], 'edge')
+
     def test_application_error_exit_code_is_preserved(self):
         result = self.run_bat('scan', env={'BRAILLE_TEST_APP_EXIT': '9'})
         self.assertEqual(result.returncode, 9, result.stdout+result.stderr)

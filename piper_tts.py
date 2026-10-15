@@ -1,4 +1,4 @@
-"""Offline Piper / optional Thai MMS: local models and stoppable worker processes."""
+"""Stoppable speech worker: local Piper/MMS or explicitly selected online Edge."""
 import json
 import logging
 import os
@@ -11,14 +11,20 @@ import tempfile
 import time
 import wave
 
+EDGE_VOICES = {'thai': 'th-TH-PremwadeeNeural', 'english': 'en-US-JennyNeural'}
+EDGE_RATE = '-15%'
+
 
 class PiperSpeech:
-    def __init__(self, models, python_executable=None, thai_backend='piper'):
+    def __init__(self, models, python_executable=None, thai_backend='piper', backend='local'):
+        if backend not in ('local', 'edge'):
+            raise ValueError(f'Unsupported speech backend: {backend}')
+        self.backend = backend
         if thai_backend not in ('piper', 'mms'):
             raise ValueError(f'Unsupported offline Thai backend: {thai_backend}')
         self.thai_backend = thai_backend
         self.models = {lang: Path(path).expanduser().resolve() for lang, path in models.items() if path}
-        for lang, path in self.models.items():
+        for lang, path in (self.models.items() if backend == 'local' else ()):
             if lang == 'thai' and thai_backend == 'mms':
                 required = ('config.json', 'model.safetensors', 'tokenizer_config.json', 'vocab.json')
                 if not all((path / name).is_file() for name in required):
@@ -45,22 +51,24 @@ class PiperSpeech:
             if not self.error:
                 self._log.seek(0)
                 self.error = self._log.read().decode('utf-8', errors='replace')[-2000:] or f'Piper exit code {code}'
-                logging.getLogger(__name__).error('Piper failed: %s', self.error)
+                logging.getLogger(__name__).error('Speech failed: %s', self.error)
             return 'Speech error'
         return 'Ready'
 
     def speak(self, text, lang):
         if not text or not text.strip():
             return False
-        if lang not in self.models:
-            raise ValueError(f'No local Piper model configured for {lang}')
+        if lang not in (EDGE_VOICES if self.backend == 'edge' else self.models):
+            raise ValueError(f'No speech voice configured for {lang}')
         self.stop()
         self.error = ''
         self._workspace = tempfile.TemporaryDirectory(prefix='braille-piper-')
         self._log = tempfile.TemporaryFile()
-        job = dict(model=str(self.models[lang]), text=text,
-                   backend=self.thai_backend if lang == 'thai' else 'piper',
+        job = dict(model='' if self.backend == 'edge' else str(self.models[lang]), text=text,
+                   backend='edge' if self.backend == 'edge' else self.thai_backend if lang == 'thai' else 'piper',
                    output=str(Path(self._workspace.name) / 'speech.wav'))
+        if self.backend == 'edge':
+            job['voice'] = EDGE_VOICES[lang]
         options = ({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt'
                    else {'start_new_session': True})
         try:
@@ -104,10 +112,14 @@ class PiperSpeech:
             self._workspace = None
 
 
-def synthesize_wav(model, text, output, backend='piper'):
-    """สังเคราะห์บน CPU จากโมเดลในเครื่อง พร้อมเวลาที่วัดได้จริง"""
+def synthesize_wav(model, text, output, backend='piper', voice=None):
+    """Return PCM WAV and timings; Edge requires an internet connection."""
     started = time.perf_counter()
-    if backend == 'mms':
+    if backend == 'edge':
+        import asyncio
+        import edge_tts
+        import soundfile
+    elif backend == 'mms':
         import torch
         from transformers import AutoTokenizer, VitsModel
         tokenizer = AutoTokenizer.from_pretrained(str(model), local_files_only=True)
@@ -119,19 +131,28 @@ def synthesize_wav(model, text, output, backend='piper'):
     else:
         raise ValueError(f'Unsupported offline backend: {backend}')
     loaded = time.perf_counter()
-    with wave.open(str(output), 'wb') as wav:
-        if backend == 'mms':
-            import numpy as np
-            inputs = tokenizer(text, return_tensors='pt')
-            with torch.inference_mode():
-                samples = voice(**inputs).waveform[0].cpu().numpy()
-            samples = (np.clip(samples, -1, 1) * 32767).astype('<i2')
-            wav.setnchannels(1)
-            wav.setsampwidth(2)
-            wav.setframerate(voice.config.sampling_rate)
-            wav.writeframes(samples.tobytes())
-        else:
-            voice.synthesize_wav(text, wav)
+    if backend == 'edge':
+        mp3 = Path(output).with_suffix('.mp3')
+        try:
+            asyncio.run(edge_tts.Communicate(text, voice=voice or EDGE_VOICES['thai'], rate=EDGE_RATE).save(str(mp3)))
+            samples, rate = soundfile.read(mp3, dtype='int16')
+            soundfile.write(output, samples, rate, subtype='PCM_16')
+        finally:
+            mp3.unlink(missing_ok=True)
+    else:
+        with wave.open(str(output), 'wb') as wav:
+            if backend == 'mms':
+                import numpy as np
+                inputs = tokenizer(text, return_tensors='pt')
+                with torch.inference_mode():
+                    samples = voice(**inputs).waveform[0].cpu().numpy()
+                samples = (np.clip(samples, -1, 1) * 32767).astype('<i2')
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(voice.config.sampling_rate)
+                wav.writeframes(samples.tobytes())
+            else:
+                voice.synthesize_wav(text, wav)
     finished = time.perf_counter()
     with wave.open(str(output), 'rb') as wav:
         duration = wav.getnframes() / wav.getframerate()
@@ -144,7 +165,7 @@ def synthesize_wav(model, text, output, backend='piper'):
 def _worker():
     job = json.load(sys.stdin)
     output = job['output']
-    metrics = synthesize_wav(job['model'], job['text'], output, backend=job.get('backend', 'piper'))
+    metrics = synthesize_wav(job['model'], job['text'], output, backend=job.get('backend', 'piper'), voice=job.get('voice'))
     print(json.dumps(metrics), flush=True)
     if sys.platform == 'win32':
         import winsound

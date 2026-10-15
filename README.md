@@ -48,7 +48,7 @@
 
 ## ใช้งานกล้องและภาพเดี่ยว
 
-ดับเบิลคลิก `main.bat` เพื่อเปิดเมนูเดียว: scanner, scanner พร้อม Piper offline,
+ดับเบิลคลิก `main.bat` เพื่อเปิดเมนูเดียว: scanner, scanner พร้อม Piper offline หรือ Edge online,
 ตรวจกล้อง, ทดสอบภาพ/ภาพตัวอย่างเดิม และติดตั้ง dependencies ลง `.venv` แบบเลือกเอง
 ลากไฟล์ภาพมาวางบน `main.bat` ได้ หรือเรียกคำสั่งโดยตรง:
 
@@ -56,6 +56,7 @@
 .\main.bat scan
 .\main.bat scan --res 1080p --camera 0
 .\main.bat piper
+.\main.bat edge
 .\main.bat camera-test
 .\main.bat image "path/to/image.png" --lang thai --no-show
 .\main.bat setup
@@ -63,7 +64,7 @@
 
 โหมด `scan` ไม่เปิดเสียง; เลือก `piper` เพื่อเปิดปุ่ม S อ่าน/อ่านซ้ำ และ B หยุดเสียง
 โดยต้องมี environment/โมเดลในเครื่องก่อน ไม่มีการดาวน์โหลดอัตโนมัติหรือ Cloud fallback
-ดู [Piper offline](docs/PIPER_OFFLINE_TTS_TH.md) และ [ผล audit launcher](docs/MAIN_LAUNCHER_AUDIT_TH.md)
+ดู [Piper offline](docs/PIPER_OFFLINE_TTS_TH.md), [Edge online ไทย/อังกฤษและวิธีติดตั้งหลัง pull](docs/EDGE_TTS_TH.md) และ [ผล audit launcher](docs/MAIN_LAUNCHER_AUDIT_TH.md)
 
 `main.bat` หาไฟล์โปรเจกต์จากตำแหน่งของตัวเอง จึงเรียกจากโฟลเดอร์อื่นได้
 path ภาพแบบ relative อ้างอิงโฟลเดอร์ที่เรียกคำสั่ง ส่วน scanner options ส่งต่อให้ CLI เดิม

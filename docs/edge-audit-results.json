@@ -1,0 +1,327 @@
+{
+  "date": "2026-10-15",
+  "platform": "Windows 11 x64 / Python 3.12.13",
+  "branch": "feature/thai-offline-tts",
+  "base_commit": "71f9c8a",
+  "voices": {
+    "thai": "th-TH-PremwadeeNeural",
+    "english": "en-US-JennyNeural"
+  },
+  "final_rate": "-15%",
+  "baseline_tests": 49,
+  "text_regression_cases": 54,
+  "source_data": "saved real diagnostic cells + book fixture + project synthetic image + independent standard acceptance patterns",
+  "initial_synthesis_rate": "+0%",
+  "initial_synthesis": [
+    {
+      "case": "recorded_punctuation",
+      "source": "diagnostic_1789489556525254800, frame 6699",
+      "expected": "คำที่มีใช้: ฐาน ฐิติ",
+      "decoded": "คำที่มีใช้: ฐาน ฐิติ",
+      "sent_to_edge": "คำที่มีใช้: ฐาน ฐิติ",
+      "voice": "th-TH-PremwadeeNeural",
+      "text_exact": true,
+      "pronunciation_assessed": false,
+      "codepoints": [
+        "U+0E04",
+        "U+0E33",
+        "U+0E17",
+        "U+0E35",
+        "U+0E48",
+        "U+0E21",
+        "U+0E35",
+        "U+0E43",
+        "U+0E0A",
+        "U+0E49",
+        "U+003A",
+        "U+0020",
+        "U+0E10",
+        "U+0E32",
+        "U+0E19",
+        "U+0020",
+        "U+0E10",
+        "U+0E34",
+        "U+0E15",
+        "U+0E34"
+      ],
+      "file": "output/edge_tts/recorded_punctuation.wav",
+      "metrics": {
+        "load_seconds": 0.021688799999537878,
+        "synthesis_seconds": 4.303071899998031,
+        "ready_seconds": 4.324760699997569,
+        "audio_seconds": 2.832
+      },
+      "wav_sha256": "b73418bdb5629412edb10251d90c1ae0200d081ba919428690b721c16ec670ee"
+    },
+    {
+      "case": "recorded_book",
+      "expected": "เขียดเขียวเกาะขอน",
+      "decoded": "เขียดเขียวเกาะขอน",
+      "error": "NoAudioReceived: No audio was received. Please verify that your parameters are correct.",
+      "pronunciation_assessed": false
+    },
+    {
+      "case": "project_hello",
+      "source": "sample_images/Test_thai_01.png",
+      "expected": "สวัสดีครับผม",
+      "decoded": "สวัสดีครับผม",
+      "sent_to_edge": "สวัสดีครับผม",
+      "voice": "th-TH-PremwadeeNeural",
+      "text_exact": true,
+      "pronunciation_assessed": false,
+      "codepoints": [
+        "U+0E2A",
+        "U+0E27",
+        "U+0E31",
+        "U+0E2A",
+        "U+0E14",
+        "U+0E35",
+        "U+0E04",
+        "U+0E23",
+        "U+0E31",
+        "U+0E1A",
+        "U+0E1C",
+        "U+0E21"
+      ],
+      "file": "output/edge_tts/project_hello.wav",
+      "metrics": {
+        "load_seconds": 2.4000000848900527e-06,
+        "synthesis_seconds": 0.7950151000004553,
+        "ready_seconds": 0.7950175000005402,
+        "audio_seconds": 2.328
+      },
+      "wav_sha256": "a55e702ba8902062bdc69dad8abdafde7496a6d7ab91b3dd2081681cbe18ffc4"
+    },
+    {
+      "case": "proper_name",
+      "source": "tests/test_thai_standard.py",
+      "expected": "ศักดิ์",
+      "decoded": "ศักดิ์",
+      "sent_to_edge": "ศักดิ์",
+      "voice": "th-TH-PremwadeeNeural",
+      "text_exact": true,
+      "pronunciation_assessed": false,
+      "codepoints": [
+        "U+0E28",
+        "U+0E31",
+        "U+0E01",
+        "U+0E14",
+        "U+0E34",
+        "U+0E4C"
+      ],
+      "file": "output/edge_tts/proper_name.wav",
+      "metrics": {
+        "load_seconds": 1.8999999156221747e-06,
+        "synthesis_seconds": 0.6086443999993207,
+        "ready_seconds": 0.6086462999992364,
+        "audio_seconds": 1.872
+      },
+      "wav_sha256": "b4839afc6b9a80d576c48a001f8714f96f0a4854d4dc3fc1225de40c451d4630"
+    },
+    {
+      "case": "compound_vowel",
+      "source": "tests/test_thai_standard.py",
+      "expected": "เสื้อ",
+      "decoded": "เสื้อ",
+      "sent_to_edge": "เสื้อ",
+      "voice": "th-TH-PremwadeeNeural",
+      "text_exact": true,
+      "pronunciation_assessed": false,
+      "codepoints": [
+        "U+0E40",
+        "U+0E2A",
+        "U+0E37",
+        "U+0E49",
+        "U+0E2D"
+      ],
+      "file": "output/edge_tts/compound_vowel.wav",
+      "metrics": {
+        "load_seconds": 2.2000021999701858e-06,
+        "synthesis_seconds": 0.6278463999988162,
+        "ready_seconds": 0.6278486000010162,
+        "audio_seconds": 1.872
+      },
+      "wav_sha256": "885bae0f3c35a97c9b97a349fbcd7e9d0171c34c39773e703940a5a6b2b7782c"
+    },
+    {
+      "case": "digits",
+      "source": "Thai digit indicator + patterns",
+      "expected": "123",
+      "decoded": "123",
+      "sent_to_edge": "123",
+      "voice": "th-TH-PremwadeeNeural",
+      "text_exact": true,
+      "pronunciation_assessed": false,
+      "codepoints": [
+        "U+0031",
+        "U+0032",
+        "U+0033"
+      ],
+      "file": "output/edge_tts/digits.wav",
+      "metrics": {
+        "load_seconds": 2.2999993234407157e-06,
+        "synthesis_seconds": 0.6085357000010845,
+        "ready_seconds": 0.6085380000004079,
+        "audio_seconds": 2.328
+      },
+      "wav_sha256": "c18c32ee0e92499d01d6bda85c8e8f084e727049d321e986d0a575a0cbc6b25e"
+    },
+    {
+      "case": "tones",
+      "source": "four separate standard tone acceptance cases",
+      "expected": "ก่า ก้า ก๊า ก๋า",
+      "decoded": "ก่า ก้า ก๊า ก๋า",
+      "sent_to_edge": "ก่า ก้า ก๊า ก๋า",
+      "voice": "th-TH-PremwadeeNeural",
+      "text_exact": true,
+      "pronunciation_assessed": false,
+      "codepoints": [
+        "U+0E01",
+        "U+0E48",
+        "U+0E32",
+        "U+0020",
+        "U+0E01",
+        "U+0E49",
+        "U+0E32",
+        "U+0020",
+        "U+0E01",
+        "U+0E4A",
+        "U+0E32",
+        "U+0020",
+        "U+0E01",
+        "U+0E4B",
+        "U+0E32"
+      ],
+      "file": "output/edge_tts/tones.wav",
+      "metrics": {
+        "load_seconds": 2.6999987312592566e-06,
+        "synthesis_seconds": 6.106141300002491,
+        "ready_seconds": 6.106144000001223,
+        "audio_seconds": 2.256
+      },
+      "wav_sha256": "858b7c6fc54689aaea1e0e87257fb2154d48e6a769f15d53a2b27f9f6ec911c9"
+    }
+  ],
+  "book_manual_retry_after_initial_error": {
+    "load_seconds": 0.35354629999710596,
+    "synthesis_seconds": 0.6772607000020798,
+    "ready_seconds": 1.0308069999991858,
+    "audio_seconds": 2.328
+  },
+  "component_diagnostic": [
+    {
+      "text": "เขียด",
+      "ok": true
+    },
+    {
+      "text": "เขียว",
+      "ok": true
+    },
+    {
+      "text": "เกาะขอน",
+      "ok": true
+    },
+    {
+      "text": "เขียดเขียวเกาะขอน",
+      "ok": true
+    }
+  ],
+  "rate_probe": [
+    {
+      "rate": "-15%",
+      "ok": true
+    },
+    {
+      "rate": "-10%",
+      "ok": true
+    },
+    {
+      "rate": "+0%",
+      "ok": true
+    }
+  ],
+  "slow_synthesis_attempts": [
+    {
+      "case": "punctuation",
+      "error": "No audio was received. Please verify that your parameters are correct."
+    },
+    {
+      "case": "book",
+      "error": "No audio was received. Please verify that your parameters are correct."
+    },
+    {
+      "case": "punctuation",
+      "text": "คำที่มีใช้: ฐาน ฐิติ",
+      "rate": "-15%",
+      "metrics": {
+        "load_seconds": 0.36288449999847217,
+        "synthesis_seconds": 4.98959730000206,
+        "ready_seconds": 5.3524818000005325,
+        "audio_seconds": 3.336
+      },
+      "manual_retry": true
+    },
+    {
+      "case": "book",
+      "text": "เขียดเขียวเกาะขอน",
+      "rate": "-15%",
+      "metrics": {
+        "load_seconds": 2.9000002541579306e-06,
+        "synthesis_seconds": 3.1047427999983483,
+        "ready_seconds": 3.1047456999986025,
+        "audio_seconds": 2.712
+      },
+      "manual_retry": true
+    }
+  ],
+  "english_initial": {
+    "load_seconds": 0.3440833999993629,
+    "synthesis_seconds": 0.6589349000023503,
+    "ready_seconds": 1.0030183000017132,
+    "audio_seconds": 1.872
+  },
+  "english_slow": {
+    "rate": "-15%",
+    "metrics": {
+      "load_seconds": 0.3728737999990699,
+      "synthesis_seconds": 1.036468700000114,
+      "ready_seconds": 1.409342499999184,
+      "audio_seconds": 2.112
+    }
+  },
+  "controller_test_rate": "+0%",
+  "controller": {
+    "two_repeats_stopped_without_grid_change": true,
+    "complete_worker_status": "Ready",
+    "error": "",
+    "worker_metrics": {
+      "load_seconds": 0.35834849999810103,
+      "synthesis_seconds": 11.525175000002491,
+      "ready_seconds": 11.883523500000592,
+      "audio_seconds": 2.328
+    }
+  },
+  "listener_feedback": {
+    "assessed": [
+      "recorded_punctuation.wav",
+      "recorded_book_retry.wav"
+    ],
+    "rate": "+0%",
+    "result": "User confirmed both read exactly; requested slower reading",
+    "slow_samples_assessed": false
+  },
+  "dependencies": {
+    "edge-tts": "7.3.1",
+    "soundfile": "0.13.1"
+  },
+  "limitations": [
+    "Intermittent NoAudioReceived also reproduced outside project; no silent fallback or automatic retry",
+    "No board access; no fresh detection accuracy evaluation",
+    "Pronunciation of all reference words not assessed by listener"
+  ],
+  "regression": {
+    "tests": 150,
+    "seconds": 22.557,
+    "passed": true
+  }
+}

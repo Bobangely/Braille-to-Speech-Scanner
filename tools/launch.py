@@ -102,11 +102,22 @@ def scan(args, piper=False):
                '--res', 'auto', '--sharp', '0', '--lang', 'thai']
     if piper:
         parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument('--tts-backend', choices=['local', 'edge'], default='local')
         parser.add_argument('--tts-thai-backend', choices=['piper', 'mms'], default='piper')
         parser.add_argument('--tts-python')
         parser.add_argument('--tts-thai-model')
         parser.add_argument('--tts-english-model', default=str(ROOT/'scratch/piper-voices/en_US-ljspeech-medium.onnx'))
         voices, args = parser.parse_known_args(args)
+        if voices.tts_backend == 'edge':
+            python = voices.tts_python or str(ROOT/'scratch/edge-tts-env/Scripts/python.exe')
+            if not Path(python).is_file():
+                raise FileNotFoundError('Missing Edge environment. See docs/EDGE_TTS_TH.md; no installation was attempted.')
+            if code := check_modules(python, ('edge_tts', 'soundfile'),
+                                     'Install requirements-edge-tts.txt; see docs/EDGE_TTS_TH.md'):
+                return code
+            options += ['--tts-python', python, '--tts-backend', 'edge']
+            print('Online Edge enabled: Thai Premwadee; English Jenny. Text is sent to Microsoft. S: read/repeat; B: stop.')
+            return application('camera_reader.py', options+args)
         mms = voices.tts_thai_backend == 'mms'
         voices.tts_python = voices.tts_python or str(ROOT/('scratch/thai-tts-env/Scripts/python.exe' if mms else 'scratch/piper-env/Scripts/python.exe'))
         voices.tts_thai_model = voices.tts_thai_model or str(ROOT/('scratch/thai-tts-models/mms' if mms else 'scratch/piper-voices/th_TH-tsync2-medium.onnx'))
@@ -137,6 +148,8 @@ def dispatch(command, args):
         return scan(args)
     if command == 'piper':
         return scan(args, piper=True)
+    if command == 'edge':
+        return scan(['--tts-backend', 'edge']+args, piper=True)
     if command == 'camera-test':
         return application('tools/diagnostics/check_camera.py', args)
     if command == 'image':
@@ -150,16 +163,16 @@ def dispatch(command, args):
 
 def menu():
     result = 0
-    choices = {'1': 'scan', '2': 'piper', '3': 'camera-test', '4': 'image', '5': 'setup'}
+    choices = {'1': 'scan', '2': 'piper', '3': 'camera-test', '4': 'image', '5': 'setup', '6': 'edge'}
     while True:
         print('\nBraille Reader\n  1. Open scanner\n  2. Open scanner + offline Piper\n'
               '  3. Camera diagnostic\n  4. Image tests / custom image\n'
-              '  5. Install project dependencies into .venv\n  Q. Exit')
+              '  5. Install project dependencies into .venv\n  6. Open scanner + online Edge (Thai/English)\n  Q. Exit')
         choice = input('Select: ').strip().lower()
         if choice == 'q':
             return result
         if choice not in choices:
-            print('Choose 1-5 or Q.')
+            print('Choose 1-6 or Q.')
             continue
         try:
             result = dispatch(choices[choice], [])
@@ -174,6 +187,7 @@ def main():
         print('main.bat                     Open menu\n'
               'main.bat scan [options]      Camera scanner\n'
               'main.bat piper [options]     Scanner + local/offline speech\n'
+              'main.bat edge [options]      Scanner + online Edge Thai/English speech\n'
               'main.bat camera-test         Camera diagnostic\n'
               'main.bat image [path] [...]  Image menu or custom image\n'
               'main.bat "image path.png"     Drag/drop image also supported\n'

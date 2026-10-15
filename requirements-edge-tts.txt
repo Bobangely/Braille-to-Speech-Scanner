@@ -1,0 +1,3 @@
+# Online Edge speech and MP3 -> PCM WAV conversion for the existing player.
+edge-tts==7.3.1
+soundfile==0.13.1

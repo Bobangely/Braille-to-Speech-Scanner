@@ -612,11 +612,12 @@ class RealTimeBrailleScanner:
         tts_models=None,
         tts_python=None,
         tts_thai_backend='piper',
+        tts_backend='local',
     ):
         self._speech = None
-        if tts_models:
+        if tts_models or tts_backend == 'edge':
             from piper_tts import PiperSpeech
-            self._speech = PiperSpeech(tts_models, python_executable=tts_python, thai_backend=tts_thai_backend)
+            self._speech = PiperSpeech(tts_models or {}, python_executable=tts_python, thai_backend=tts_thai_backend, backend=tts_backend)
         self.camera_id = camera_id
         self.lang = lang.lower()
         self.stability_threshold = stability_threshold
@@ -1291,6 +1292,7 @@ def main():
     parser.add_argument('--proposal-conf', type=float, default=None, help='Overview threshold (default: min(0.3, conf))')
     parser.add_argument('--model', default=None, help='Local YOLO weights')
     parser.add_argument('--tts-thai-backend', choices=['piper', 'mms'], default='piper')
+    parser.add_argument('--tts-backend', choices=['local', 'edge'], default='local')
     parser.add_argument('--tts-thai-model', help='Local Thai Piper .onnx or MMS model directory')
     parser.add_argument('--tts-english-model', help='Local Piper English .onnx; requires matching .onnx.json')
     parser.add_argument('--tts-python', help='Python executable in the optional Piper environment')
@@ -1325,6 +1327,7 @@ def main():
                     if args.tts_thai_model or args.tts_english_model else None),
         tts_python=args.tts_python,
         tts_thai_backend=args.tts_thai_backend,
+        tts_backend=args.tts_backend,
     )
     scanner.run()
 

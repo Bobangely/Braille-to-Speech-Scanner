@@ -13,6 +13,7 @@ wheels/
 output/*.png
 output/*.mp3
 output/thai_tts/
+output/edge_tts/
 output/*_stream/
 output/diagnostic_*/
 output/diag_*/
