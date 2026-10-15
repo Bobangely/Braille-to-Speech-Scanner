@@ -1,0 +1,278 @@
+{
+  "date": "2026-10-16",
+  "platform": "Windows x64; DirectShow camera 0",
+  "before": [
+    {
+      "trial": "process_first_open",
+      "constructor_seconds": 1.512424499996996,
+      "first_available_seconds": 9.633475700000417,
+      "shape": [
+        2160,
+        3840
+      ],
+      "modes": [
+        [
+          "4K",
+          3840,
+          2160
+        ],
+        [
+          "2K",
+          2560,
+          1440
+        ],
+        [
+          "1080p",
+          1920,
+          1080
+        ]
+      ],
+      "released": true,
+      "release_seconds": 0.3002981999961776,
+      "thread_alive": false,
+      "device_open_seconds": 0.6991561999966507,
+      "probe_all_modes_seconds": 8.052073300001211,
+      "mode_verification_seconds": [
+        1.984746,
+        2.102414,
+        1.932534,
+        2.030341
+      ]
+    },
+    {
+      "trial": "reopen",
+      "constructor_seconds": 1.3788472000014735,
+      "first_available_seconds": 11.123605500004487,
+      "shape": [
+        2160,
+        3840
+      ],
+      "modes": [
+        [
+          "4K",
+          3840,
+          2160
+        ],
+        [
+          "2K",
+          2560,
+          1440
+        ],
+        [
+          "1080p",
+          1920,
+          1080
+        ]
+      ],
+      "released": true,
+      "release_seconds": 0.28321839999989606,
+      "thread_alive": false,
+      "device_open_seconds": 0.5936933999983012,
+      "probe_all_modes_seconds": 9.698223100000178,
+      "mode_verification_seconds": [
+        2.017524,
+        2.868746,
+        2.120261,
+        2.690752
+      ]
+    }
+  ],
+  "after": [
+    {
+      "trial": "process_first_open",
+      "constructor_seconds": 1.6394335000004503,
+      "first_available_seconds": 1.871273700002348,
+      "shape": [
+        480,
+        640
+      ],
+      "modes": [],
+      "ready_seconds": 11.39823140000226,
+      "final_shape": [
+        2160,
+        3840
+      ],
+      "final_modes": [
+        [
+          "4K",
+          3840,
+          2160
+        ],
+        [
+          "2K",
+          2560,
+          1440
+        ],
+        [
+          "1080p",
+          1920,
+          1080
+        ]
+      ],
+      "capture_fps_sample": 14.997778454146472,
+      "switches": [
+        {
+          "requested": [
+            2560,
+            1440
+          ],
+          "seconds": 2.5079910999993444,
+          "actual": [
+            2560,
+            1440
+          ],
+          "frame_ready": true
+        },
+        {
+          "requested": [
+            3840,
+            2160
+          ],
+          "seconds": 3.324168599996483,
+          "actual": [
+            3840,
+            2160
+          ],
+          "frame_ready": true
+        }
+      ],
+      "released": true,
+      "release_seconds": 0.3278623999940464,
+      "thread_alive": false,
+      "device_open_seconds": 0.8017932000002475,
+      "probe_all_modes_seconds": 9.457173800001328,
+      "mode_verification_seconds": [
+        2.929902,
+        1.890447,
+        1.838367,
+        2.798424,
+        2.420778,
+        3.195873
+      ]
+    },
+    {
+      "trial": "reopen",
+      "constructor_seconds": 1.6517779999994673,
+      "first_available_seconds": 1.9013554000048316,
+      "shape": [
+        480,
+        640
+      ],
+      "modes": [],
+      "ready_seconds": 12.36085340000136,
+      "final_shape": [
+        2160,
+        3840
+      ],
+      "final_modes": [
+        [
+          "4K",
+          3840,
+          2160
+        ],
+        [
+          "2K",
+          2560,
+          1440
+        ],
+        [
+          "1080p",
+          1920,
+          1080
+        ]
+      ],
+      "capture_fps_sample": 14.99184069069614,
+      "switches": [
+        {
+          "requested": [
+            2560,
+            1440
+          ],
+          "seconds": 2.186371199997666,
+          "actual": [
+            2560,
+            1440
+          ],
+          "frame_ready": true
+        },
+        {
+          "requested": [
+            3840,
+            2160
+          ],
+          "seconds": 3.0623694000023534,
+          "actual": [
+            3840,
+            2160
+          ],
+          "frame_ready": true
+        }
+      ],
+      "released": true,
+      "release_seconds": 0.31983839999884367,
+      "thread_alive": false,
+      "device_open_seconds": 0.6785206999993534,
+      "probe_all_modes_seconds": 10.3934023000038,
+      "mode_verification_seconds": [
+        3.09123,
+        2.234072,
+        2.115743,
+        2.952319,
+        2.107345,
+        2.93035
+      ]
+    }
+  ],
+  "actual_ui": {
+    "scanner_constructor_seconds": 5.9300000430084765e-05,
+    "first_raw_frame_seconds": 1.699855499995465,
+    "first_frame_render_seconds": 0.04333999999653315,
+    "first_preview_submit_seconds": 1.765201199996227,
+    "camera_ready_seconds": 11.782074399998237,
+    "final_resolution": [
+      3840,
+      2160
+    ],
+    "ui_event_ticks": 523,
+    "max_ui_tick_seconds": 0.15748120000353083,
+    "capture_thread_alive_after_run": false,
+    "inference_thread_alive_after_run": false,
+    "capture_released": true
+  },
+  "tests_passed": 451,
+  "limits": [
+    "First process open, not a power-cycle/reboot cold start.",
+    "First preview is native resolution; inference waits for verified final mode.",
+    "Full mode enumeration still takes several seconds.",
+    "Timing differs by driver and system load; UI time is imshow submission, not display scan-out.",
+    "MSMF and Linux ARM64 not tested."
+  ],
+  "paired_no_parallel_test_load": [
+    {
+      "case": "before",
+      "constructor_seconds": 1.429133500001626,
+      "first_available_seconds": 11.00028690000181,
+      "ready_seconds": 11.000291299998935,
+      "final_shape": [
+        2160,
+        3840
+      ],
+      "stable_capture_fps": 14.995939099648195,
+      "released": true,
+      "thread_alive": false
+    },
+    {
+      "case": "after",
+      "constructor_seconds": 1.4505812999996124,
+      "first_available_seconds": 1.7164150000025984,
+      "ready_seconds": 11.502451100001053,
+      "final_shape": [
+        2160,
+        3840
+      ],
+      "stable_capture_fps": 14.993480834529834,
+      "released": true,
+      "thread_alive": false
+    }
+  ]
+}

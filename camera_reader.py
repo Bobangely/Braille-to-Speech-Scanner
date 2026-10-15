@@ -159,6 +159,16 @@ class ThreadedCameraCapture:
             self._status, self._error = 'waiting', None
         return True
 
+    def _publish_probe_frame(self, frame):
+        with self.lock:
+            if self._stop_event.is_set() or not self.running or self._pending_resolution is not None:
+                return
+            self.ret, self.frame = True, frame
+            self.actual_height, self.actual_width = frame.shape[:2]
+            self.frame_id += 1
+            self._last_frame_at = time.monotonic()
+            self._status, self._error = 'probing', None
+
     def _read_resolution(self, width, height, fps):
         """ยืนยันสองเฟรมติดกัน ป้องกันเฟรมเก่าหลัง driver เปลี่ยนโหมด"""
         if self._stop_event.is_set():
@@ -174,6 +184,7 @@ class ThreadedCameraCapture:
                 if ret and _valid_frame(frame):
                     if self._needs_probe:
                         self._last_probe_frame = frame
+                        self._publish_probe_frame(frame)
                     consecutive = consecutive + 1 if frame.shape[:2] == (height, width) else 0
                     if consecutive == 2:
                         with self.lock:
@@ -236,6 +247,13 @@ class ThreadedCameraCapture:
         try:
             while self.running and not self._stop_event.is_set():
                 if self._needs_probe and self.cap is not None:
+                    # Show the native stream before slow mode switches; inference waits below.
+                    try:
+                        ret, frame = self.cap.read()
+                        if ret and _valid_frame(frame):
+                            self._publish_probe_frame(frame)
+                    except Exception:
+                        logger.warning('Initial camera read failed; continuing mode probe', exc_info=True)
                     self._probe_resolutions()
                 with self.lock:
                     resolution, self._pending_resolution = self._pending_resolution, None
@@ -307,7 +325,7 @@ class ThreadedCameraCapture:
 
     def read_latest(self, with_id=False):
         with self.lock:
-            stale = (self._last_frame_at is not None and
+            stale = (self._status != 'probing' and self._last_frame_at is not None and
                      time.monotonic() - self._last_frame_at > self.STALE_AFTER)
             if not self.ret or self.frame is None or stale:
                 return (False, None, self.frame_id) if with_id else (False, None)
@@ -914,6 +932,7 @@ class RealTimeBrailleScanner:
         if not _valid_frame(frame):
             raise UnreadableBrailleFrame('Invalid camera frame')
         self.actual_height, self.actual_width = frame.shape[:2]
+        probing = getattr(self.camera, '_needs_probe', False) is True
         modes = getattr(self.camera, 'available_resolutions', None)
         if isinstance(modes, list):
             self.available_resolutions = list(modes)
@@ -933,7 +952,7 @@ class RealTimeBrailleScanner:
             self._confirmed_context = context
             self._reset_confirmation()
             self._last_stability_result_id = 0
-        if frame_id != self._last_submitted_frame_id or context != self._last_submitted_context:
+        if not probing and (frame_id != self._last_submitted_frame_id or context != self._last_submitted_context):
             self.ai_worker.submit_frame(enhanced_frame, lang=self.lang,
                 context=context, frame_id=frame_id, dot_color=self.dot_color)
             self._last_submitted_frame_id, self._last_submitted_context = frame_id, context
@@ -941,7 +960,7 @@ class RealTimeBrailleScanner:
         self.ai_fps = result['ai_fps']
         slow = result.get('busy_seconds', 0) >= 5
         stale = result.get('result_age', 0) > 1.0
-        if (result.get('context') != context or result['lang'] != self.lang or
+        if (probing or result.get('context') != context or result['lang'] != self.lang or
                 result['result_id'] == self._rejected_result_id or slow or stale):
             result = dict(result, result_id=-1, cells=[], dots=[], decoded_text='',
                           verbose_results=[], line_results=[], error=None, status='waiting', reason=None)
@@ -1000,7 +1019,9 @@ class RealTimeBrailleScanner:
             self._preview = LivePreview(max_width=1280, dashboard=True)
             raise
         status = result.get('status')
-        if slow:
+        if probing:
+            message = 'CAMERA WARMING UP - preview ready; checking resolutions'
+        elif slow:
             message = 'AI BUSY - waiting for inference; camera remains live'
         elif stale or not self._preview.motion_valid:
             message = 'TRACKING - waiting for a fresh readable frame'
