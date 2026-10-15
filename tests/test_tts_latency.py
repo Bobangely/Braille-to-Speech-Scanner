@@ -127,10 +127,10 @@ class SpeechLatencyTests(unittest.TestCase):
             with wave.open(str(output), 'rb') as wav:
                 block = b'\x01\0\x02\0\x03\0\x04\0'
                 self.assertEqual(wav.readframes(wav.getnframes()),
-                                 block + b'\0\0'*6000 + block + b'\0\0'*10200 + block
-                                 + b'\0\0'*14400 + block + b'\0\0'*16800 + block)
+                                 block + b'\0\0'*3600 + block + b'\0\0'*7200 + block
+                                 + b'\0\0'*10800 + block + b'\0\0'*13200 + block)
             self.assertEqual(requests, ['ขอขวด', 'เสื้อ', 'ภู่', 'กิน.', 'คน'])
-            self.assertEqual(metrics['inserted_silence_seconds'], 1.975)
+            self.assertEqual(metrics['inserted_silence_seconds'], 1.45)
         self.assertEqual(len(devices), 1)
         self.assertEqual(first_play, [True])
         self.assertLess(metrics['first_audio_seconds'], metrics['network_seconds'])
