@@ -48,7 +48,7 @@ class ScannerUI:
     def _label(self, draw, xy, text, size=15, color=TEXT, bold=False):
         draw.text(xy, text, font=self._font(size, bold), fill=color)
 
-    def _layout(self):
+    def _layout(self, extra_controls=False):
         w, h = self.size
         self.scale = min(1.25, w / 1050, h / 720)
         s = self.scale
@@ -59,11 +59,11 @@ class ScannerUI:
             sidebar = round(256*s)
             left = w - m - sidebar
             self.preview_card = (m, top, left-gap, bottom)
-            split = bottom - round(248*s)
+            split = bottom - round((248+31*extra_controls)*s)
             self.result_card = (left, top, w-m, split-gap)
             self.control_card = (left, split, w-m, bottom)
         else:
-            split = max(top + round(160*s), bottom - round(250*s))
+            split = max(top + round(160*s), bottom - round((250+31*extra_controls)*s))
             self.preview_card = (m, top, w-m, split-gap)
             middle = round(w*.54)
             self.result_card = (m, split, middle-gap//2, bottom)
@@ -119,7 +119,7 @@ class ScannerUI:
         self.buttons.append((box, key))
 
     def _build_body(self, state):
-        self._layout()
+        self._layout(state.get('tts_enabled', False))
         s = self.scale
         image = Image.new('RGB', self.size, BG)
         draw = ImageDraw.Draw(image)
@@ -182,13 +182,17 @@ class ScannerUI:
                     ('Zoom -  [X]', 'x'), ('Zoom +  [Z]', 'z'),
                     ('Reset zoom  [R]', 'r'), ('Save image  [P]', 'p'),
                     ('Diagnostic  [D]', 'd'), ('Details  [H]', 'h')]
+        if state.get('tts_enabled'):
+            controls += [('Read / repeat [S]', 's'), ('Stop voice [B]', 'b')]
         gap, left, bw = 6*s, x+10*s, (right-x-26*s)/2
         if state.get('resolution_modes') == []:
             controls = [control for control in controls if control[1] != 'v']
         for i, (label, key) in enumerate(controls):
             bx, by = left+(i % 2)*(bw+gap), y+(34+(i//2)*31)*s
             self._button(draw, (bx, by, bx+bw, by+26*s), label, ord(key), key == 'h' and state.get('details', False))
-        self._label(draw, (left, y+191*s), 'Wheel: zoom / click: pan', 11, MUTED)
+        footer_y = 222 if state.get('tts_enabled') else 191
+        footer = state.get('tts_status', 'Ready') if state.get('tts_enabled') else 'Wheel: zoom / click: pan'
+        self._label(draw, (left, y+footer_y*s), footer, 11, MUTED)
         self._button(draw, (left, bottom-34*s, right-10*s, bottom-8*s), 'Close scanner  [Q / Esc]', ord('q'))
         self._body = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
 

@@ -609,7 +609,13 @@ class RealTimeBrailleScanner:
         dot_color='blue',
         roi_mode='off',
         scan_roi=None,
+        tts_models=None,
+        tts_python=None,
     ):
+        self._speech = None
+        if tts_models:
+            from piper_tts import PiperSpeech
+            self._speech = PiperSpeech(tts_models, python_executable=tts_python)
         self.camera_id = camera_id
         self.lang = lang.lower()
         self.stability_threshold = stability_threshold
@@ -847,7 +853,9 @@ class RealTimeBrailleScanner:
             cells=len(cells), dots=len(result.get('dots', [])),
             lines=len({cell.get('line_id', 0) for cell in cells}),
             confirmed=len(self.history) if is_locked or current_text else 0,
-            required=self.stability_threshold)
+            required=self.stability_threshold,
+            tts_enabled=self._speech is not None,
+            tts_status=self._speech.status if self._speech is not None else '')
         return self._ui.compose(preview, state)
 
     def _draw_top_hud(self, image, current_text, is_locked):
@@ -1027,8 +1035,20 @@ class RealTimeBrailleScanner:
 
     def _handle_key(self, key, enhanced_frame, annotated):
         if key in (ord('q'), ord('Q'), 27):
+            if self._speech is not None:
+                self._speech.stop()
             return False
-        if key in (ord('h'), ord('H')):
+        if key in (ord('s'), ord('S')):
+            if self._speech is not None and self._confirmed_text:
+                text = self._confirmed_text
+                if self.lang in ('thai', 'th'):
+                    from tts import prepare_thai_speech_text
+                    text = prepare_thai_speech_text(text)
+                self._speech.speak(text, self.lang)
+        elif key in (ord('b'), ord('B')):
+            if self._speech is not None:
+                self._speech.stop()
+        elif key in (ord('h'), ord('H')):
             self.show_details = not self.show_details
         elif key in (ord('['), ord(']')):
             self._ui.scroll(-1 if key == ord('[') else 1)
@@ -1045,6 +1065,8 @@ class RealTimeBrailleScanner:
         elif key in (ord('r'), ord('R'), ord('0')):
             self.reset_zoom()
         elif key in (ord('l'), ord('L')):
+            if self._speech is not None:
+                self._speech.stop()
             self.lang = 'english' if self.lang == 'thai' else 'thai'
             self._reset_confirmation()
             print(f"  🌐 สลับภาษาเป็น: {self.lang.upper()}")
@@ -1201,7 +1223,7 @@ class RealTimeBrailleScanner:
                     action_error = 'ACTION FAILED - camera remains live; see console'
         finally:
             self._window_name = None
-            for owner, method in ((self.ai_worker, 'stop'), (self.camera, 'release')):
+            for owner, method in ((self._speech, 'stop'), (self.ai_worker, 'stop'), (self.camera, 'release')):
                 if owner is not None:
                     try:
                         getattr(owner, method)()
@@ -1267,6 +1289,9 @@ def main():
     parser.add_argument('--max-cells', type=int, default=256, help='Maximum cells per frame')
     parser.add_argument('--proposal-conf', type=float, default=None, help='Overview threshold (default: min(0.3, conf))')
     parser.add_argument('--model', default=None, help='Local YOLO weights')
+    parser.add_argument('--tts-thai-model', help='Local Piper Thai .onnx; requires matching .onnx.json')
+    parser.add_argument('--tts-english-model', help='Local Piper English .onnx; requires matching .onnx.json')
+    parser.add_argument('--tts-python', help='Python executable in the optional Piper environment')
     parser.add_argument('--dot-color', choices=DOT_COLORS, default='blue', help='Read only painted dots of this color')
     parser.add_argument('--roi', choices=['off', 'yolo'], default='off', help='Optional YOLO-dot ROI with tracking')
     parser.add_argument('--scan-roi', nargs=4, type=float, metavar=('X1', 'Y1', 'X2', 'Y2'),
@@ -1294,6 +1319,9 @@ def main():
         dot_color=args.dot_color,
         roi_mode=args.roi,
         scan_roi=args.scan_roi,
+        tts_models=({'thai': args.tts_thai_model, 'english': args.tts_english_model}
+                    if args.tts_thai_model or args.tts_english_model else None),
+        tts_python=args.tts_python,
     )
     scanner.run()
 
