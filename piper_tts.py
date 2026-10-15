@@ -11,7 +11,7 @@ import tempfile
 import time
 import wave
 
-EDGE_VOICES = {'thai': 'th-TH-PremwadeeNeural', 'english': 'en-US-JennyNeural'}
+EDGE_VOICES = {'thai': 'th-TH-NiwatNeural', 'english': 'en-US-JennyNeural'}
 EDGE_RATE = '-15%'
 
 
@@ -140,6 +140,7 @@ def synthesize_wav(model, text, output, backend='piper', voice=None):
         import asyncio
         import edge_tts
         import soundfile
+        from edge_stream import prepare_edge_text
     elif backend == 'mms':
         import torch
         from transformers import AutoTokenizer, VitsModel
@@ -155,7 +156,8 @@ def synthesize_wav(model, text, output, backend='piper', voice=None):
     if backend == 'edge':
         mp3 = Path(output).with_suffix('.mp3')
         try:
-            asyncio.run(edge_tts.Communicate(text, voice=voice or EDGE_VOICES['thai'], rate=EDGE_RATE).save(str(mp3)))
+            edge_voice = voice or EDGE_VOICES['thai']
+            asyncio.run(edge_tts.Communicate(prepare_edge_text(text, edge_voice), voice=edge_voice, rate=EDGE_RATE).save(str(mp3)))
             samples, rate = soundfile.read(mp3, dtype='int16')
             soundfile.write(output, samples, rate, subtype='PCM_16')
         finally:

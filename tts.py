@@ -13,17 +13,19 @@ import re
 
 from decoder import normalize_thai_text
 from config_thai import THAI_MULTI_CELL_SYMBOLS
+from thai_speech import expand_thai_speech_units
 
 
 def prepare_thai_speech_text(text):
-    """Expand configured punctuation only in speech; preserve displayed text."""
+    """Expand independent consonants and configured punctuation only in speech."""
+    text = expand_thai_speech_units(normalize_thai_text(text))
     labels = {symbol['output']: symbol['tts'] for symbol in THAI_MULTI_CELL_SYMBOLS.values()
               if symbol.get('output') and symbol.get('tts')}
     if not labels:
-        return normalize_thai_text(text)
+        return text
     pattern = '|'.join(re.escape(output) for output in sorted(labels, key=len, reverse=True))
     return re.sub(pattern, lambda match: ' ' + labels[match.group()] + ' ',
-                  normalize_thai_text(text)).strip()
+                  text).strip()
 
 
 class TextToSpeech:

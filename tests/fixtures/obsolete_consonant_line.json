@@ -1,0 +1,32 @@
+{
+  "source": "User screenshot codex-clipboard-4f9ba141-e516-4ee0-8f70-fcd992d197f9.png",
+  "sha256": "a11de6889f380c920656dca075082be233f13efd901c57260e60ecb2039440d5",
+  "provenance": "Patterns reconstructed from visible red dots/overlay C18-C40; no raw diagnostic provided. Ground truth closing parenthesis checked against Liblouis en-ueb-chardefs.uti, included by th-g1.utb.",
+  "patterns": [
+    "5",
+    "126",
+    "12346",
+    "345",
+    "245",
+    "245",
+    "14",
+    "1236",
+    "345",
+    "1345",
+    "123",
+    "146",
+    "1245",
+    "156",
+    "2",
+    "346",
+    "256",
+    "126",
+    "123",
+    "256",
+    "2456",
+    "5",
+    "345"
+  ],
+  "expected": "(ปัจจุบันเลิกใช้แล้ว)",
+  "speech_expected": "วงเล็บเปิด ปัจจุบันเลิกใช้แล้ว วงเล็บปิด"
+}

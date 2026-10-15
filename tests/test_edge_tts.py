@@ -14,6 +14,7 @@ from piper_tts import PiperSpeech, synthesize_wav
 from tests.test_punctuation_recovery import logical_cells
 from tests.test_thai_standard import CASES
 from tests.test_thai_word_pipeline import PATTERNS
+from tests.test_thai_speech_names import EXPECTED as CONSONANT_NAMES
 from tts import prepare_thai_speech_text
 
 
@@ -35,7 +36,7 @@ class EdgeSpeechTests(unittest.TestCase):
         with patch('piper_tts.subprocess.Popen', side_effect=start):
             speaker.speak('สวัสดี', 'thai')
             speaker.speak('Hello', 'english')
-        self.assertEqual([job['voice'] for job in jobs], ['th-TH-PremwadeeNeural', 'en-US-JennyNeural'])
+        self.assertEqual([job['voice'] for job in jobs], ['th-TH-NiwatNeural', 'en-US-JennyNeural'])
         self.assertTrue(all(job['backend'] == 'edge' for job in jobs))
         with self.assertRaises(ValueError):
             speaker.speak('test', 'unknown')
@@ -60,6 +61,10 @@ class EdgeSpeechTests(unittest.TestCase):
             edge.Communicate.assert_called_once_with('คำที่มีใช้: ฐาน ฐิติ', voice='th-TH-PremwadeeNeural', rate='-15%')
             self.assertEqual(result['audio_seconds'], .1)
             self.assertFalse(output.with_suffix('.mp3').exists())
+            edge.Communicate.reset_mock()
+            with patch.dict('sys.modules', {'edge_tts': edge, 'soundfile': soundfile}):
+                synthesize_wav('', 'ฃ พยัญชนะตัวที่ 3', output, backend='edge', voice='th-TH-PremwadeeNeural')
+            edge.Communicate.assert_called_once_with('ขอขวด พยัญชนะตัวที่ สาม', voice='th-TH-PremwadeeNeural', rate='-15%')
 
     def test_network_failure_is_an_error_without_another_voice_fallback(self):
         edge = Mock()
@@ -108,7 +113,8 @@ class EdgeSpeechTests(unittest.TestCase):
                 decoded = decode_cells(cells, 'thai')
                 self.assertEqual(decoded, expected)
                 self.assertFalse(any(token.get('warning') for token in decode_cells_verbose(cells, 'thai')))
-                self.assertEqual(prepare_thai_speech_text(decoded), expected)
+                spoken = dict(CONSONANT_NAMES).get(expected, expected)
+                self.assertEqual(prepare_thai_speech_text(decoded), spoken)
                 scanner._confirmed_text = decoded
                 process = Mock()
                 process.poll.return_value = 0
@@ -118,7 +124,7 @@ class EdgeSpeechTests(unittest.TestCase):
                     return process
                 with patch('piper_tts.subprocess.Popen', side_effect=capture):
                     scanner._handle_key(ord('s'), None, None)
-                self.assertEqual(jobs[0]['text'], expected)
-                self.assertEqual(jobs[0]['voice'], 'th-TH-PremwadeeNeural')
+                self.assertEqual(jobs[0]['text'], spoken)
+                self.assertEqual(jobs[0]['voice'], 'th-TH-NiwatNeural')
                 self.assertEqual(cells, original)
                 self.assertEqual(scanner._context_generation, context)

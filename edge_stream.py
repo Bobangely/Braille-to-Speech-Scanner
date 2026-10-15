@@ -5,6 +5,13 @@ import os
 import threading
 import time
 import wave
+from thai_speech import expand_thai_speech_units
+
+
+def prepare_edge_text(text, voice):
+    if voice.startswith('th-TH-'):
+        return expand_thai_speech_units(text)
+    return text
 
 
 def stream_edge_audio(text, voice, rate, output):
@@ -24,7 +31,7 @@ def stream_edge_audio(text, voice, rate, output):
 
     def download():
         async def receive(writer):
-            async for chunk in edge_tts.Communicate(text, voice=voice, rate=rate).stream():
+            async for chunk in edge_tts.Communicate(prepare_edge_text(text, voice), voice=voice, rate=rate).stream():
                 if chunk['type'] == 'audio':
                     timings.setdefault('first_mp3_seconds', time.perf_counter()-started)
                     writer.write(chunk['data'])

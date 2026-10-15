@@ -116,7 +116,7 @@ def scan(args, piper=False):
                                      'Install requirements-edge-tts.txt; see docs/EDGE_TTS_TH.md'):
                 return code
             options += ['--tts-python', python, '--tts-backend', 'edge']
-            print('Online Edge enabled: Thai Premwadee; English Jenny. Text is sent to Microsoft. S: read/repeat; B: stop.')
+            print('Online Edge enabled: Thai Niwat; English Jenny. Text is sent to Microsoft. S: read/repeat; B: stop.')
             return application('camera_reader.py', options+args)
         mms = voices.tts_thai_backend == 'mms'
         voices.tts_python = voices.tts_python or str(ROOT/('scratch/thai-tts-env/Scripts/python.exe' if mms else 'scratch/piper-env/Scripts/python.exe'))

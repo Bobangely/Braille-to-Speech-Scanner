@@ -825,7 +825,8 @@ class RealTimeBrailleScanner:
 
     def _compose_dashboard(self, preview, result, current_text='', is_locked=False):
         cells = result.get('cells', [])
-        status = ('Error' if result.get('error') else
+        starting = preview is None and getattr(self.camera, '_needs_probe', False) is True
+        status = ('Starting' if starting else 'Error' if result.get('error') else
                   'Check image' if result.get('status') in ('uncertain', 'unreadable') else
                   'Detected' if is_locked else 'Scanning' if cells else 'Ready')
         display_text = current_text if is_locked else self._confirmed_text
@@ -845,6 +846,7 @@ class RealTimeBrailleScanner:
                     display.append(f'[Line {index}: {label}]')
             display_text = '\n'.join(display)
         state = dict(text=display_text, result_held=bool(display_text) and not is_locked and not partial, lang=self.lang,
+            camera_starting=starting,
             result_partial=partial, confirmed_lines=confirmed_lines, line_total=len(lines),
             color=self.dot_color, resolution_mode=self.res_name,
             resolution_modes=[name for name, _, _ in self.available_resolutions],
