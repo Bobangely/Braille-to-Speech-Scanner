@@ -13,7 +13,7 @@ import wave
 from edge_stream import THAI_PAUSES_MS
 
 EDGE_VOICES = {'thai': 'th-TH-NiwatNeural', 'english': 'en-US-JennyNeural'}
-EDGE_RATE = '-15%'
+EDGE_RATE = '+0%'
 
 
 class PiperSpeech:
@@ -42,6 +42,7 @@ class PiperSpeech:
         self.error = ''
         self._active_key = self._cache_key = None
         self._cache_audio = None
+        self._pending_cleanup = []
 
     @property
     def status(self):
@@ -73,7 +74,7 @@ class PiperSpeech:
         self.stop()
         self._active_key = key
         self.error = ''
-        self._workspace = tempfile.TemporaryDirectory(prefix='braille-piper-')
+        self._workspace = tempfile.TemporaryDirectory(prefix='braille-piper-', ignore_cleanup_errors=True)
         self._log = tempfile.TemporaryFile()
         job = dict(model='' if self.backend == 'edge' else str(self.models[lang]), text=text,
                    backend='edge' if self.backend == 'edge' else self.thai_backend if lang == 'thai' else 'piper',
@@ -84,6 +85,7 @@ class PiperSpeech:
         if self.backend == 'edge':
             job['voice'] = EDGE_VOICES[lang]
             job['pauses'] = dict(THAI_PAUSES_MS)
+            job['rate'] = EDGE_RATE
         options = ({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt'
                    else {'start_new_session': True})
         try:
@@ -132,8 +134,17 @@ class PiperSpeech:
             self._log.close()
             self._log = None
         if self._workspace is not None:
-            self._workspace.cleanup()
+            self._pending_cleanup.append(self._workspace)
             self._workspace = None
+        pending, self._pending_cleanup = self._pending_cleanup, []
+        for workspace in pending:
+            try:
+                workspace.cleanup()
+            except OSError:
+                logging.getLogger(__name__).warning('Speech file cleanup deferred', exc_info=True)
+            if Path(workspace.name).exists():
+                self._pending_cleanup.append(workspace)
+                logging.getLogger(__name__).warning('Speech files still in use; will retry cleanup: %s', workspace.name)
 
 
 def synthesize_wav(model, text, output, backend='piper', voice=None):
@@ -196,7 +207,8 @@ def _worker():
         metrics = dict(cached=True)
     elif backend == 'edge':
         from edge_stream import stream_edge_audio
-        metrics = stream_edge_audio(job['text'], job['voice'], EDGE_RATE, output, pauses=job.get('pauses'))
+        metrics = stream_edge_audio(job['text'], job['voice'], job.get('rate', EDGE_RATE), output,
+                                    pauses=job.get('pauses'))
     else:
         metrics = synthesize_wav(job['model'], job['text'], output, backend=backend, voice=job.get('voice'))
     Path(output).with_name('ready').touch()

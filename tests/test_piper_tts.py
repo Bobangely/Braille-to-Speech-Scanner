@@ -95,6 +95,45 @@ class PiperSpeechTests(unittest.TestCase):
         self.assertIsNone(speaker._process)
         self.assertIsNone(speaker._workspace)
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows file sharing lock')
+    def test_quit_with_locked_audio_stops_and_defers_cleanup_until_unlocked(self):
+        from camera_reader import RealTimeBrailleScanner
+        speaker = self.controller()
+        process = Mock()
+        process.poll.return_value = None
+        process.terminate.side_effect = lambda: setattr(process.poll, 'return_value', 0)
+        with patch('piper_tts.subprocess.Popen', return_value=process):
+            speaker.speak('Hello', 'english')
+        directory = Path(speaker._workspace.name)
+        audio = directory/'speech.wav'
+        audio.write_bytes(b'locked audio fixture')
+        scanner = RealTimeBrailleScanner(res_preset='480p')
+        scanner._speech = speaker
+        with audio.open('rb'):
+            self.assertFalse(scanner._handle_key(ord('q'), None, None))
+            self.assertIsNone(speaker._process)
+            self.assertIsNone(speaker._workspace)
+            self.assertEqual(speaker.status, 'Ready')
+            self.assertTrue(directory.exists())
+        speaker.stop()
+        self.assertFalse(directory.exists())
+
+    def test_cleanup_permission_failure_does_not_prevent_stop_or_retry(self):
+        speaker = self.controller()
+        process = Mock()
+        process.poll.return_value = 0
+        with patch('piper_tts.subprocess.Popen', return_value=process):
+            speaker.speak('Hello', 'english')
+        workspace = speaker._workspace
+        with patch.object(workspace, 'cleanup', side_effect=PermissionError('locked WAV')):
+            speaker.stop()
+        self.assertIsNone(speaker._process)
+        self.assertIsNone(speaker._workspace)
+        self.assertEqual(speaker.status, 'Ready')
+        self.assertTrue(Path(workspace.name).exists())
+        speaker.stop()
+        self.assertFalse(Path(workspace.name).exists())
+
     def test_worker_failure_is_reported_not_sent_to_cloud(self):
         speaker = self.controller()
 
