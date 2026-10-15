@@ -140,6 +140,27 @@ class MainLauncherTests(unittest.TestCase):
         self.assertIn('--tts-thai-model', launched['args'])
         self.assertIn('--tts-english-model', launched['args'])
 
+    def test_mms_uses_local_thai_directory_and_keeps_english_piper(self):
+        self.make_python(self.root/'scratch/thai-tts-env')
+        for module in ('torch', 'transformers'):
+            (self.root/(module+'.py')).write_text('')
+        thai = self.root/'scratch/thai-tts-models/mms'
+        thai.mkdir(parents=True)
+        for name in ('config.json', 'model.safetensors', 'tokenizer_config.json', 'vocab.json'):
+            (thai/name).write_text('test')
+        english = self.root/'scratch/piper-voices/en_US-ljspeech-medium.onnx'
+        english.parent.mkdir()
+        english.write_text('test')
+        Path(str(english)+'.json').write_text('{}')
+        args = self.launch(self.run_bat('piper', '--tts-thai-backend', 'mms'))['args']
+        self.assertEqual(args[args.index('--tts-thai-backend')+1], 'mms')
+        self.assertEqual(Path(args[args.index('--tts-thai-model')+1]), thai)
+        self.assertEqual(Path(args[args.index('--tts-english-model')+1]), english)
+        (thai/'model.safetensors').unlink()
+        result = self.run_bat('piper', '--tts-thai-backend', 'mms')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('LAUNCH:', result.stdout)
+
     def test_application_error_exit_code_is_preserved(self):
         result = self.run_bat('scan', env={'BRAILLE_TEST_APP_EXIT': '9'})
         self.assertEqual(result.returncode, 9, result.stdout+result.stderr)

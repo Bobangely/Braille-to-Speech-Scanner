@@ -102,22 +102,31 @@ def scan(args, piper=False):
                '--res', 'auto', '--sharp', '0', '--lang', 'thai']
     if piper:
         parser = argparse.ArgumentParser(add_help=False)
-        parser.add_argument('--tts-python', default=str(ROOT/'scratch/piper-env/Scripts/python.exe'))
-        parser.add_argument('--tts-thai-model', default=str(ROOT/'scratch/piper-voices/th_TH-tsync2-medium.onnx'))
+        parser.add_argument('--tts-thai-backend', choices=['piper', 'mms'], default='piper')
+        parser.add_argument('--tts-python')
+        parser.add_argument('--tts-thai-model')
         parser.add_argument('--tts-english-model', default=str(ROOT/'scratch/piper-voices/en_US-ljspeech-medium.onnx'))
         voices, args = parser.parse_known_args(args)
-        files = [voices.tts_python, voices.tts_thai_model, voices.tts_thai_model+'.json',
-                 voices.tts_english_model, voices.tts_english_model+'.json']
+        mms = voices.tts_thai_backend == 'mms'
+        voices.tts_python = voices.tts_python or str(ROOT/('scratch/thai-tts-env/Scripts/python.exe' if mms else 'scratch/piper-env/Scripts/python.exe'))
+        voices.tts_thai_model = voices.tts_thai_model or str(ROOT/('scratch/thai-tts-models/mms' if mms else 'scratch/piper-voices/th_TH-tsync2-medium.onnx'))
+        files = [voices.tts_python, voices.tts_english_model, voices.tts_english_model+'.json']
+        files += ([str(Path(voices.tts_thai_model)/name) for name in
+                   ('config.json', 'model.safetensors', 'tokenizer_config.json', 'vocab.json')]
+                  if mms else [voices.tts_thai_model, voices.tts_thai_model+'.json'])
         missing = [name for name in files if not Path(name).is_file()]
         if missing:
-            raise FileNotFoundError('Missing local Piper files: '+', '.join(missing)+
-                                    '. See docs/PIPER_OFFLINE_TTS_TH.md; no download or cloud fallback was attempted.')
-        if code := check_modules(voices.tts_python, ('piper', 'onnxruntime', 'tltk', 'requests'),
-                                 'See requirements-piper.txt and docs/PIPER_OFFLINE_TTS_TH.md'):
+            raise FileNotFoundError('Missing local offline TTS/Piper files: '+', '.join(missing)+
+                                    '. See docs/THAI_OFFLINE_TTS_COMPARISON.md; no download or cloud fallback was attempted.')
+        modules = ('piper', 'onnxruntime', 'tltk', 'requests') + (('torch', 'transformers') if mms else ())
+        if code := check_modules(voices.tts_python, modules,
+                                 'See requirements-thai-tts.txt and docs/THAI_OFFLINE_TTS_COMPARISON.md' if mms
+                                 else 'See requirements-piper.txt and docs/PIPER_OFFLINE_TTS_TH.md'):
             return code
         options += ['--tts-python', voices.tts_python, '--tts-thai-model', voices.tts_thai_model,
-                    '--tts-english-model', voices.tts_english_model]
-        print('Offline Piper enabled. S: read/repeat; B: stop. Thai voice: non-commercial trial only.')
+                    '--tts-english-model', voices.tts_english_model,
+                    '--tts-thai-backend', voices.tts_thai_backend]
+        print(f'Offline Thai {voices.tts_thai_backend}; English Piper. S: read/repeat; B: stop. Non-commercial trial only.')
     else:
         print('Scanner without speech. Choose main.bat piper for offline Thai/English speech.')
     return application('camera_reader.py', options+args)

@@ -1,0 +1,259 @@
+{
+  "tested_on": "2026-10-15",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "machine": "AMD64",
+  "cpu": "AMD Ryzen 7 7800X3D",
+  "logical_cpus": 16,
+  "ram_gib": 30.88,
+  "board_tested": false,
+  "network_blocked_during_synthesis": true,
+  "benchmarks": [
+    {
+      "engine": "mms",
+      "load_seconds": 6.528446899999835,
+      "total_cpu_seconds": 17.671875,
+      "samples": [
+        {
+          "text": "สวัสดีครับ กรุณาวางกระดาษให้นิ่ง แล้วกดปุ่มอ่านอีกครั้ง",
+          "file": "mms_1.wav",
+          "synthesis_seconds": 0.5772637000009126,
+          "ready_seconds": 7.105722500000411,
+          "cpu_seconds": 4.390625,
+          "audio_seconds": 5.344,
+          "sample_rate": 16000,
+          "realtime_factor": 0.10802090194627856
+        },
+        {
+          "text": "ป่า ป้า ป๊า ป๋า ข้าว ข่าว เข้า เขา เสือ เสื้อ เสื่อ",
+          "file": "mms_2.wav",
+          "synthesis_seconds": 0.42121730000144453,
+          "ready_seconds": 7.535772700000962,
+          "cpu_seconds": 3.109375,
+          "audio_seconds": 4.096,
+          "sample_rate": 16000,
+          "realtime_factor": 0.10283625488316517
+        },
+        {
+          "text": "วันนี้มีนักเรียนสิบสองคน อ่านหนังสือที่ห้องสมุด เวลาเก้าโมงสามสิบนาที",
+          "file": "mms_3.wav",
+          "synthesis_seconds": 0.6165804000011121,
+          "ready_seconds": 8.159730700001091,
+          "cpu_seconds": 4.671875,
+          "audio_seconds": 6.4,
+          "sample_rate": 16000,
+          "realtime_factor": 0.09634068750017377
+        }
+      ],
+      "peak_rss_mib": 614.2734375,
+      "process_wall_seconds": 8.91331199999695
+    },
+    {
+      "engine": "piper",
+      "load_seconds": 1.9152591999991273,
+      "total_cpu_seconds": 9.15625,
+      "samples": [
+        {
+          "text": "สวัสดีครับ กรุณาวางกระดาษให้นิ่ง แล้วกดปุ่มอ่านอีกครั้ง",
+          "file": "piper_1.wav",
+          "synthesis_seconds": 3.467235600001004,
+          "ready_seconds": 5.3825096000000485,
+          "cpu_seconds": 3.796875,
+          "audio_seconds": 5.294149659863946,
+          "sample_rate": 22050,
+          "realtime_factor": 0.6549183197987094
+        },
+        {
+          "text": "ป่า ป้า ป๊า ป๋า ข้าว ข่าว เข้า เขา เสือ เสื้อ เสื่อ",
+          "file": "piper_2.wav",
+          "synthesis_seconds": 0.7671793999979855,
+          "ready_seconds": 6.1564651999979105,
+          "cpu_seconds": 1.703125,
+          "audio_seconds": 3.877732426303855,
+          "sample_rate": 22050,
+          "realtime_factor": 0.1978422736942784
+        },
+        {
+          "text": "วันนี้มีนักเรียนสิบสองคน อ่านหนังสือที่ห้องสมุด เวลาเก้าโมงสามสิบนาที",
+          "file": "piper_3.wav",
+          "synthesis_seconds": 0.4197767000005115,
+          "ready_seconds": 6.585285699999076,
+          "cpu_seconds": 1.609375,
+          "audio_seconds": 6.339047619047619,
+          "sample_rate": 22050,
+          "realtime_factor": 0.06622078350368646
+        }
+      ],
+      "peak_rss_mib": 632.17578125,
+      "process_wall_seconds": 7.102005400000053
+    },
+    {
+      "engine": "vachana_f",
+      "load_seconds": 3.835453600000619,
+      "total_cpu_seconds": 6.859375,
+      "samples": [
+        {
+          "text": "สวัสดีครับ กรุณาวางกระดาษให้นิ่ง แล้วกดปุ่มอ่านอีกครั้ง",
+          "file": "vachana_f_1.wav",
+          "synthesis_seconds": 0.621227399999043,
+          "ready_seconds": 4.456701699997211,
+          "cpu_seconds": 1.3125,
+          "audio_seconds": 3.541043083900227,
+          "sample_rate": 22050,
+          "realtime_factor": 0.1754362726687871
+        },
+        {
+          "text": "ป่า ป้า ป๊า ป๋า ข้าว ข่าว เข้า เขา เสือ เสื้อ เสื่อ",
+          "file": "vachana_f_2.wav",
+          "synthesis_seconds": 0.07141629999750876,
+          "ready_seconds": 4.536033099997439,
+          "cpu_seconds": 0.5625,
+          "audio_seconds": 2.681904761904762,
+          "sample_rate": 22050,
+          "realtime_factor": 0.026628947087139275
+        },
+        {
+          "text": "วันนี้มีนักเรียนสิบสองคน อ่านหนังสือที่ห้องสมุด เวลาเก้าโมงสามสิบนาที",
+          "file": "vachana_f_3.wav",
+          "synthesis_seconds": 0.11959220000062487,
+          "ready_seconds": 4.663641600000119,
+          "cpu_seconds": 1.0,
+          "audio_seconds": 4.562721088435374,
+          "sample_rate": 22050,
+          "realtime_factor": 0.026210718929049165
+        }
+      ],
+      "peak_rss_mib": 497.25390625,
+      "process_wall_seconds": 5.652005899999494
+    },
+    {
+      "engine": "vachana_m",
+      "load_seconds": 3.886201400000573,
+      "total_cpu_seconds": 6.609375,
+      "samples": [
+        {
+          "text": "สวัสดีครับ กรุณาวางกระดาษให้นิ่ง แล้วกดปุ่มอ่านอีกครั้ง",
+          "file": "vachana_m_1.wav",
+          "synthesis_seconds": 0.5505379999995057,
+          "ready_seconds": 4.436756699997204,
+          "cpu_seconds": 1.3125,
+          "audio_seconds": 3.924172335600907,
+          "sample_rate": 22050,
+          "realtime_factor": 0.1402940423907764
+        },
+        {
+          "text": "ป่า ป้า ป๊า ป๋า ข้าว ข่าว เข้า เขา เสือ เสื้อ เสื่อ",
+          "file": "vachana_m_2.wav",
+          "synthesis_seconds": 0.064407999998366,
+          "ready_seconds": 4.508394199998293,
+          "cpu_seconds": 0.5,
+          "audio_seconds": 2.6586848072562357,
+          "sample_rate": 22050,
+          "realtime_factor": 0.02422551173519327
+        },
+        {
+          "text": "วันนี้มีนักเรียนสิบสองคน อ่านหนังสือที่ห้องสมุด เวลาเก้าโมงสามสิบนาที",
+          "file": "vachana_m_3.wav",
+          "synthesis_seconds": 0.10808389999874635,
+          "ready_seconds": 4.622734799999307,
+          "cpu_seconds": 0.828125,
+          "audio_seconds": 4.864580498866213,
+          "sample_rate": 22050,
+          "realtime_factor": 0.022218544851696345
+        }
+      ],
+      "peak_rss_mib": 506.6953125,
+      "process_wall_seconds": 5.57402010000078
+    }
+  ],
+  "integrated_mms": {
+    "load_seconds": 6.457360700002027,
+    "synthesis_seconds": 0.528777399998944,
+    "ready_seconds": 6.9861381000009715,
+    "audio_seconds": 4.752
+  },
+  "controller_probe": [
+    {
+      "iteration": 1,
+      "worker_stopped": true,
+      "descendants_stopped": true,
+      "grid_context_unchanged": true
+    },
+    {
+      "iteration": 2,
+      "worker_stopped": true,
+      "descendants_stopped": true,
+      "grid_context_unchanged": true
+    }
+  ],
+  "provenance": [
+    {
+      "file": "vachana\\speaker_config.json",
+      "url": "https://huggingface.co/VIZINTZOR/VachanaTTS/resolve/6fa5f03a26f8ec0c0e0582e9e6812efa84d38688/speaker_config.json",
+      "sha256": "555499f40719ea64da6ddcc78b56002c6cb5be1c9ec592b906fa7afa7c7a00b5",
+      "bytes": 4906
+    },
+    {
+      "file": "vachana\\voices\\th_f_1.onnx",
+      "url": "https://huggingface.co/VIZINTZOR/VachanaTTS/resolve/6fa5f03a26f8ec0c0e0582e9e6812efa84d38688/voices/th_f_1.onnx",
+      "sha256": "e87f6d6f825680118cc412f6f9da944bdece5ebe772769a14b2d8359a07c5bf1",
+      "bytes": 63516050
+    },
+    {
+      "file": "vachana\\voices\\th_m_1.onnx",
+      "url": "https://huggingface.co/VIZINTZOR/VachanaTTS/resolve/6fa5f03a26f8ec0c0e0582e9e6812efa84d38688/voices/th_m_1.onnx",
+      "sha256": "c63bedc664d8a2c525181360f4dfa624d2940b3636de6caff141353f72d984bd",
+      "bytes": 63516050
+    },
+    {
+      "file": "mms\\config.json",
+      "url": "https://huggingface.co/facebook/mms-tts-tha/resolve/fcecc37a91566f4a36ba6c6c8aa39830ff6daa9d/config.json",
+      "sha256": "b9d9ca72b288f9ed0993933cdfdd5b04daa6ec2797e6d863610b386b31d3e2cf",
+      "bytes": 1641
+    },
+    {
+      "file": "mms\\special_tokens_map.json",
+      "url": "https://huggingface.co/facebook/mms-tts-tha/resolve/fcecc37a91566f4a36ba6c6c8aa39830ff6daa9d/special_tokens_map.json",
+      "sha256": "7007894e816ea909cd6acde1555e25e1ad92f86178e82608a18a7038b1200c0a",
+      "bytes": 49
+    },
+    {
+      "file": "mms\\tokenizer_config.json",
+      "url": "https://huggingface.co/facebook/mms-tts-tha/resolve/fcecc37a91566f4a36ba6c6c8aa39830ff6daa9d/tokenizer_config.json",
+      "sha256": "7a459277ddac442d66eae365d7c55e980b8448abe29d1b26fc3e5149a8f943fa",
+      "bytes": 289
+    },
+    {
+      "file": "mms\\vocab.json",
+      "url": "https://huggingface.co/facebook/mms-tts-tha/resolve/fcecc37a91566f4a36ba6c6c8aa39830ff6daa9d/vocab.json",
+      "sha256": "e80e377b9b7e113802a56a45696d38be00127f2f433fedb4452df34113a3ebee",
+      "bytes": 902
+    },
+    {
+      "file": "mms\\model.safetensors",
+      "url": "https://huggingface.co/facebook/mms-tts-tha/resolve/fcecc37a91566f4a36ba6c6c8aa39830ff6daa9d/model.safetensors",
+      "sha256": "c00a7f642fa9e786ce0fa755393b0859ad079bbf2327a85ecbadee9286166ab9",
+      "bytes": 145252856
+    }
+  ],
+  "english_piper_smoke": {
+    "load_seconds": 2.558371899998747,
+    "synthesis_seconds": 1.2754219000016747,
+    "ready_seconds": 3.8337938000004215,
+    "audio_seconds": 3.378503401360544
+  },
+  "regression": {
+    "tests": 124,
+    "seconds": 21.378,
+    "passed": true
+  },
+  "versions": {
+    "torch": "2.8.0+cpu",
+    "transformers": "4.57.1",
+    "onnxruntime": "1.31.0",
+    "vachanatts": "0.0.7",
+    "piper-tts": "1.8.0",
+    "ssg": "0.0.8",
+    "pythainlp": "5.4.0",
+    "psutil": "7.1.0"
+  }
+}

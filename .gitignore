@@ -12,6 +12,7 @@ wheels/
 # Output artifacts
 output/*.png
 output/*.mp3
+output/thai_tts/
 output/*_stream/
 output/diagnostic_*/
 output/diag_*/

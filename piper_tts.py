@@ -1,4 +1,4 @@
-"""Piper แบบ offline: อ่านไฟล์โมเดลในเครื่องและหยุดงานผ่าน process แยก"""
+"""Offline Piper / optional Thai MMS: local models and stoppable worker processes."""
 import json
 import logging
 import os
@@ -13,9 +13,17 @@ import wave
 
 
 class PiperSpeech:
-    def __init__(self, models, python_executable=None):
+    def __init__(self, models, python_executable=None, thai_backend='piper'):
+        if thai_backend not in ('piper', 'mms'):
+            raise ValueError(f'Unsupported offline Thai backend: {thai_backend}')
+        self.thai_backend = thai_backend
         self.models = {lang: Path(path).expanduser().resolve() for lang, path in models.items() if path}
-        for path in self.models.values():
+        for lang, path in self.models.items():
+            if lang == 'thai' and thai_backend == 'mms':
+                required = ('config.json', 'model.safetensors', 'tokenizer_config.json', 'vocab.json')
+                if not all((path / name).is_file() for name in required):
+                    raise FileNotFoundError(f'MMS requires local model/tokenizer files: {path}')
+                continue
             if not path.is_file() or not Path(str(path) + '.json').is_file():
                 raise FileNotFoundError(f'Piper requires local model and model.onnx.json: {path}')
         self.python = str(Path(python_executable or sys.executable).resolve())
@@ -51,6 +59,7 @@ class PiperSpeech:
         self._workspace = tempfile.TemporaryDirectory(prefix='braille-piper-')
         self._log = tempfile.TemporaryFile()
         job = dict(model=str(self.models[lang]), text=text,
+                   backend=self.thai_backend if lang == 'thai' else 'piper',
                    output=str(Path(self._workspace.name) / 'speech.wav'))
         options = ({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt'
                    else {'start_new_session': True})
@@ -95,15 +104,34 @@ class PiperSpeech:
             self._workspace = None
 
 
-def synthesize_wav(model, text, output):
+def synthesize_wav(model, text, output, backend='piper'):
     """สังเคราะห์บน CPU จากโมเดลในเครื่อง พร้อมเวลาที่วัดได้จริง"""
     started = time.perf_counter()
-    from piper import PiperVoice
-    # shortcut: โหลดโมเดลใหม่ต่อการกดหนึ่งครั้ง วัด latency บนบอร์ดก่อนเพิ่ม worker ค้างไว้
-    voice = PiperVoice.load(str(model), use_cuda=False)
+    if backend == 'mms':
+        import torch
+        from transformers import AutoTokenizer, VitsModel
+        tokenizer = AutoTokenizer.from_pretrained(str(model), local_files_only=True)
+        voice = VitsModel.from_pretrained(str(model), local_files_only=True).eval()
+    elif backend == 'piper':
+        from piper import PiperVoice
+        # shortcut: โหลดโมเดลใหม่ต่อการกดหนึ่งครั้ง วัด latency บนบอร์ดก่อนเพิ่ม worker ค้างไว้
+        voice = PiperVoice.load(str(model), use_cuda=False)
+    else:
+        raise ValueError(f'Unsupported offline backend: {backend}')
     loaded = time.perf_counter()
     with wave.open(str(output), 'wb') as wav:
-        voice.synthesize_wav(text, wav)
+        if backend == 'mms':
+            import numpy as np
+            inputs = tokenizer(text, return_tensors='pt')
+            with torch.inference_mode():
+                samples = voice(**inputs).waveform[0].cpu().numpy()
+            samples = (np.clip(samples, -1, 1) * 32767).astype('<i2')
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(voice.config.sampling_rate)
+            wav.writeframes(samples.tobytes())
+        else:
+            voice.synthesize_wav(text, wav)
     finished = time.perf_counter()
     with wave.open(str(output), 'rb') as wav:
         duration = wav.getnframes() / wav.getframerate()
@@ -116,7 +144,7 @@ def synthesize_wav(model, text, output):
 def _worker():
     job = json.load(sys.stdin)
     output = job['output']
-    metrics = synthesize_wav(job['model'], job['text'], output)
+    metrics = synthesize_wav(job['model'], job['text'], output, backend=job.get('backend', 'piper'))
     print(json.dumps(metrics), flush=True)
     if sys.platform == 'win32':
         import winsound
