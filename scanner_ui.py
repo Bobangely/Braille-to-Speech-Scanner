@@ -181,7 +181,7 @@ class ScannerUI:
                     ('Resolution  [V]', 'v'), (f"Sharp {state.get('sharp', 'OFF')}  [E]", 'e'),
                     ('Zoom -  [X]', 'x'), ('Zoom +  [Z]', 'z'),
                     ('Reset zoom  [R]', 'r'), ('Save image  [P]', 'p'),
-                    ('Diagnostic  [D]', 'd'), ('Details  [H]', 'h')]
+                    ('Read again  [A]', 'a'), ('Details  [H]', 'h')]
         gap, left, bw = 6*s, x+10*s, (right-x-26*s)/2
         for i, (label, key) in enumerate(controls):
             bx, by = left+(i % 2)*(bw+gap), y+(34+(i//2)*31)*s

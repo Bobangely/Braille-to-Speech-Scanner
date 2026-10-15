@@ -557,6 +557,8 @@ class RealTimeBrailleScanner:
         dot_color='blue',
         roi_mode='off',
         scan_roi=None,
+        speak=False,
+        tts_method='auto',
     ):
         self.camera_id = camera_id
         self.lang = lang.lower()
@@ -573,6 +575,8 @@ class RealTimeBrailleScanner:
                 raise ValueError('scan_roi must be normalized x1 y1 x2 y2 within 0..1')
             scan_roi = tuple(map(float, scan_roi))
         self.scan_roi = scan_roi
+        self.speak_enabled = bool(speak)
+        self.tts_method = tts_method
 
         # กำหนดระดับความคมชัดเริ่มต้น (0 ถึง 4)
         self.sharpness_idx = max(0, min(len(SHARPNESS_LEVELS) - 1, int(sharpness_level)))
@@ -607,6 +611,8 @@ class RealTimeBrailleScanner:
         self._line_confirmation = LineConfirmation(stability_threshold)
         self._last_stability_result_id = 0
         self._confirmed_text = ''
+        self._last_spoken_text = ''
+        self._speech_lock = threading.Lock()
         self._confirmed_context = None
         self._last_submitted_frame_id = -1
         self._last_submitted_context = None
@@ -647,6 +653,34 @@ class RealTimeBrailleScanner:
         self.display_fps = 0.0
         self.ai_fps = 0.0
         self._prev_frame_time = time.time()
+
+    def _speak_confirmed_text(self, text, force=False):
+        """Speak a newly confirmed result without pausing the camera preview."""
+        if not self.speak_enabled or not text or (not force and text == self._last_spoken_text):
+            return
+        with self._speech_lock:
+            if not force and text == self._last_spoken_text:
+                return
+            self._last_spoken_text = text
+
+        def run_speech():
+            from tts import speak
+            if not speak(text, lang=self.lang, method=self.tts_method):
+                logger.warning('TTS could not speak confirmed text')
+
+        threading.Thread(target=run_speech, name='BrailleSpeech', daemon=True).start()
+
+    def replay_and_reset(self):
+        """Read the latest confirmed text once more, then prepare for a new scan."""
+        text = self._confirmed_text.strip()
+        if not text:
+            print('  ยังไม่มีข้อความที่ยืนยันแล้วให้ฟังซ้ำ')
+            return
+        self._speak_confirmed_text(text, force=True)
+        self._reset_confirmation()
+        self._confirmed_text = ''
+        self._last_spoken_text = ''
+        print('  🔊 อ่านซ้ำแล้ว — พร้อมสแกนข้อความใหม่')
 
 
     def _reset_confirmation(self):
@@ -924,6 +958,7 @@ class RealTimeBrailleScanner:
                 # Publish only after both confirmation and preview motion checks.
                 # Transient failed reads must not erase the previous confirmed text.
                 self._confirmed_text = decoded_text
+                self._speak_confirmed_text(decoded_text)
             annotated = self._compose_dashboard(annotated[:self._preview_image_size[1]],
                 preview_result, decoded_text, is_locked)
             self._draw_top_hud(annotated, decoded_text if is_locked else '', is_locked)
@@ -989,6 +1024,8 @@ class RealTimeBrailleScanner:
             self.zoom_out()
         elif key in (ord('r'), ord('R'), ord('0')):
             self.reset_zoom()
+        elif key in (ord('a'), ord('A')):
+            self.replay_and_reset()
         elif key in (ord('l'), ord('L')):
             self.lang = 'english' if self.lang == 'thai' else 'thai'
             self._reset_confirmation()
@@ -1046,6 +1083,7 @@ class RealTimeBrailleScanner:
         print(f"  ความละเอียดเป้าหมาย:  {self.target_width}x{self.target_height} ({self.res_name})")
         print(f"  ระดับความคมชัด:      Level {lvl_num} [{lvl_name}]")
         print(f"  ภาษาเริ่มต้น:        {self.lang.upper()}")
+        print(f"  เสียงอ่าน:           {'Piper TTS (' + self.tts_method + ')' if self.speak_enabled else 'ปิด'}")
         print(f"  อัตราการซูมเริ่มต้น:  {self.zoom_level:.1f}x")
         print()
         print("  คีย์ลัดและควบคุม:")
@@ -1054,8 +1092,11 @@ class RealTimeBrailleScanner:
         print("    [Z] / [+]       - ซูมเข้า (Zoom In)")
         print("    [X] / [-]       - ซูมออก (Zoom Out)")
         print("    [R] / [0]       - รีเซ็ตการซูม (Reset Zoom 1.0x)")
+        print("    [A]             - อ่านข้อความล่าสุดซ้ำ แล้วเริ่มสแกนใหม่")
         print("    [Wheel Up/Down] - ซูมเข้า/ออกด้วยล้อเมาส์")
         print("    [L]             - สลับภาษา (Thai <-> English)")
+        print("    ผลที่ยืนยันแล้วจะถูกอ่านออกเสียง" if self.speak_enabled else
+              "    (เปิด --speak เพื่อให้อ่านผลที่ยืนยันแล้วออกเสียง)")
         print("    [P]             - ถ่ายภาพ Snapshot ลง output/")
         print("    [Q]/[ESC]       - ออกจากโปรแกรม")
         print("=" * 70)
@@ -1217,6 +1258,12 @@ def main():
     parser.add_argument('--roi', choices=['off', 'yolo'], default='off', help='Optional YOLO-dot ROI with tracking')
     parser.add_argument('--scan-roi', nargs=4, type=float, metavar=('X1', 'Y1', 'X2', 'Y2'),
                         help='Fixed scan area in normalized camera coordinates 0..1; zoom stays inside it')
+    parser.add_argument('--speak', action='store_true', default=True,
+                        help='Speak each newly confirmed scan result (default: enabled)')
+    parser.add_argument('--no-speak', action='store_false', dest='speak',
+                        help='Disable speech output')
+    parser.add_argument('--tts', choices=['auto', 'piper', 'online', 'offline'], default='auto',
+                        help='TTS backend when --speak is enabled (Thai auto uses Piper first)')
     args = parser.parse_args()
 
     scanner = RealTimeBrailleScanner(
@@ -1240,6 +1287,8 @@ def main():
         dot_color=args.dot_color,
         roi_mode=args.roi,
         scan_roi=args.scan_roi,
+        speak=args.speak,
+        tts_method=args.tts,
     )
     scanner.run()
 

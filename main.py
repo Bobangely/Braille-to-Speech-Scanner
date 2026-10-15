@@ -24,6 +24,8 @@ def main():
     parser.add_argument('--save', action='store_true')
     parser.add_argument('--no-display', action='store_true')
     parser.add_argument('--speak', action='store_true')
+    parser.add_argument('--tts', choices=['auto', 'piper', 'online', 'offline'], default='auto',
+                        help='TTS backend when --speak is used (Thai auto uses offline Piper first)')
     args = parser.parse_args()
     if args.camera is not None or args.image is None:
         from camera_reader import RealTimeBrailleScanner
@@ -49,7 +51,7 @@ def main():
         print(destination)
     if args.speak and text:
         from tts import speak
-        speak(text, lang=args.lang)
+        speak(text, lang=args.lang, method=args.tts)
     if not args.no_display:
         cv2.namedWindow('Painted Braille', cv2.WINDOW_NORMAL)
         cv2.imshow('Painted Braille', annotated)

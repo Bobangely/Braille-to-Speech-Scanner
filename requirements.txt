@@ -3,6 +3,8 @@ numpy>=1.20.0
 Pillow>=8.0.0
 pyttsx3>=2.90
 gTTS>=2.5.0
+piper-tts>=1.8.0
+edge-tts>=7.2.0
 ultralytics>=8.0.0
 PyYAML>=6.0
 pythainlp==5.3.3

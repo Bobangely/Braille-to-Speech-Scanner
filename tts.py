@@ -3,13 +3,17 @@ Braille Reader - Text to Speech (TTS) Module
 =============================================
 แปลงข้อความที่อ่านได้ (ทั้งภาษาไทยและอังกฤษ) เป็นเสียงพูด
 รองรับ:
-1. Offline mode ผ่าน pyttsx3 (SAPI5 บน Windows, espeak บน Linux/ARM)
-2. Online/High-Quality mode ผ่าน gTTS (Google TTS ภาษาไทยและอังกฤษเสียงธรรมชาติ)
+1. Offline neural voice ผ่าน Piper TTS สำหรับภาษาไทย
+2. Offline mode ผ่าน pyttsx3 (SAPI5 บน Windows, espeak บน Linux/ARM)
+3. Online/High-Quality mode ผ่าน gTTS (Google TTS ภาษาไทยและอังกฤษเสียงธรรมชาติ)
 """
 
 import os
 import sys
 import re
+import wave
+from pathlib import Path
+import threading
 
 from decoder import normalize_thai_text
 from config_thai import THAI_MULTI_CELL_SYMBOLS
@@ -29,9 +33,15 @@ def prepare_thai_speech_text(text):
 class TextToSpeech:
     """TTS Controller สำหรับออกเสียงข้อความทั้งภาษาไทยและอังกฤษ"""
 
-    def __init__(self, default_lang='english'):
+    PIPER_THAI_MODEL = (Path(__file__).resolve().parent / 'models' / 'piper' /
+                        'th_TH-mms_female-medium.onnx')
+
+    def __init__(self, default_lang='english', piper_model_path=None):
         self.default_lang = default_lang
         self._offline_engine = None
+        self._piper_voice = None
+        self._piper_model_path = Path(piper_model_path or self.PIPER_THAI_MODEL)
+        self._piper_lock = threading.Lock()
         self._init_offline_engine()
 
     def _init_offline_engine(self):
@@ -55,7 +65,7 @@ class TextToSpeech:
         lang : str, optional
             ภาษา ('english' หรือ 'thai')
         method : str, optional
-            วิธีออกเสียง ('auto', 'offline', 'online')
+            วิธีออกเสียง ('auto', 'piper', 'offline', 'online')
         save_file : str, optional
             path ไฟล์เสียงที่ต้องการบันทึก (เช่น 'output/speech.mp3')
 
@@ -76,10 +86,12 @@ class TextToSpeech:
 
         # เลือก method
         if method == 'auto':
-            # ภาษาไทยแนะนำใช้ gTTS ถ้ามีเน็ตเพื่อสำเนียงไทยที่ถูกต้อง
-            # ถ้า offline หรือภาษาอังกฤษ ใช้ pyttsx3
+            # ให้ Piper ซึ่งเป็นโมเดลในเครื่องเป็นตัวเลือกแรกสำหรับภาษาไทย
+            # หากยังไม่ได้ติดตั้ง model จึงค่อย fallback ไป gTTS และ SAPI
             if is_thai:
-                success = self._speak_online(text, lang='th', save_file=save_file)
+                success = self._speak_piper(text, save_file=save_file)
+                if not success:
+                    success = self._speak_online(text, lang='th', save_file=save_file)
                 if not success:
                     success = self._speak_offline(text, is_thai=True)
                 return success
@@ -91,8 +103,46 @@ class TextToSpeech:
         elif method == 'online':
             t_lang = 'th' if is_thai else 'en'
             return self._speak_online(text, lang=t_lang, save_file=save_file)
+        elif method == 'piper':
+            if not is_thai:
+                print('  [Piper TTS]: โมเดลที่ติดตั้งรองรับภาษาไทยเท่านั้น')
+                return False
+            return self._speak_piper(text, save_file=save_file)
         else:
             return self._speak_offline(text, is_thai=is_thai)
+
+    def _speak_piper(self, text, save_file=None):
+        """ออกเสียงไทยแบบ offline ด้วย Piper และโมเดลที่ติดตั้งใน models/piper."""
+        model_path = self._piper_model_path
+        config_path = Path(f'{model_path}.json')
+        if not model_path.is_file() or not config_path.is_file():
+            print('  [Piper TTS]: ยังไม่พบโมเดลภาษาไทย — '
+                  'รัน tools\\setup_piper_thai.py หนึ่งครั้งก่อนใช้งาน')
+            return False
+        try:
+            from piper import PiperVoice
+            # Synthesis and WAV playback share one file. Serialize them so a
+            # new confirmed result can never overwrite audio that is playing.
+            with self._piper_lock:
+                if self._piper_voice is None:
+                    self._piper_voice = PiperVoice.load(model_path)
+
+                if save_file:
+                    audio_path = Path(save_file)
+                    audio_path.parent.mkdir(parents=True, exist_ok=True)
+                    if audio_path.suffix.lower() != '.wav':
+                        raise ValueError('Piper บันทึกได้เฉพาะไฟล์ .wav')
+                else:
+                    audio_path = Path(__file__).resolve().parent / 'output' / 'piper_thai.wav'
+                    audio_path.parent.mkdir(parents=True, exist_ok=True)
+
+                with wave.open(str(audio_path), 'wb') as wav_file:
+                    self._piper_voice.synthesize_wav(text, wav_file)
+                self._play_audio(str(audio_path))
+            return True
+        except Exception as error:
+            print(f'  [Piper TTS Error]: {error}')
+            return False
 
     def _speak_offline(self, text, is_thai=False):
         """ออกเสียงแบบ offline ผ่าน pyttsx3"""
@@ -165,6 +215,13 @@ class TextToSpeech:
         """เล่นไฟล์เสียงตาม OS"""
         try:
             if sys.platform.startswith('win'):
+                # Piper produces WAV. Play it in-process and wait for it to
+                # finish, rather than starting a Media Player process per scan.
+                # This prevents clipped or overlapping speech on rapid scans.
+                if audio_file.lower().endswith('.wav'):
+                    import winsound
+                    winsound.PlaySound(audio_file, winsound.SND_FILENAME | winsound.SND_SYNC)
+                    return
                 # ใช้ Windows Media Player / native command
                 os.system(f'start "" /min wmplayer "{audio_file}"')
             elif sys.platform.startswith('linux'):

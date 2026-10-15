@@ -14,6 +14,7 @@ echo    [E]             : Sharpness Level (OFF to ULTRA)
 echo    [Z] / [X]       : Zoom In / Zoom Out
 echo    [R] / [0]       : Reset Zoom (1.0x)
 echo    [L]             : Switch Language (Thai / English)
+echo    [A]             : Read the last confirmed text again, then scan anew
 echo    [P]             : Save Snapshot to output/
 echo    [Q] / [ESC]     : Quit
 echo.
@@ -21,8 +22,8 @@ echo  Starting YOLO cell crops in Full HD 1080p...
 echo.
 
 if exist ".venv\Scripts\python.exe" (
-    ".venv\Scripts\python.exe" camera_reader.py --camera 0 --detector yolo --yolo-pipeline stream --res fhd --sharp 0 --lang thai
+    ".venv\Scripts\python.exe" camera_reader.py --camera 0 --detector yolo --yolo-pipeline stream --res fhd --sharp 0 --lang thai --speak --tts auto
 ) else (
-    python camera_reader.py --camera 0 --detector yolo --yolo-pipeline stream --res fhd --sharp 0 --lang thai
+    python camera_reader.py --camera 0 --detector yolo --yolo-pipeline stream --res fhd --sharp 0 --lang thai --speak --tts auto
 )
 pause

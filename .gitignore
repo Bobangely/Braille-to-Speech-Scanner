@@ -12,6 +12,7 @@ wheels/
 # Output artifacts
 output/*.png
 output/*.mp3
+output/*.wav
 output/*_stream/
 output/diagnostic_*/
 output/diag_*/
@@ -31,3 +32,6 @@ scratch/
 
 # เก็บไฟล์ export ชุดข้อมูลเฉพาะเครื่องไว้ แต่ไม่รวมในการ merge
 /data.yaml
+
+# Local Piper Thai voice (downloaded during setup; do not commit the 63 MB model)
+/models/piper/

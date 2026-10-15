@@ -44,6 +44,31 @@
 
 ## ใช้งานกล้องและภาพเดี่ยว
 
+## เสียงภาษาไทยแบบออฟไลน์ (Piper TTS)
+
+ติดตั้ง package และดาวน์โหลดโมเดลเสียงภาษาไทยเพียงครั้งเดียว:
+
+```powershell
+.venv\Scripts\python.exe tools\setup_piper_thai.py
+```
+
+Piper จะเก็บโมเดลไว้ที่ `models/piper/` และทำงานได้โดยไม่ต้องต่ออินเทอร์เน็ต
+หลังติดตั้งแล้ว การใช้ `--speak` กับภาษาไทยจะเลือก Piper อัตโนมัติ; ระบุ
+`--tts piper` เพื่อบังคับใช้ หรือ `--tts online` เพื่อใช้ gTTS แทน:
+
+```powershell
+.venv\Scripts\python.exe main.py sample_images\example.png --lang thai --speak --tts piper
+```
+
+ตัวเปิดกล้อง `Start_Scanner_YOLO.bat` เปิดเสียง Piper ไว้แล้ว และจะอ่านเฉพาะ
+ข้อความที่ระบบยืนยันความเสถียรแล้วหนึ่งครั้งต่อข้อความ. หากเปิดด้วยคำสั่งเอง ให้เพิ่ม
+`--speak --tts piper`.
+กด `A` หรือปุ่ม **Read again [A]** บนหน้ากล้องเพื่อให้อ่านข้อความล่าสุดซ้ำ แล้วรีเซ็ต
+เพื่อสแกนข้อความถัดไป.
+
+โมเดลเสียงไทยที่ใช้เป็น Piper-format MMS Thai voice สำหรับการศึกษาและโครงงาน
+เท่านั้น (สัญญาอนุญาต CC-BY-NC-4.0); ห้ามนำไปใช้เชิงพาณิชย์.
+
 เปิด `Start_Scanner_YOLO.bat` หรือ:
 
 ```powershell
