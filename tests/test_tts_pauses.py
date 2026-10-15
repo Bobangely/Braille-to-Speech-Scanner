@@ -1,0 +1,41 @@
+import unittest
+
+from edge_stream import plan_edge_chunks
+from tts import prepare_thai_speech_text
+from thai_speech import THAI_CONSONANT_NAMES
+
+
+class SpeechPauseTests(unittest.TestCase):
+    def test_spaces_lines_and_sentences_choose_longest_boundary(self):
+        source = '  เขียด เขียว  ขอน\r\nไข่.\nกิน! คน? จบฯ ต่อ  '
+        self.assertEqual(plan_edge_chunks(source, 'th-TH-NiwatNeural'), [
+            ('เขียด', 250), ('เขียว', 425), ('ขอน', 600), ('ไข่.', 700),
+            ('กิน!', 700), ('คน?', 700), ('จบฯ', 700), ('ต่อ', 0)])
+
+    def test_no_split_inside_thai_words_or_decimal_numbers(self):
+        self.assertEqual(plan_edge_chunks('กินคนเกี๊ยว 3.14 บาท', 'th-TH-NiwatNeural'),
+                         [('กินคนเกี๊ยว', 250), ('3.14', 250), ('บาท', 0)])
+        self.assertEqual(plan_edge_chunks('   \n\t', 'th-TH-NiwatNeural'), [])
+        self.assertEqual(plan_edge_chunks('...!?', 'th-TH-NiwatNeural'), [])
+
+    def test_consonant_names_and_source_text_are_preserved(self):
+        source = '\n'.join(THAI_CONSONANT_NAMES)
+        prepared = prepare_thai_speech_text(source)
+        chunks = plan_edge_chunks(prepared, 'th-TH-NiwatNeural')
+        self.assertEqual([text for text, _ in chunks], list(THAI_CONSONANT_NAMES.values()))
+        self.assertEqual([pause for _, pause in chunks], [600]*43+[0])
+        self.assertEqual(source, '\n'.join(THAI_CONSONANT_NAMES))
+
+    def test_config_and_english_are_respected(self):
+        self.assertEqual(plan_edge_chunks('กิน คน\nไข่.', 'th-TH-NiwatNeural',
+                         dict(space=200, phrase=350, line=500, sentence=600)),
+                         [('กิน', 200), ('คน', 500), ('ไข่.', 0)])
+        self.assertEqual(plan_edge_chunks('Hello world.\nNext', 'en-US-JennyNeural'),
+                         [('Hello world.\nNext', 0)])
+        for invalid in (-1, float('nan'), '250'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                plan_edge_chunks('กิน คน', 'th-TH-NiwatNeural', dict(space=invalid))
+
+
+if __name__ == '__main__':
+    unittest.main()

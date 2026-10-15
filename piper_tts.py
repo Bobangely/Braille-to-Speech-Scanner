@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import wave
+from edge_stream import THAI_PAUSES_MS
 
 EDGE_VOICES = {'thai': 'th-TH-NiwatNeural', 'english': 'en-US-JennyNeural'}
 EDGE_RATE = '-15%'
@@ -63,7 +64,8 @@ class PiperSpeech:
         if lang not in (EDGE_VOICES if self.backend == 'edge' else self.models):
             raise ValueError(f'No speech voice configured for {lang}')
         key = (text, lang, self.backend, self.thai_backend, str(self.models.get(lang, '')),
-               EDGE_VOICES.get(lang), EDGE_RATE)
+               EDGE_VOICES.get(lang), EDGE_RATE,
+               tuple(sorted(THAI_PAUSES_MS.items())) if self.backend == 'edge' and lang == 'thai' else ())
         self._remember_audio()
         if (key == self._active_key and self._process is not None
                 and self._process.poll() is None and self._cache_key != key):
@@ -81,6 +83,7 @@ class PiperSpeech:
             Path(job['output']).write_bytes(self._cache_audio)
         if self.backend == 'edge':
             job['voice'] = EDGE_VOICES[lang]
+            job['pauses'] = dict(THAI_PAUSES_MS)
         options = ({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt'
                    else {'start_new_session': True})
         try:
@@ -193,7 +196,7 @@ def _worker():
         metrics = dict(cached=True)
     elif backend == 'edge':
         from edge_stream import stream_edge_audio
-        metrics = stream_edge_audio(job['text'], job['voice'], EDGE_RATE, output)
+        metrics = stream_edge_audio(job['text'], job['voice'], EDGE_RATE, output, pauses=job.get('pauses'))
     else:
         metrics = synthesize_wav(job['model'], job['text'], output, backend=backend, voice=job.get('voice'))
     Path(output).with_name('ready').touch()
