@@ -40,7 +40,7 @@ if not cap.isOpened():
     print("  [ERROR] Cannot open camera!")
     print("  Tips:")
     print("    - Check if webcam is plugged in")
-    print("    - Try camera index 1: python test_camera.py")
+    print("    - Try scanner with camera index 1: main.bat scan --camera 1")
     sys.exit(1)
 
 # ตั้งค่า Codec เป็น MJPG สำหรับแบนด์วิธความเร็วสูง

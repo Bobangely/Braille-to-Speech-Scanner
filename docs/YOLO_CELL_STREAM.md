@@ -47,7 +47,8 @@ crop ถูกปรับให้ระยะจุดประมาณ 32 px
 
 ## เปิดใช้งาน
 
-เปิด `Start_Scanner_YOLO.bat` สำหรับ Full HD, YOLO stream, ภาษาไทย, ปิด sharpening เริ่มต้น หรือใช้:
+เปิด `main.bat` แล้วเลือก scanner หรือใช้ `main.bat scan` (ความละเอียด auto ตาม launcher เดิม)
+ถ้าต้องการ Full HD ให้ใช้ `main.bat scan --res fhd` ส่วนคำสั่ง Python เดิมยังใช้ได้:
 
 ```powershell
 .venv\Scripts\python.exe camera_reader.py --detector yolo --yolo-pipeline stream --res fhd --sharp 0 --lang thai

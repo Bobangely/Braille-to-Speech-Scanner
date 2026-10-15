@@ -1,5 +1,8 @@
 # ผลตรวจ dependency และแผน cleanup โปรเจกต์
 
+> อัปเดต launcher วันที่ 15 ตุลาคม 2026: ข้อเสนอ KEEP wrappers และชื่อ `.bat` ด้านล่างเป็นบันทึก ณ วัน audit เดิม
+> ถูกแทนที่ด้วย `main.bat` ตามคำสั่งรวม entry point ของผู้ใช้แล้ว ดู [ผลตรวจและการย้ายหน้าที่](MAIN_LAUNCHER_AUDIT_TH.md)
+
 ตรวจ working tree บน `codex/colored-braille-only` ที่ HEAD `9e4fbb4` รวมการแก้ที่ยังไม่ commit จากงานก่อนหน้า เนื้อหา audit ด้านล่างบันทึกสถานะก่อน cleanup; ผลดำเนินการตามคำสั่งผู้ใช้อยู่ในหัวข้อถัดไป
 
 ## ผล cleanup เฉพาะ SAFE DELETE — 14 กันยายน 2026

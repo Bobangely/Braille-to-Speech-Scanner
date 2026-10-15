@@ -10,7 +10,7 @@ Branch: `codex/camera-scan-recovery`
 result rendering และ tests ที่เกี่ยวข้องร่วมกัน ก่อนแก้ไข ไม่ได้วิเคราะห์จากไฟล์กล้องเพียงไฟล์เดียว
 
 ```text
-Start_Scanner*.bat / main.py / camera_reader.main()
+main.bat scan / main.py / camera_reader.main()
   → RealTimeBrailleScanner.run()
   → ThreadedCameraCapture: VideoCapture → read → latest frame + frame ID
   → _apply_zoom(): crop ตาม ROI โดยรักษาพิกเซลต้นฉบับ
