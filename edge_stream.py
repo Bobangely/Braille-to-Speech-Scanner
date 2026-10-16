@@ -2,15 +2,53 @@
 
 import asyncio
 from array import array
+import logging
 import os
 import queue
 import re
 import threading
 import time
+import unicodedata
 import wave
 from thai_speech import expand_thai_speech_units
 
 THAI_PAUSES_MS = dict(space=0, phrase=0, line=10, sentence=50)
+THAI_WORD_PAUSE_MS = 2
+
+
+def word_pause_position(text, event, cursor):
+    token = event.get('text', '')
+    start = text.find(token, cursor) if token else -1
+    if start < 0 or any(c.isalnum() or unicodedata.category(c).startswith('M')
+                        for c in text[cursor:start]):
+        raise ValueError('WordBoundary cannot be aligned with source text')
+    cursor = start + len(token)
+    if (cursor < len(text) and text[cursor] in ' \t' and text[cursor:].strip()
+            and all(type(event.get(k)) is int and event[k] >= 0 for k in ('offset', 'duration'))):
+        return cursor, round((event['offset']+event['duration'])*24000/10_000_000)
+    return cursor, None
+
+
+def insert_word_pauses(blocks, markers, pause_ms, stats):
+    position, index = 0, 0
+    silence = array('h', [0])*round(pause_ms*24)
+    for block in blocks:
+        output, offset = array('h'), 0
+        while index < len(markers) and markers[index] <= position+len(block):
+            point = markers[index]
+            index += 1
+            if point < position:
+                stats['late_word_boundaries'] = stats.get('late_word_boundaries', 0)+1
+                continue
+            end = point-position
+            output.extend(block[offset:end])
+            output.extend(silence)
+            stats['word_pauses_inserted'] = stats.get('word_pauses_inserted', 0)+1
+            offset = end
+        output.extend(block[offset:])
+        position += len(block)
+        yield output
+    stats['late_word_boundaries'] = stats.get('late_word_boundaries', 0)+len(markers)-index
 
 
 def pack_audio_frames(decoded):
@@ -107,11 +145,14 @@ def prepare_edge_text(text, voice):
     return text
 
 
-def stream_edge_audio(text, voice, rate, output, pauses=None):
+def stream_edge_audio(text, voice, rate, output, pauses=None, word_pause_ms=None):
     started = time.perf_counter()
     import edge_tts
     import miniaudio
 
+    word_pause = (THAI_WORD_PAUSE_MS if word_pause_ms is None else word_pause_ms) if voice.startswith('th-TH-') else 0
+    if type(word_pause) not in (int, float) or not 0 <= word_pause <= 5000:
+        raise ValueError('Word pause must be finite milliseconds from 0 to 5000')
     chunks = plan_edge_chunks(prepare_edge_text(text, voice), voice, pauses)
     if not chunks:
         raise ValueError('No speakable text')
@@ -120,7 +161,7 @@ def stream_edge_audio(text, voice, rate, output, pauses=None):
     stopped = threading.Event()
     errors = []
     completed = threading.Event()
-    timings = {}
+    timings = dict(word_pauses_inserted=0, late_word_boundaries=0, unaligned_word_boundaries=0)
 
     class Source(miniaudio.StreamableSource):
         def __init__(self, reader):
@@ -141,6 +182,7 @@ def stream_edge_audio(text, voice, rate, output, pauses=None):
     def download():
         async def receive():
             for text_chunk, pause in chunks:
+                markers, cursor, aligned = [], 0, True
                 with reader_lock:
                     if stopped.is_set():
                         return
@@ -148,13 +190,25 @@ def stream_edge_audio(text, voice, rate, output, pauses=None):
                     reader = os.fdopen(reader_fd, 'rb', buffering=0)
                     readers.add(reader)
                 with os.fdopen(writer_fd, 'wb') as writer:
-                    if not enqueue((reader, pause)):
+                    if not enqueue((reader, pause, markers)):
                         return
-                    async for chunk in edge_tts.Communicate(text_chunk, voice=voice, rate=rate).stream():
+                    options = dict(boundary='WordBoundary') if word_pause else {}
+                    async for chunk in edge_tts.Communicate(text_chunk, voice=voice, rate=rate, **options).stream():
                         if chunk['type'] == 'audio':
                             timings.setdefault('first_mp3_seconds', time.perf_counter()-started)
                             writer.write(chunk['data'])
                             writer.flush()
+                        elif chunk['type'] == 'WordBoundary' and word_pause and aligned:
+                            try:
+                                cursor, point = word_pause_position(text_chunk, chunk, cursor)
+                                if point is not None:
+                                    if markers and point < markers[-1]:
+                                        raise ValueError('WordBoundary timestamps are out of order')
+                                    markers.append(point)
+                            except ValueError:
+                                aligned = False
+                                timings['unaligned_word_boundaries'] += 1
+                                logging.getLogger(__name__).warning('Skipping unaligned WordBoundary pauses', exc_info=True)
         try:
             asyncio.run(receive())
         except Exception as exc:
@@ -166,7 +220,7 @@ def stream_edge_audio(text, voice, rate, output, pauses=None):
     def decode_chunks():
         requested = yield array('h')
         while (source := sources.get()) is not None:
-            reader, pause = source
+            reader, pause, markers = source
             decoded_chunk = None
             try:
                 decoded_chunk = miniaudio.stream_any(Source(reader), miniaudio.FileFormat.MP3,
@@ -177,7 +231,8 @@ def stream_edge_audio(text, voice, rate, output, pauses=None):
                             yield decoded_chunk.send(2048)
                     except StopIteration:
                         return
-                audio = trim_edge_padding(blocks()) if voice.startswith('th-TH-') else blocks()
+                audio = insert_word_pauses(blocks(), markers, word_pause, timings) if word_pause else blocks()
+                audio = trim_edge_padding(audio) if voice.startswith('th-TH-') else audio
                 for block in audio:
                     offset = 0
                     while offset < len(block):
@@ -242,7 +297,8 @@ def stream_edge_audio(text, voice, rate, output, pauses=None):
         if duration <= 0:
             raise ValueError('Edge produced no audio')
         return dict(timings, audio_seconds=duration, cached=False, chunk_count=len(chunks),
-                    inserted_silence_seconds=sum(pause for _, pause in chunks)/1000)
+                    inserted_silence_seconds=(sum(pause for _, pause in chunks)
+                                             + timings['word_pauses_inserted']*word_pause)/1000)
     except Exception:
         stopped.set()
         with reader_lock:

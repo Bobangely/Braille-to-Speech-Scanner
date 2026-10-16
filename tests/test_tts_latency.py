@@ -37,6 +37,7 @@ class SpeechLatencyTests(unittest.TestCase):
         with patch('piper_tts.subprocess.Popen', side_effect=start):
             speaker.speak('ศักดิ์', 'thai')
             self.assertEqual(jobs[-1]['rate'], '-15%')
+            self.assertEqual(jobs[-1]['word_pause_ms'], 2)
             directory = Path(speaker._workspace.name)
             with wave.open(str(directory/'speech.wav'), 'wb') as wav:
                 wav.setnchannels(1)
@@ -60,6 +61,10 @@ class SpeechLatencyTests(unittest.TestCase):
                 speaker.speak('ศักดิ์', 'thai')
             self.assertFalse(jobs[-1]['cached'])
             self.assertEqual(jobs[-1]['pauses']['space'], 300)
+            with patch('piper_tts.THAI_WORD_PAUSE_MS', 3):
+                speaker.speak('ศักดิ์', 'thai')
+            self.assertFalse(jobs[-1]['cached'])
+            self.assertEqual(jobs[-1]['word_pause_ms'], 3)
             speaker.speak('Hello', 'english')
             self.assertFalse(jobs[-1]['cached'])
 
@@ -90,6 +95,9 @@ class SpeechLatencyTests(unittest.TestCase):
                 self.text = text
                 requests.append(text)
             async def stream(self):
+                if self.text == 'ขอขวด เสื้อ ภู่':
+                    yield dict(type='WordBoundary', text='ขอขวด', offset=0, duration=1250)
+                    yield dict(type='WordBoundary', text='เสื้อ', offset=0, duration=1667)
                 yield {'type': 'audio', 'data': b'\0\0\x01\0\x02\0'}
                 await asyncio.sleep(.1)
                 yield {'type': 'audio', 'data': b'\x03\0\x04\0\0\0'}
@@ -127,10 +135,13 @@ class SpeechLatencyTests(unittest.TestCase):
             metrics = stream_edge_audio('ฃ เสื้อ  ภู่\nกิน. คน', 'th-TH-PremwadeeNeural', '-15%', output)
             with wave.open(str(output), 'rb') as wav:
                 block = b'\x01\0\x02\0\x03\0\x04\0'
+                marked = b'\x01\0\x02\0'+b'\0\0'*48+b'\x03\0'+b'\0\0'*48+b'\x04\0'
                 self.assertEqual(wav.readframes(wav.getnframes()),
-                                 block + b'\0\0'*240 + block + b'\0\0'*1200 + block)
+                                 marked + b'\0\0'*240 + block + b'\0\0'*1200 + block)
             self.assertEqual(requests, ['ขอขวด เสื้อ ภู่', 'กิน.', 'คน'])
-            self.assertEqual(metrics['inserted_silence_seconds'], .06)
+            self.assertEqual(metrics['inserted_silence_seconds'], .064)
+            self.assertEqual(metrics['word_pauses_inserted'], 2)
+            self.assertEqual(metrics['late_word_boundaries'], 0)
         self.assertEqual(len(devices), 1)
         self.assertEqual(first_play, [True])
         self.assertLess(metrics['first_audio_seconds'], metrics['network_seconds'])
