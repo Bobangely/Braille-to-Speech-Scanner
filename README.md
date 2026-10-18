@@ -1,5 +1,20 @@
 # Thai Braille Reader — Painted Dots
 
+## ติดตั้งและเปิดจาก source
+
+ชุดนี้รองรับการรันจากโฟลเดอร์ source ไม่ใช่แพ็กเกจ pip/wheel และไม่มีคำสั่งติดตั้ง `braille-reader` ให้ใช้ Python 3.12 แบบ 64-bit แล้วเปิด terminal ในโฟลเดอร์ที่มี README นี้:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip check
+.\main.bat
+```
+
+หรือใช้ `uv sync --locked` เพื่อเตรียม dependencies แล้วเรียก `uv run camera_reader.py` จากโฟลเดอร์โปรเจกต์ บน Linux ใช้ `python3.12` และ `.venv/bin/python` แทนคำสั่ง Windows; ต้องมี desktop/GUI กล้อง และอุปกรณ์เสียงที่ OS รองรับ ยังไม่รับรอง Linux ARM64 จนกว่าจะทดสอบบนบอร์ดจริง
+
+requirements หลักไม่รวมโมเดลเสียงหรือ dependencies เสียงเสริม: Edge ต้องติดตั้ง `requirements-edge-tts.txt` ใน environment เสียงและใช้อินเทอร์เน็ต ส่วน Piper/MMS ต้องติดตั้ง requirements และโมเดล local ตามคู่มือเสียงด้านล่าง ไม่ใช้ `uv build` หรือ `pip install .` เพื่อแจกโปรแกรมรุ่นนี้
+
 กล้องเริ่มด้วย `--res auto`: ตรวจเฟรมจริงของ 4K / 2K / 1080p แล้วเลือกโหมดสูงสุดที่ใช้ได้ ปุ่ม `V` วนเฉพาะโหมดที่ตรวจผ่าน หากเปิดไม่ได้จะลองโหมดต่ำกว่า; CLI ที่ระบุ preset/ขนาดเองยังใช้ได้เป็น override
 
 ถอด Sharpness และปุ่ม `E` แล้ว ส่ง pixel ต้นฉบับเข้า Detection โดยตรง คง `--sharp 0` เพื่อ compatibility; ค่าอื่นไม่รองรับ ไม่ได้เปลี่ยนกฎ Parser ไทย/อังกฤษ
