@@ -146,6 +146,45 @@ class SpeechLatencyTests(unittest.TestCase):
         self.assertEqual(first_play, [True])
         self.assertLess(metrics['first_audio_seconds'], metrics['network_seconds'])
 
+    def test_english_preserves_pcm_without_inserting_word_silence(self):
+        from edge_stream import stream_edge_audio
+        class Communicate:
+            def __init__(self, text, **kwargs):
+                pass
+            async def stream(self):
+                yield dict(type='WordBoundary', text='Hello', offset=0, duration=1250)
+                yield dict(type='audio', data=b'audio')
+        def decode(source, *args, **kwargs):
+            def samples():
+                yield array('h')
+                source.read(5)
+                yield array('h', [100, 200, 300, 400, 500])
+            generator = samples()
+            next(generator)
+            return generator
+        class Device:
+            def __init__(self, **kwargs):
+                pass
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def start(self, generator):
+                try:
+                    while True:
+                        generator.send(2)
+                except StopIteration:
+                    pass
+        audio = types.SimpleNamespace(StreamableSource=object, stream_any=decode,
+            FileFormat=types.SimpleNamespace(MP3='mp3'), PlaybackDevice=Device)
+        with tempfile.TemporaryDirectory() as directory, patch.dict('sys.modules', {
+                'miniaudio': audio, 'edge_tts': types.SimpleNamespace(Communicate=Communicate)}):
+            output = Path(directory)/'speech.wav'
+            metrics = stream_edge_audio('Hello world', 'en-US-JennyNeural', '-20%', output)
+            with wave.open(str(output), 'rb') as wav:
+                self.assertEqual(wav.readframes(wav.getnframes()), array('h', [100, 200, 300, 400, 500]).tobytes())
+            self.assertEqual(metrics['word_pauses_inserted'], 0)
+
     def test_decoder_failure_does_not_deadlock_a_blocked_downloader(self):
         from contextlib import nullcontext
         from edge_stream import stream_edge_audio

@@ -148,7 +148,7 @@ def stream_edge_audio(text, voice, rate, output, pauses=None, word_pause_ms=None
     import edge_tts
     import miniaudio
 
-    word_pause = THAI_WORD_PAUSE_MS if word_pause_ms is None else word_pause_ms
+    word_pause = (THAI_WORD_PAUSE_MS if word_pause_ms is None else word_pause_ms) if voice.startswith('th-TH-') else 0
     if type(word_pause) not in (int, float) or not 0 <= word_pause <= 5000:
         raise ValueError('Word pause must be finite milliseconds from 0 to 5000')
     chunks = plan_edge_chunks(prepare_edge_text(text, voice), voice, pauses)
