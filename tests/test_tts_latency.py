@@ -37,7 +37,7 @@ class SpeechLatencyTests(unittest.TestCase):
         with patch('piper_tts.subprocess.Popen', side_effect=start):
             speaker.speak('ศักดิ์', 'thai')
             self.assertEqual(jobs[-1]['rate'], '-20%')
-            self.assertEqual(jobs[-1]['word_pause_ms'], 2)
+            self.assertEqual(jobs[-1]['word_pause_ms'], 0)
             directory = Path(speaker._workspace.name)
             with wave.open(str(directory/'speech.wav'), 'wb') as wav:
                 wav.setnchannels(1)
@@ -135,12 +135,11 @@ class SpeechLatencyTests(unittest.TestCase):
             metrics = stream_edge_audio('ฃ เสื้อ  ภู่\nกิน. คน', 'th-TH-PremwadeeNeural', '-15%', output)
             with wave.open(str(output), 'rb') as wav:
                 block = b'\x01\0\x02\0\x03\0\x04\0'
-                marked = b'\x01\0\x02\0'+b'\0\0'*48+b'\x03\0'+b'\0\0'*48+b'\x04\0'
                 self.assertEqual(wav.readframes(wav.getnframes()),
-                                 marked + b'\0\0'*240 + block + b'\0\0'*1200 + block)
+                                 block + b'\0\0'*240 + block + b'\0\0'*1200 + block)
             self.assertEqual(requests, ['ขอขวด เสื้อ ภู่', 'กิน.', 'คน'])
-            self.assertEqual(metrics['inserted_silence_seconds'], .064)
-            self.assertEqual(metrics['word_pauses_inserted'], 2)
+            self.assertEqual(metrics['inserted_silence_seconds'], .06)
+            self.assertEqual(metrics['word_pauses_inserted'], 0)
             self.assertEqual(metrics['late_word_boundaries'], 0)
         self.assertEqual(len(devices), 1)
         self.assertEqual(first_play, [True])

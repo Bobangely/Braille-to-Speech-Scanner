@@ -13,7 +13,8 @@ import wave
 from thai_speech import expand_thai_speech_units
 
 THAI_PAUSES_MS = dict(space=0, phrase=0, line=10, sentence=50)
-THAI_WORD_PAUSE_MS = 2
+# Edge supplies natural word timing; inserting zeros can cut voiced samples.
+THAI_WORD_PAUSE_MS = 0
 
 
 def word_pause_position(text, event, cursor):
