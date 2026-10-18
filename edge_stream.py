@@ -90,8 +90,6 @@ def trim_edge_padding(blocks):
 
 
 def plan_edge_chunks(text, voice, pauses=None):
-    if not voice.startswith('th-TH-'):
-        return [(text, 0)] if text.strip() else []
     durations = {**THAI_PAUSES_MS, **(pauses or {})}
     if any(type(value) not in (int, float) or not 0 <= value <= 5000 for value in durations.values()):
         raise ValueError('Pause durations must be finite milliseconds from 0 to 5000')
@@ -150,7 +148,7 @@ def stream_edge_audio(text, voice, rate, output, pauses=None, word_pause_ms=None
     import edge_tts
     import miniaudio
 
-    word_pause = (THAI_WORD_PAUSE_MS if word_pause_ms is None else word_pause_ms) if voice.startswith('th-TH-') else 0
+    word_pause = THAI_WORD_PAUSE_MS if word_pause_ms is None else word_pause_ms
     if type(word_pause) not in (int, float) or not 0 <= word_pause <= 5000:
         raise ValueError('Word pause must be finite milliseconds from 0 to 5000')
     chunks = plan_edge_chunks(prepare_edge_text(text, voice), voice, pauses)
@@ -232,7 +230,7 @@ def stream_edge_audio(text, voice, rate, output, pauses=None, word_pause_ms=None
                     except StopIteration:
                         return
                 audio = insert_word_pauses(blocks(), markers, word_pause, timings) if word_pause else blocks()
-                audio = trim_edge_padding(audio) if voice.startswith('th-TH-') else audio
+                audio = trim_edge_padding(audio)
                 for block in audio:
                     offset = 0
                     while offset < len(block):

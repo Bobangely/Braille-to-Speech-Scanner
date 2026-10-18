@@ -73,7 +73,7 @@ class SpeechPauseTests(unittest.TestCase):
                          dict(space=200, phrase=350, line=500, sentence=600)),
                          [('กิน', 200), ('คน', 500), ('ไข่.', 0)])
         self.assertEqual(plan_edge_chunks('Hello world.\nNext', 'en-US-JennyNeural'),
-                         [('Hello world.\nNext', 0)])
+                         [('Hello world.', 50), ('Next', 0)])
         for invalid in (-1, float('nan'), '250'):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 plan_edge_chunks('กิน คน', 'th-TH-NiwatNeural', dict(space=invalid))
