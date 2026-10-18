@@ -126,7 +126,7 @@ def render_syllable(syllable):
 def render_thai(parsed, *, lexicon=None, confidence_threshold=None):
     """Render/validate parsed units, keeping rejected candidates in the trace."""
     records = [dict(token=t) if isinstance(t, str) else t for t in parsed['raw_tokens']]
-    units, ranking, lexicon_info = rank_segmentations(parsed, lexicon, render_syllable)
+    units, ranking, lexicon_info = rank_segmentations(parsed, lexicon, render_syllable, confidence_threshold)
     pieces, traces = [], []
     for unit in units:
         syllable = dict(unit)

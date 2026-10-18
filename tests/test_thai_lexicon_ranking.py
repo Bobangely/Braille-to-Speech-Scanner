@@ -13,6 +13,39 @@ from tests.test_thai_syllable_boundaries import physical
 
 
 class ThaiLexiconRankingTests(unittest.TestCase):
+    def test_unique_complete_multisyllable_evidence_resolves_reported_line(self):
+        source = physical(['1256', '1', '1245', '1235', '256', '16', '12456', '135', '1'])
+        result = decode_thai_details(source, lexicon={'ตะกร้า', 'เงาะ'})
+        self.assertEqual(result['text'], 'ตะกร้าเงาะ')
+        self.assertEqual(result['status'], 'VALID')
+        self.assertEqual(result['lexicon_ranking'][0]['reason'], 'UNIQUE_COMPLETE_LEXICAL_SUPPORT')
+        self.assertTrue(all(c['valid'] and c['plausible'] for c in result['lexicon_ranking'][0]['candidates']))
+
+    def test_dictionary_cannot_resolve_known_rival_or_incomplete_or_invalid_evidence(self):
+        patterns = ['1256', '1', '1245', '1235', '256', '16', '12456', '135', '1']
+        for words, flags in [({'ตะกร้า', 'เงาะ', 'ตะกร้าง', 'อะ'}, {}),
+                             ({'ตะกร้า'}, {}),
+                             ({'ตะกร้า', 'เงาะ'}, {'geometry_status': 'invalid'})]:
+            with self.subTest(words=words, flags=flags):
+                source = physical(patterns)
+                source[0].update(flags)
+                self.assertEqual(decode_thai_details(source, lexicon=words)['status'], 'NEEDS_REVIEW')
+
+    def test_low_confidence_or_missing_dictionary_keeps_reported_phrase_reviewed(self):
+        source = physical(['1256', '1', '1245', '1235', '256', '16', '12456', '135', '1'])
+        source[0]['confidence'] = .2
+        result = decode_thai_details(source, lexicon={'ตะกร้า', 'เงาะ'}, confidence_threshold=.8)
+        self.assertEqual(result['status'], 'NEEDS_REVIEW')
+        self.assertTrue(result['lexicon_ranking'][0]['needs_review'])
+        self.assertEqual(decode_thai_details(source, lexicon=set())['status'], 'NEEDS_REVIEW')
+
+    def test_single_rare_or_proper_name_entry_does_not_resolve_competitors(self):
+        source = physical(['1256', '1', '1245', '1235', '256', '16', '12456', '135', '1'])
+        for name in ('ตะกร้างอะ', 'ตะกร้าเงาะ'):
+            result = decode_thai_details(source, lexicon={name})
+            self.assertEqual(result['status'], 'NEEDS_REVIEW')
+            self.assertTrue(all(c['valid'] and c['plausible'] for c in result['lexicon_ranking'][0]['candidates']))
+
     def test_lexicon_ranks_valid_paths_without_confirming_an_unknown_competitor(self):
         result = decode_thai_details(physical(['1245', '1', '1345', '135', '1']),
                                      lexicon={'กะ', 'เนาะ'})

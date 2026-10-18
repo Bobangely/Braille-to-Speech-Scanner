@@ -18,6 +18,19 @@ from tests.test_thai_syllable_boundaries import physical
 
 
 class ThaiSegmentationCandidateTests(unittest.TestCase):
+    def test_screenshot_second_line_can_confirm_after_lexical_resolution(self):
+        from line_confirmation import LineConfirmation, reading_lines
+        source = physical(['1256', '1', '1245', '1235', '256', '16', '12456', '135', '1'])
+        parsed = decode_thai_details(source)
+        self.assertEqual(parsed['text'], 'ตะกร้าเงาะ')
+        lines = reading_lines(source, decode_cells_verbose(source, 'thai'), parsed['text'])
+        self.assertIsNone(lines[0]['reason'])
+        confirmation = LineConfirmation(required=2)
+        for result_id in (1, 2):
+            confirmation.update(dict(result_id=result_id, line_results=lines, status='ok'))
+        self.assertTrue(confirmation.lines[0]['confirmed'])
+        self.assertEqual(confirmation.lines[0]['text'], 'ตะกร้าเงาะ')
+
     def test_requested_regressions_keep_coda_and_independent_o(self):
         cases = [
             (['1245', '1', '1345', '135', '1'], 'กันอะ', 'กะเนาะ'),

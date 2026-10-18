@@ -37,11 +37,11 @@ def _coverage(parts, words):
     return best[0]
 
 
-def rank_segmentations(parsed, lexicon, render_unit):
-    """Rank complete valid paths; a lexical winner is not proof of validity.
+def rank_segmentations(parsed, lexicon, render_unit, confidence_threshold=None):
+    """Rank validated paths; resolve only complete multiword lexical support.
 
-    All structurally possible rivals remain plausible, including unseen names.
-    A changed display path still needs review whenever a rival survives.
+    Rivals remain valid possibilities in the trace, including unseen names.
+    Single-word, partial, tied, or raw-unverified evidence remains reviewed.
     """
     runs = parsed.get('segmentation_runs', [])
     if not runs:
@@ -97,11 +97,32 @@ def rank_segmentations(parsed, lexicon, render_unit):
                 pass
             if highest or any(c['accepted_mode'] != candidates[0]['accepted_mode'] for c in candidates):
                 selected = next((c for c in best if c['text'] == original_text), best[0])
-        # A lexical annotation must not erase existing parser evidence when
-        # it agrees with the structural display path.
+        # Require phrase context and a word spanning syllables, not a lone name
+        # or a sequence of short dictionary particles.
+        complete = [c for c in candidates if c['standard_valid'] and c['accepted_mode'] == 'standard'
+                    and c['coverage'] == 1 and len(c['matches']) >= 2
+                    and any(m['end']-m['start'] > 1 for m in c['matches'])]
+        raw = parsed.get('raw_cells', [])
+        evidence = [raw[i] for i in run['indices'] if i < len(raw)]
+        resolved = (run['generation_complete'] and len(complete) == 1
+                    and sum(c['coverage'] == 1 for c in candidates) == 1
+                    and len(evidence) == len(run['indices'])
+                    and all(c.get('pattern') and not c.get('warning') for c in evidence)
+                    and all(confidence_threshold is None or c.get('confidence') is None
+                            or c['confidence'] >= confidence_threshold for c in evidence))
+        if resolved:
+            selected = complete[0]
+            reason = 'UNIQUE_COMPLETE_LEXICAL_SUPPORT'
+        # Keep the original evidence when lexical support is insufficient.
         units = deepcopy(selected['syllables'] if selected and selected['text'] != original_text else original)
-        review = (not run['generation_complete'] or len(candidates) > 1
+        review = not resolved and (not run['generation_complete'] or len(candidates) > 1
                   or any(u.get('boundary_review') for u in original))
+        if resolved:
+            units = deepcopy(selected['syllables'])
+            for unit in units:
+                unit['boundary_review'] = False
+                unit['boundary_status'] = None
+                unit['boundary_evidence'] = 'UNIQUE_COMPLETE_LEXICAL_SUPPORT'
         if review and units:
             # Preserve the original evidence; rank scores never clear a warning.
             origin = next((u for u in original if u.get('boundary_candidates')), original[0])
