@@ -36,7 +36,7 @@ class SpeechLatencyTests(unittest.TestCase):
             return process
         with patch('piper_tts.subprocess.Popen', side_effect=start):
             speaker.speak('ศักดิ์', 'thai')
-            self.assertEqual(jobs[-1]['rate'], '-15%')
+            self.assertEqual(jobs[-1]['rate'], '-20%')
             self.assertEqual(jobs[-1]['word_pause_ms'], 2)
             directory = Path(speaker._workspace.name)
             with wave.open(str(directory/'speech.wav'), 'wb') as wav:

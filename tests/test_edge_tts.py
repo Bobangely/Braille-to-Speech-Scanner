@@ -58,13 +58,13 @@ class EdgeSpeechTests(unittest.TestCase):
             output = Path(directory) / 'speech.wav'
             with patch.dict('sys.modules', {'edge_tts': edge, 'soundfile': soundfile}):
                 result = synthesize_wav('', 'คำที่มีใช้: ฐาน ฐิติ', output, backend='edge', voice='th-TH-PremwadeeNeural')
-            edge.Communicate.assert_called_once_with('คำที่มีใช้: ฐาน ฐิติ', voice='th-TH-PremwadeeNeural', rate='-15%')
+            edge.Communicate.assert_called_once_with('คำที่มีใช้: ฐาน ฐิติ', voice='th-TH-PremwadeeNeural', rate='-20%')
             self.assertEqual(result['audio_seconds'], .1)
             self.assertFalse(output.with_suffix('.mp3').exists())
             edge.Communicate.reset_mock()
             with patch.dict('sys.modules', {'edge_tts': edge, 'soundfile': soundfile}):
                 synthesize_wav('', 'ฃ พยัญชนะตัวที่ 3', output, backend='edge', voice='th-TH-PremwadeeNeural')
-            edge.Communicate.assert_called_once_with('ขอขวด พยัญชนะตัวที่ สาม', voice='th-TH-PremwadeeNeural', rate='-15%')
+            edge.Communicate.assert_called_once_with('ขอขวด พยัญชนะตัวที่ สาม', voice='th-TH-PremwadeeNeural', rate='-20%')
 
     def test_network_failure_is_an_error_without_another_voice_fallback(self):
         edge = Mock()
