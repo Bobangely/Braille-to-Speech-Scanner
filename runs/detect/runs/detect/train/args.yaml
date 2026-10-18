@@ -113,4 +113,4 @@ auto_augment: randaugment
 erasing: 0.4
 cfg: null
 tracker: tracktrack.yaml
-save_dir: C:\Users\bavon\.gemini\antigravity\scratch\braille-reader\runs\detect\runs\detect\train
+save_dir: runs/detect/runs/detect/train
