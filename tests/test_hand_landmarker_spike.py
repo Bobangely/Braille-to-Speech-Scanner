@@ -60,6 +60,16 @@ def test_active_fingertip_movement_restarts_dwell_timer():
     assert selector.update([("Left", 8, 130, 100)], 450) == ("Left", 8)
 
 
+def test_active_fingertip_cumulative_drift_restarts_dwell_timer():
+    selector = ActiveFingertipLock(dwell_ms=250, radius_px=20)
+
+    assert selector.update([("Left", 8, 100, 100)], 0) is None
+    assert selector.update([("Left", 8, 115, 100)], 100) is None
+    assert selector.update([("Left", 8, 130, 100)], 200) is None
+    assert selector.update([("Left", 8, 130, 100)], 449) is None
+    assert selector.update([("Left", 8, 130, 100)], 450) == ("Left", 8)
+
+
 def test_draw_hand_skeletons_uses_all_mediapipe_connections(monkeypatch):
     frame = object()
     hand = [object() for _ in range(21)]

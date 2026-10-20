@@ -84,7 +84,6 @@ class ActiveFingertipLock:
             if previous is None or moved:
                 self._observed[key] = (x, y, now_ms)
                 continue
-            self._observed[key] = (x, y, previous[2])
             if now_ms - previous[2] >= self.dwell_ms:
                 self.active = key
                 self._observed.clear()
