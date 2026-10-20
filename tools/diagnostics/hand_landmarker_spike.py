@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import statistics
 import sys
 import time
@@ -13,6 +14,8 @@ import mediapipe as mp
 
 
 TIP_LANDMARKS = (8, 12)
+LOCK_DWELL_MS = 250
+LOCK_RADIUS_PX = 20
 DEFAULT_MODEL = Path(__file__).resolve().parents[2] / "models" / "hand_landmarker.task"
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
@@ -42,6 +45,47 @@ def detection_rates(detections: list[bool]) -> tuple[float, float]:
     return sum(detections) / len(detections), active_rate
 
 
+class ActiveFingertipLock:
+    """Lock the first fingertip that remains stable for the dwell period."""
+
+    def __init__(self, dwell_ms: int, radius_px: int):
+        self.dwell_ms = dwell_ms
+        self.radius_px = radius_px
+        self.active: tuple[str, int] | None = None
+        self._observed: dict[tuple[str, int], tuple[int, int, int]] = {}
+
+    def update(
+        self, candidates: list[tuple[str, int, int, int]], now_ms: int
+    ) -> tuple[str, int] | None:
+        if self.active is not None:
+            return self.active
+
+        present = {(hand, landmark) for hand, landmark, _, _ in candidates}
+        self._observed = {
+            key: value for key, value in self._observed.items() if key in present
+        }
+        for hand, landmark, x, y in candidates:
+            key = (hand, landmark)
+            previous = self._observed.get(key)
+            moved = (
+                previous is not None
+                and math.hypot(x - previous[0], y - previous[1]) > self.radius_px
+            )
+            if previous is None or moved:
+                self._observed[key] = (x, y, now_ms)
+                continue
+            self._observed[key] = (x, y, previous[2])
+            if now_ms - previous[2] >= self.dwell_ms:
+                self.active = key
+                self._observed.clear()
+                return self.active
+        return None
+
+    def reset(self) -> None:
+        self.active = None
+        self._observed.clear()
+
+
 def _open_camera(camera_id: int):
     backend = cv2.CAP_DSHOW if sys.platform.startswith("win") else cv2.CAP_ANY
     capture = cv2.VideoCapture(camera_id, backend)
@@ -64,13 +108,13 @@ def run_probe(camera_id: int, model_path: Path, seconds: float, headless: bool) 
     options = mp.tasks.vision.HandLandmarkerOptions(
         base_options=mp.tasks.BaseOptions(model_asset_path=str(model_path)),
         running_mode=mp.tasks.vision.RunningMode.VIDEO,
-        # shortcut: spike tracks one hand only, revisit after mounted-camera validation.
-        num_hands=1,
+        num_hands=2,
     )
     frame_count = 0
     detections = []
     inference_times = []
     started = time.perf_counter()
+    selector = ActiveFingertipLock(LOCK_DWELL_MS, LOCK_RADIUS_PX)
 
     try:
         with mp.tasks.vision.HandLandmarker.create_from_options(options) as detector:
@@ -90,13 +134,34 @@ def run_probe(camera_id: int, model_path: Path, seconds: float, headless: bool) 
                 frame_count += 1
                 detections.append(bool(result.hand_landmarks))
 
+                height, width = frame.shape[:2]
+                candidates = []
+                for hand_index, landmark_index, x, y in fingertip_pixels(
+                    result.hand_landmarks, width, height
+                ):
+                    handedness = result.handedness[hand_index]
+                    hand = (
+                        handedness[0].category_name
+                        if handedness
+                        else f"Hand {hand_index + 1}"
+                    )
+                    candidates.append((hand, landmark_index, x, y))
+                # shortcut: spatial stability stands in for cell occupancy until page mapping exists.
+                active = selector.update(candidates, timestamp_ms)
+
                 if not headless:
-                    height, width = frame.shape[:2]
-                    for _, landmark_index, x, y in fingertip_pixels(
-                        result.hand_landmarks, width, height
-                    ):
-                        color = (0, 255, 0) if landmark_index == 8 else (0, 165, 255)
-                        label = "INDEX" if landmark_index == 8 else "MIDDLE"
+                    for hand, landmark_index, x, y in candidates:
+                        is_active = (hand, landmark_index) == active
+                        active_color = (
+                            (0, 255, 0) if landmark_index == 8 else (0, 165, 255)
+                        )
+                        color = active_color if is_active else (160, 160, 160)
+                        finger = "INDEX" if landmark_index == 8 else "MIDDLE"
+                        label = (
+                            f"ACTIVE {hand} {finger}"
+                            if is_active
+                            else f"{hand} {finger}"
+                        )
                         cv2.circle(frame, (x, y), 9, color, -1)
                         cv2.putText(
                             frame,
@@ -117,9 +182,26 @@ def run_probe(camera_id: int, model_path: Path, seconds: float, headless: bool) 
                         (255, 255, 255),
                         2,
                     )
+                    status = (
+                        f"LOCKED {active[0]} {'INDEX' if active[1] == 8 else 'MIDDLE'}"
+                        if active
+                        else "WAITING FOR STABLE FINGERTIP"
+                    )
+                    cv2.putText(
+                        frame,
+                        f"{status} | R reset",
+                        (20, 65),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.65,
+                        (255, 255, 255),
+                        2,
+                    )
                     cv2.imshow("MediaPipe Hand Landmarker Spike", frame)
-                    if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
+                    key = cv2.waitKey(1) & 0xFF
+                    if key in (ord("q"), 27):
                         break
+                    if key in (ord("r"), ord("R")):
+                        selector.reset()
 
                 if seconds > 0 and time.perf_counter() - started >= seconds:
                     break

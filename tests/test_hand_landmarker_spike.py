@@ -1,6 +1,11 @@
 from types import SimpleNamespace
 
-from tools.diagnostics.hand_landmarker_spike import detection_rates, fingertip_pixels
+from tools.diagnostics import hand_landmarker_spike as spike
+
+
+detection_rates = spike.detection_rates
+fingertip_pixels = spike.fingertip_pixels
+ActiveFingertipLock = spike.ActiveFingertipLock
 
 
 def test_fingertip_pixels_maps_and_clamps_index_and_middle_tips():
@@ -19,3 +24,36 @@ def test_detection_rates_excludes_setup_frames_from_active_window():
         3 / 7,
         3 / 4,
     )
+
+
+def test_active_fingertip_locks_first_stable_candidate_after_dwell():
+    selector = ActiveFingertipLock(dwell_ms=250, radius_px=20)
+    left_index = ("Left", 8, 100, 100)
+    right_middle = ("Right", 12, 300, 100)
+
+    assert selector.update([left_index, right_middle], 0) is None
+    assert selector.update([left_index, right_middle], 249) is None
+    assert selector.update([left_index, right_middle], 250) == ("Left", 8)
+
+
+def test_active_fingertip_ignores_other_hand_until_activity_reset():
+    selector = ActiveFingertipLock(dwell_ms=250, radius_px=20)
+    left_index = ("Left", 8, 100, 100)
+    right_middle = ("Right", 12, 300, 100)
+
+    selector.update([left_index], 0)
+    assert selector.update([left_index], 250) == ("Left", 8)
+    assert selector.update([right_middle], 500) == ("Left", 8)
+
+    selector.reset()
+    assert selector.update([right_middle], 500) is None
+    assert selector.update([right_middle], 750) == ("Right", 12)
+
+
+def test_active_fingertip_movement_restarts_dwell_timer():
+    selector = ActiveFingertipLock(dwell_ms=250, radius_px=20)
+
+    assert selector.update([("Left", 8, 100, 100)], 0) is None
+    assert selector.update([("Left", 8, 130, 100)], 200) is None
+    assert selector.update([("Left", 8, 130, 100)], 449) is None
+    assert selector.update([("Left", 8, 130, 100)], 450) == ("Left", 8)
