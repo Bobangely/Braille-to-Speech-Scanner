@@ -35,6 +35,16 @@ def fingertip_pixels(hand_landmarks, width: int, height: int) -> list[tuple[int,
     return points
 
 
+def draw_hand_skeletons(frame, hand_landmarks) -> None:
+    """Draw every detected hand with the complete MediaPipe hand topology."""
+    for landmarks in hand_landmarks:
+        mp.tasks.vision.drawing_utils.draw_landmarks(
+            frame,
+            landmarks,
+            mp.tasks.vision.HandLandmarksConnections.HAND_CONNECTIONS,
+        )
+
+
 def detection_rates(detections: list[bool]) -> tuple[float, float]:
     """Return overall and first-to-last-detection rates."""
     if not detections or not any(detections):
@@ -150,6 +160,7 @@ def run_probe(camera_id: int, model_path: Path, seconds: float, headless: bool) 
                 active = selector.update(candidates, timestamp_ms)
 
                 if not headless:
+                    draw_hand_skeletons(frame, result.hand_landmarks)
                     for hand, landmark_index, x, y in candidates:
                         is_active = (hand, landmark_index) == active
                         active_color = (

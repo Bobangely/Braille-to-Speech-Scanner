@@ -6,6 +6,7 @@ from tools.diagnostics import hand_landmarker_spike as spike
 detection_rates = spike.detection_rates
 fingertip_pixels = spike.fingertip_pixels
 ActiveFingertipLock = spike.ActiveFingertipLock
+draw_hand_skeletons = spike.draw_hand_skeletons
 
 
 def test_fingertip_pixels_maps_and_clamps_index_and_middle_tips():
@@ -57,3 +58,40 @@ def test_active_fingertip_movement_restarts_dwell_timer():
     assert selector.update([("Left", 8, 130, 100)], 200) is None
     assert selector.update([("Left", 8, 130, 100)], 449) is None
     assert selector.update([("Left", 8, 130, 100)], 450) == ("Left", 8)
+
+
+def test_draw_hand_skeletons_uses_all_mediapipe_connections(monkeypatch):
+    frame = object()
+    hand = [object() for _ in range(21)]
+    calls = []
+    monkeypatch.setattr(
+        spike.mp.tasks.vision.drawing_utils,
+        "draw_landmarks",
+        lambda *args: calls.append(args),
+    )
+
+    draw_hand_skeletons(frame, [hand])
+
+    assert calls == [
+        (
+            frame,
+            hand,
+            spike.mp.tasks.vision.HandLandmarksConnections.HAND_CONNECTIONS,
+        )
+    ]
+    assert len(calls[0][2]) == 21
+
+
+def test_draw_hand_skeletons_renders_each_detected_hand(monkeypatch):
+    frame = object()
+    hands = [[object() for _ in range(21)] for _ in range(2)]
+    drawn_hands = []
+    monkeypatch.setattr(
+        spike.mp.tasks.vision.drawing_utils,
+        "draw_landmarks",
+        lambda _frame, hand, _connections: drawn_hands.append(hand),
+    )
+
+    draw_hand_skeletons(frame, hands)
+
+    assert drawn_hands == hands
