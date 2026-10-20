@@ -19,6 +19,8 @@ LOCK_RADIUS_PX = 20
 DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
 DEFAULT_FPS = 30
+PREVIEW_WIDTH = 1280
+PREVIEW_HEIGHT = 720
 DEFAULT_MODEL = Path(__file__).resolve().parents[2] / "models" / "hand_landmarker.task"
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
@@ -46,6 +48,14 @@ def draw_hand_skeletons(frame, hand_landmarks) -> None:
             landmarks,
             mp.tasks.vision.HandLandmarksConnections.HAND_CONNECTIONS,
         )
+
+
+def resize_preview(frame):
+    return cv2.resize(
+        frame,
+        (PREVIEW_WIDTH, PREVIEW_HEIGHT),
+        interpolation=cv2.INTER_AREA,
+    )
 
 
 def detection_rates(detections: list[bool]) -> tuple[float, float]:
@@ -222,7 +232,10 @@ def run_probe(
                         (255, 255, 255),
                         2,
                     )
-                    cv2.imshow("MediaPipe Hand Landmarker Spike", frame)
+                    cv2.imshow(
+                        "MediaPipe Hand Landmarker Spike",
+                        resize_preview(frame),
+                    )
                     key = cv2.waitKey(1) & 0xFF
                     if key in (ord("q"), 27):
                         break

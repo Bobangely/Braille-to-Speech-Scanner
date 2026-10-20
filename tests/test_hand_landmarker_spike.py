@@ -7,6 +7,7 @@ detection_rates = spike.detection_rates
 fingertip_pixels = spike.fingertip_pixels
 ActiveFingertipLock = spike.ActiveFingertipLock
 draw_hand_skeletons = spike.draw_hand_skeletons
+resize_preview = spike.resize_preview
 
 
 def test_open_camera_requests_mjpg_1080p30(monkeypatch):
@@ -30,6 +31,24 @@ def test_open_camera_requests_mjpg_1080p30(monkeypatch):
         (spike.cv2.CAP_PROP_FRAME_WIDTH, 1920),
         (spike.cv2.CAP_PROP_FRAME_HEIGHT, 1080),
         (spike.cv2.CAP_PROP_FPS, 30),
+    ]
+
+
+def test_resize_preview_only_scales_display_frame(monkeypatch):
+    source_frame = object()
+    preview_frame = object()
+    calls = []
+    monkeypatch.setattr(
+        spike.cv2,
+        "resize",
+        lambda frame, size, interpolation: (
+            calls.append((frame, size, interpolation)) or preview_frame
+        ),
+    )
+
+    assert resize_preview(source_frame) is preview_frame
+    assert calls == [
+        (source_frame, (1280, 720), spike.cv2.INTER_AREA),
     ]
 
 
