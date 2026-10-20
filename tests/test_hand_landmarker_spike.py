@@ -9,6 +9,30 @@ ActiveFingertipLock = spike.ActiveFingertipLock
 draw_hand_skeletons = spike.draw_hand_skeletons
 
 
+def test_open_camera_requests_mjpg_1080p30(monkeypatch):
+    class Capture:
+        def __init__(self):
+            self.settings = []
+
+        def isOpened(self):
+            return True
+
+        def set(self, prop, value):
+            self.settings.append((prop, value))
+            return True
+
+    capture = Capture()
+    monkeypatch.setattr(spike.cv2, "VideoCapture", lambda *_args: capture)
+
+    assert spike._open_camera(0, 1920, 1080, 30) is capture
+    assert capture.settings == [
+        (spike.cv2.CAP_PROP_FOURCC, spike.cv2.VideoWriter_fourcc(*"MJPG")),
+        (spike.cv2.CAP_PROP_FRAME_WIDTH, 1920),
+        (spike.cv2.CAP_PROP_FRAME_HEIGHT, 1080),
+        (spike.cv2.CAP_PROP_FPS, 30),
+    ]
+
+
 def test_fingertip_pixels_maps_and_clamps_index_and_middle_tips():
     landmarks = [SimpleNamespace(x=0.0, y=0.0) for _ in range(21)]
     landmarks[8] = SimpleNamespace(x=0.25, y=0.5)

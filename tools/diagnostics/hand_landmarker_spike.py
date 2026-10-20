@@ -16,6 +16,9 @@ import mediapipe as mp
 TIP_LANDMARKS = (8, 12)
 LOCK_DWELL_MS = 250
 LOCK_RADIUS_PX = 20
+DEFAULT_WIDTH = 1920
+DEFAULT_HEIGHT = 1080
+DEFAULT_FPS = 30
 DEFAULT_MODEL = Path(__file__).resolve().parents[2] / "models" / "hand_landmarker.task"
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
@@ -95,22 +98,35 @@ class ActiveFingertipLock:
         self._observed.clear()
 
 
-def _open_camera(camera_id: int):
+def _open_camera(camera_id: int, width: int, height: int, fps: int):
     backend = cv2.CAP_DSHOW if sys.platform.startswith("win") else cv2.CAP_ANY
     capture = cv2.VideoCapture(camera_id, backend)
     if not capture.isOpened() and backend != cv2.CAP_ANY:
         capture.release()
         capture = cv2.VideoCapture(camera_id)
+    if capture.isOpened():
+        capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        capture.set(cv2.CAP_PROP_FPS, fps)
     return capture
 
 
-def run_probe(camera_id: int, model_path: Path, seconds: float, headless: bool) -> int:
+def run_probe(
+    camera_id: int,
+    model_path: Path,
+    seconds: float,
+    headless: bool,
+    width: int = DEFAULT_WIDTH,
+    height: int = DEFAULT_HEIGHT,
+    fps: int = DEFAULT_FPS,
+) -> int:
     if not model_path.is_file():
         raise FileNotFoundError(
             f"Hand Landmarker model not found: {model_path}\nDownload: {MODEL_URL}"
         )
 
-    capture = _open_camera(camera_id)
+    capture = _open_camera(camera_id, width, height, fps)
     if not capture.isOpened():
         raise RuntimeError(f"Cannot open camera {camera_id}")
 
@@ -236,10 +252,21 @@ def main() -> int:
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
     parser.add_argument("--seconds", type=float, default=0)
     parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--width", type=int, default=DEFAULT_WIDTH)
+    parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
+    parser.add_argument("--fps", type=int, default=DEFAULT_FPS)
     args = parser.parse_args()
     if args.headless and args.seconds <= 0:
         parser.error("--headless requires --seconds greater than zero")
-    return run_probe(args.camera, args.model, args.seconds, args.headless)
+    return run_probe(
+        args.camera,
+        args.model,
+        args.seconds,
+        args.headless,
+        args.width,
+        args.height,
+        args.fps,
+    )
 
 
 if __name__ == "__main__":
