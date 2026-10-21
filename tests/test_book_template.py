@@ -101,5 +101,28 @@ class BookTemplateTests(unittest.TestCase):
                                    front_left.mm, delta=0.1)
 
 
+class PitchTestPageTests(unittest.TestCase):
+    """Lay the slate over the page: the line whose 24 full cells sit in the windows wins."""
+
+    def test_one_full_cell_line_per_expanded_value(self):
+        from tools.make_book_template import FULL_CELL, make_pitch_test
+        values = (0.6, 0.8, 1.0, 1.1, 1.2, 1.4)
+        with tempfile.TemporaryDirectory() as temp:
+            doc = Document(str(make_pitch_test(Path(temp) / 'pitch.docx', values)))
+        w = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+        lines = [p for p in doc.paragraphs if FULL_CELL in p.text]
+        self.assertEqual(len(lines), len(values))
+        for paragraph, value in zip(lines, values):
+            cells = paragraph.runs[0]
+            self.assertEqual(cells.text, FULL_CELL * 24)
+            self.assertEqual(paragraph.style.name, COLOR_STYLE)
+            self.assertEqual(int(cells._r.rPr.find(w + 'spacing').get(w + 'val')), round(value * 20))
+            self.assertIn(f'{value:.1f} pt', paragraph.text)  # label after the cells
+
+    def test_full_cell_is_the_six_dot_glyph(self):
+        from tools.make_book_template import FULL_CELL
+        self.assertEqual(FULL_CELL, 'ฮ')  # SOV_braille_only draws ฮ as all six dots, one cell wide
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -28,6 +28,8 @@ from tools.export_markers import export_markers  # noqa: E402
 
 FONT = 'SOV_braille_only'
 FONT_PT = 30
+FULL_CELL = 'ฮ'  # SOV_braille_only draws it as all six dots, one cell wide
+PITCH_TEST_VALUES = (0.6, 0.8, 1.0, 1.1, 1.2, 1.4, 1.6)
 LOWERED_PT = 2  # the exact 10 mm line is shorter than 30 pt: lower the dots so row 1 is not clipped
 PT_MM = 25.4 / 72
 COLOR_STYLE = 'Braille สี'
@@ -92,6 +94,28 @@ def make_template(out: Path, cell_pitch_mm: float, line_pitch_mm: float,
     return out
 
 
+def make_pitch_test(out: Path, values=PITCH_TEST_VALUES, line_pitch_mm: float = 10.0) -> Path:
+    """One line of 24 full cells per 'Expanded' value, a raised-line gap between them.
+
+    Print at 100%, lay the slate on each line: pick the value whose 24 cells all
+    sit inside the slate windows, then build the template with that pitch.
+    """
+    doc = Document()
+    _set_page(doc.sections[0], top_mm=TOP_MM)
+    _add_styles(doc, 165 / 27, line_pitch_mm)
+    for value in values:
+        line = doc.add_paragraph(style=doc.styles[COLOR_STYLE])
+        cells = line.add_run(FULL_CELL * 24)
+        cells._r.get_or_add_rPr().append(parse_xml(f'<w:spacing {nsdecls("w")} w:val="{round(value * 20)}"/>'))
+        label = line.add_run(f'   {value:.1f} pt')
+        label.font.name, label.font.size, label.font.color.rgb = 'Tahoma', Pt(9), RGBColor(0x80, 0x80, 0x80)
+        label._r.get_or_add_rPr().get_or_add_rFonts().set(qn('w:cs'), 'Tahoma')
+        doc.add_paragraph(style=doc.styles[RAISED_STYLE])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(out))
+    return out
+
+
 def _set_page(section, top_mm: float) -> None:
     section.page_width, section.page_height = Mm(210), Mm(297)
     section.top_margin, section.bottom_margin = Mm(top_mm), Mm(10)
@@ -144,7 +168,12 @@ def main() -> int:
                         help=f'printed marker side (default {DEFAULT_FORMAT.marker_size_mm:g}); '
                              'pass the same value to finger_reader.py')
     parser.add_argument('--out', type=Path, default=Path('output/book_template.docx'))
+    parser.add_argument('--pitch-test', action='store_true',
+                        help='write a page of full-cell lines at several Expanded values to check against the slate')
     args = parser.parse_args()
+    if args.pitch_test:
+        print(make_pitch_test(args.out, line_pitch_mm=args.line_pitch_mm))
+        return 0
     path = make_template(args.out, args.cell_pitch_mm, args.line_pitch_mm, fmt=page_format(args.marker_size_mm))
     print(f'{path}  Expanded {expanded_pt(args.cell_pitch_mm):.2f} pt, '
           f'line spacing exactly {line_spacing_pt(args.line_pitch_mm):.2f} pt')
