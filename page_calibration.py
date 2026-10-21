@@ -40,6 +40,7 @@ class PageFormat:
     # Dot 1 of the first cell of each colored line; a raised line sits under each.
     line_origins_mm: tuple[tuple[float, float], ...] = ((30.0, 35.0), (30.0, 70.0), (30.0, 105.0))
     cells_per_line: int = 24
+    raised_band_mm: float = 12.0     # height of the raised line under the last colored line
 
     @property
     def line_pairs(self) -> int:
