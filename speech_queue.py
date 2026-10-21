@@ -33,6 +33,11 @@ class SpeechQueue:
     def ready(self, text: str) -> bool:
         return text in self._prepared
 
+    def say(self, text: str) -> None:
+        """Speak a status message, cutting off whatever is playing."""
+        self.speaker.stop()
+        self.speaker.speak(text, self.lang)
+
     def handle(self, events: list[EnterCell | FinishWord]) -> None:
         if not events:
             return
@@ -44,5 +49,4 @@ class SpeechQueue:
         else:
             text = ' '.join(symbol_name(char) for char in event.text)
             log.warning('word %r not prepared; spelling it', event.text)
-        self.speaker.stop()
-        self.speaker.speak(text, self.lang)
+        self.say(text)

@@ -63,6 +63,10 @@ class SpeechQueueTests(unittest.TestCase):
         self.queue.handle([FinishWord(0, 'ไก่')])
         self.assertEqual(self.speaker.calls[-1], ('speak', 'ไก่'))
 
+    def test_say_interrupts_and_speaks_text(self):
+        self.queue.say('พร้อม 3 บรรทัด')
+        self.assertEqual(self.speaker.calls, ['stop', ('speak', 'พร้อม 3 บรรทัด')])
+
     def test_failed_preparation_is_not_ready(self):
         def broken(text, lang):
             raise OSError('no model')
