@@ -5,7 +5,7 @@ Braille line (type here) and the raised line (left empty for the slate).
 Back (print double-sided, flip on the long edge): a grey guide mark where each
 raised line starts, mirrored, because the slate is written from the back.
 
-Usage: make_book_template.py --cell-pitch-mm 6.11 --line-pitch-mm 10 --out book.docx
+Usage: make_book_template.py --cell-pitch-mm 6.21 --line-pitch-mm 10 --out book.docx
 """
 
 from __future__ import annotations
@@ -102,7 +102,7 @@ def make_pitch_test(out: Path, values=PITCH_TEST_VALUES, line_pitch_mm: float = 
     """
     doc = Document()
     _set_page(doc.sections[0], top_mm=TOP_MM)
-    _add_styles(doc, 165 / 27, line_pitch_mm)
+    _add_styles(doc, DEFAULT_FORMAT.cell_pitch_mm, line_pitch_mm)
     for value in values:
         line = doc.add_paragraph(style=doc.styles[COLOR_STYLE])
         cells = line.add_run(FULL_CELL * 24)
@@ -162,7 +162,7 @@ def _float_picture(run, path: Path, x_mm: float, y_mm: float, size_mm: float) ->
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--cell-pitch-mm', type=float, default=165 / 27, help='slate cell pitch')
+    parser.add_argument('--cell-pitch-mm', type=float, default=DEFAULT_FORMAT.cell_pitch_mm, help='slate cell pitch')
     parser.add_argument('--line-pitch-mm', type=float, default=10.0, help='slate row pitch')
     parser.add_argument('--marker-size-mm', type=float,
                         help=f'printed marker side (default {DEFAULT_FORMAT.marker_size_mm:g}); '

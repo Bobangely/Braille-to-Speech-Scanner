@@ -33,10 +33,10 @@ class PageFormat:
     marker_size_mm: float = 15.0     # black border included
     marker_ids: tuple[int, int, int, int] = (0, 1, 2, 3)  # TL, TR, BR, BL
     aruco_dictionary: int = cv2.aruco.DICT_4X4_50
-    # Colored Braille lines: SOV_braille_only 30 pt + 1.1 pt expanded in Word, so
-    # the printed cells match the team's slate (27 cell gaps = 165 mm).
+    # Colored Braille lines: SOV_braille_only 30 pt + 1.4 pt expanded in Word, so
+    # the printed cells match the team's slate (pitch-test line 1.4 pt fit every window).
     dot_spacing_mm: float = 2.33     # dot 1 -> dot 4 and dot 1 -> dot 2
-    cell_pitch_mm: float = 6.10      # cell to cell
+    cell_pitch_mm: float = 6.21      # cell to cell
     dot_diameter_mm: float = 1.5
     # Dot 1 of the first cell of each colored line. Slate rows are 10 mm apart and
     # used alternately: colored line, raised line, so pairs repeat every 20 mm.

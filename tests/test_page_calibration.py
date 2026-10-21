@@ -60,8 +60,8 @@ class PageCalibrationTests(unittest.TestCase):
         FMT.validate()
 
     def test_default_format_matches_the_slate(self):
-        # Slate: 27 cell gaps measure 165 mm; rows 10 mm apart, used alternately (colored, raised).
-        self.assertAlmostEqual(FMT.cell_pitch_mm, 165 / 27, delta=0.02)
+        # Slate: the pitch-test line at 1.4 pt (6.21 mm) fits every window; rows 10 mm apart.
+        self.assertAlmostEqual(FMT.cell_pitch_mm, 6.21, delta=0.01)  # pitch-test line 1.4 pt fits the slate
         self.assertEqual(FMT.line_pairs, 4)
         ys = [y for _, y in FMT.line_origins_mm]
         self.assertEqual([round(b - a, 6) for a, b in zip(ys, ys[1:])], [20.0] * 3)

@@ -30,7 +30,7 @@ class BookTemplateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory()
-        cls.path = make_template(Path(cls.temp.name) / 'book.docx', cell_pitch_mm=165 / 27, line_pitch_mm=10)
+        cls.path = make_template(Path(cls.temp.name) / 'book.docx', cell_pitch_mm=FMT.cell_pitch_mm, line_pitch_mm=10)
         cls.doc = Document(str(cls.path))
 
     @classmethod
@@ -72,7 +72,7 @@ class BookTemplateTests(unittest.TestCase):
         self.assertEqual(style.font.name, 'SOV_braille_only')
         self.assertEqual(style.font.size.pt, 30)
         spacing = style.element.rPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}spacing')
-        self.assertEqual(int(spacing.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')), 22)
+        self.assertEqual(int(spacing.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')), 28)  # 1.4 pt
         self.assertAlmostEqual(style.paragraph_format.line_spacing.pt, 28.35, delta=0.05)
 
     def test_colored_style_is_lowered_into_the_exact_line(self):
