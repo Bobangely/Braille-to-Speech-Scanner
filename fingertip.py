@@ -86,9 +86,11 @@ class FingertipTracker:
     """Return the locked reading fingertip in frame pixels, or None."""
 
     def __init__(self, model_path: Path = DEFAULT_MODEL, dwell_ms: int = 250, radius_px: int = 20,
-                 detector=None):
+                 detector=None, grace_ms: int = 300):
         self._detector = detector or _create_detector(model_path)
         self._lock = ActiveFingertipLock(dwell_ms, radius_px)
+        self.grace_ms = grace_ms  # keep the lock through short detection drop-outs
+        self._seen_ms = 0
         self.hand_present = False
 
     def update(self, frame_bgr, now_ms: int) -> tuple[int, int] | None:
@@ -105,8 +107,10 @@ class FingertipTracker:
             return None
         for hand, landmark, x, y in candidates:
             if (hand, landmark) == active:
+                self._seen_ms = now_ms
                 return x, y
-        self._lock.reset()  # the reading finger left the frame
+        if now_ms - self._seen_ms > self.grace_ms:
+            self._lock.reset()  # the reading finger left the frame
         return None
 
 

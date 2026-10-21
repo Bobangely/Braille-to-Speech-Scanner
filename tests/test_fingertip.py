@@ -50,12 +50,22 @@ class FingertipTrackerTests(unittest.TestCase):
         tracker.update(FRAME, 300)
         self.assertEqual(tracker.update(FRAME, 333), (384, 120))
 
-    def test_lock_is_released_when_finger_disappears(self):
-        tracker = FingertipTracker(detector=FakeDetector([hand()], [hand()], [], [hand(index_tip=(0.2, 0.5))]))
+    def test_lock_is_released_when_finger_stays_gone(self):
+        tracker = FingertipTracker(detector=FakeDetector([hand()], [hand()], [], [], [hand(index_tip=(0.2, 0.5))]))
         tracker.update(FRAME, 1)
         self.assertIsNotNone(tracker.update(FRAME, 300))
         self.assertIsNone(tracker.update(FRAME, 333))
-        self.assertIsNone(tracker.update(FRAME, 366))  # a new finger must dwell again
+        self.assertIsNone(tracker.update(FRAME, 700))  # gone longer than the grace period
+        self.assertIsNone(tracker.update(FRAME, 733))  # a new finger must dwell again
+
+    def test_one_missed_frame_keeps_the_lock(self):
+        # MediaPipe drops single frames; the moving reading finger must not dwell again.
+        frames = [[hand()], [hand()], [], [hand(index_tip=(0.6, 0.25))]]
+        tracker = FingertipTracker(detector=FakeDetector(*frames))
+        tracker.update(FRAME, 1)
+        tracker.update(FRAME, 300)
+        self.assertIsNone(tracker.update(FRAME, 333))
+        self.assertEqual(tracker.update(FRAME, 366), (384, 120))
 
     def test_lock_waits_for_dwell(self):
         lock = ActiveFingertipLock(dwell_ms=250, radius_px=20)
