@@ -94,6 +94,7 @@ class FingerReaderTests(unittest.TestCase):
         self.reader.step(FRAME, 1.2)
         self.assertEqual(self.speaker.spoken[-1], 'สระไอ')
         self.assertEqual(self.reader.last_events, [EnterCell(0, 0, 'สระไอ')])
+        self.assertAlmostEqual(self.reader.entered_s, 1.0)  # latency is measured from here
 
     def test_page_change_returns_to_learning(self):
         self.learn()

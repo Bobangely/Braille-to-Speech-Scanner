@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-from finger_state import FingerState
+from finger_state import EnterCell, FingerState
 from page_calibration import DEFAULT_FORMAT, CalibrationTracker, PageFormat
 from page_map import PageLearner, read_page as read_colored_page
 from speech_queue import UNKNOWN, SpeechQueue
@@ -61,6 +61,11 @@ class FingerReader:
             self.last_events = self._finger.update(None if point is None else tuple(point), now_s)
             self.speech.handle(self.last_events)
         return self.status
+
+    @property
+    def entered_s(self) -> float | None:
+        """When the fingertip reached the last spoken cell (start of the speech latency)."""
+        return self._finger.entered_s if self._finger else None
 
     def _learn(self, frame, calibration) -> None:
         if self.tracker.hand_present:
@@ -187,11 +192,12 @@ def main() -> int:
     capture = _open_camera(args.camera, 1920, 1080, 30)
     if not capture.isOpened():
         raise RuntimeError(f'Cannot open camera {args.camera}')
-    log = None
+    latency = None
     if args.log_latency:
         log_file = args.log_latency.open('w', newline='', encoding='utf-8')
-        log = csv.writer(log_file)
-        log.writerow(['event', 'frame_s', 'step_done_s', 'latency_s'])
+        latency = csv.writer(log_file)
+        # entered_s: frame where the fingertip first reached the cell; played_s: playback started.
+        latency.writerow(['event', 'entered_s', 'played_s', 'latency_s'])
     started = time.perf_counter()
     try:
         while True:
@@ -201,9 +207,9 @@ def main() -> int:
             frame_s = time.perf_counter() - started
             status = reader.step(frame, frame_s)
             done_s = time.perf_counter() - started
-            if log is not None and reader.last_events:
-                log.writerow([repr(reader.last_events[-1]), f'{frame_s:.4f}', f'{done_s:.4f}',
-                              f'{done_s - frame_s:.4f}'])
+            if latency is not None and reader.last_events and isinstance(reader.last_events[-1], EnterCell):
+                latency.writerow([repr(reader.last_events[-1]), f'{reader.entered_s:.4f}', f'{done_s:.4f}',
+                                  f'{done_s - reader.entered_s:.4f}'])
             if not args.headless:
                 cv2.putText(frame, status, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 200, 255), 3)
                 cv2.imshow('finger reader', cv2.resize(frame, (1280, 720)))
@@ -212,7 +218,7 @@ def main() -> int:
     finally:
         capture.release()
         cv2.destroyAllWindows()
-        if log is not None:
+        if latency is not None:
             log_file.close()
     return 0
 

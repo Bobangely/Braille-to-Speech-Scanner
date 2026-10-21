@@ -119,6 +119,14 @@ class FingerStateTest(unittest.TestCase):
     def test_moving_left_onto_space_does_not_finish(self):
         self.assertEqual(run(self.fs, [37, 31]), [EnterCell(0, 4, "มอม้า")])
 
+    def test_entered_time_is_when_finger_reached_the_cell(self):
+        # The spec's 0.3-0.5 s budget starts when the fingertip enters the cell, not at dwell end.
+        ev = []
+        for k in range(5):
+            ev += self.fs.update((13, 25), 1.0 + k * 0.05)
+        self.assertEqual(ev, [EnterCell(0, 0, "สระไอ")])
+        self.assertAlmostEqual(self.fs.entered_s, 1.0)
+
     def test_word_finishes_once(self):
         ev = run(self.fs, [13, 19, 25, 31, 70])
         self.assertEqual(ev.count(FinishWord(0, "ไก่")), 1)

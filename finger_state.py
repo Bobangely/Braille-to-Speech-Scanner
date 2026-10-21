@@ -31,6 +31,7 @@ class FingerState:
         self._active: tuple[LinePair, CellSlot] | None = None
         self._candidate: tuple[LinePair, CellSlot] | None = None
         self._since = 0.0
+        self.entered_s: float | None = None  # when the finger reached the last spoken cell
         self._pending: set[tuple[int, int]] = set()  # (line_id, word) entered, not yet finished
 
     def _locate(self, x, y):
@@ -93,4 +94,5 @@ class FingerState:
         if cell.word_index is None:
             return self._finish(line, self._word_left_of(line, cell.index))
         self._pending.add((line.line_id, cell.word_index))
+        self.entered_s = self._since
         return [EnterCell(line.line_id, cell.index, cell.name)]
