@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import math
 import statistics
 import sys
 import time
@@ -12,8 +11,13 @@ from pathlib import Path
 import cv2
 import mediapipe as mp
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from fingertip import (  # noqa: E402
+    DEFAULT_MODEL, MODEL_URL, ActiveFingertipLock, fingertip_pixels,
+    labelled_fingertips,
+)
 
-TIP_LANDMARKS = (8, 12)
+
 LOCK_DWELL_MS = 250
 LOCK_RADIUS_PX = 20
 DEFAULT_WIDTH = 1920
@@ -21,23 +25,6 @@ DEFAULT_HEIGHT = 1080
 DEFAULT_FPS = 30
 PREVIEW_WIDTH = 1280
 PREVIEW_HEIGHT = 720
-DEFAULT_MODEL = Path(__file__).resolve().parents[2] / "models" / "hand_landmarker.task"
-MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
-    "hand_landmarker/float16/1/hand_landmarker.task"
-)
-
-
-def fingertip_pixels(hand_landmarks, width: int, height: int) -> list[tuple[int, int, int, int]]:
-    """Map index and middle fingertips to clamped frame pixels."""
-    points = []
-    for hand_index, landmarks in enumerate(hand_landmarks):
-        for landmark_index in TIP_LANDMARKS:
-            landmark = landmarks[landmark_index]
-            x = min(width - 1, max(0, round(landmark.x * width)))
-            y = min(height - 1, max(0, round(landmark.y * height)))
-            points.append((hand_index, landmark_index, x, y))
-    return points
 
 
 def draw_hand_skeletons(frame, hand_landmarks) -> None:
@@ -66,46 +53,6 @@ def detection_rates(detections: list[bool]) -> tuple[float, float]:
     last = len(detections) - 1 - detections[::-1].index(True)
     active_rate = sum(detections[first : last + 1]) / (last - first + 1)
     return sum(detections) / len(detections), active_rate
-
-
-class ActiveFingertipLock:
-    """Lock the first fingertip that remains stable for the dwell period."""
-
-    def __init__(self, dwell_ms: int, radius_px: int):
-        self.dwell_ms = dwell_ms
-        self.radius_px = radius_px
-        self.active: tuple[str, int] | None = None
-        self._observed: dict[tuple[str, int], tuple[int, int, int]] = {}
-
-    def update(
-        self, candidates: list[tuple[str, int, int, int]], now_ms: int
-    ) -> tuple[str, int] | None:
-        if self.active is not None:
-            return self.active
-
-        present = {(hand, landmark) for hand, landmark, _, _ in candidates}
-        self._observed = {
-            key: value for key, value in self._observed.items() if key in present
-        }
-        for hand, landmark, x, y in candidates:
-            key = (hand, landmark)
-            previous = self._observed.get(key)
-            moved = (
-                previous is not None
-                and math.hypot(x - previous[0], y - previous[1]) > self.radius_px
-            )
-            if previous is None or moved:
-                self._observed[key] = (x, y, now_ms)
-                continue
-            if now_ms - previous[2] >= self.dwell_ms:
-                self.active = key
-                self._observed.clear()
-                return self.active
-        return None
-
-    def reset(self) -> None:
-        self.active = None
-        self._observed.clear()
 
 
 def _open_camera(camera_id: int, width: int, height: int, fps: int):
@@ -170,17 +117,7 @@ def run_probe(
                 detections.append(bool(result.hand_landmarks))
 
                 height, width = frame.shape[:2]
-                candidates = []
-                for hand_index, landmark_index, x, y in fingertip_pixels(
-                    result.hand_landmarks, width, height
-                ):
-                    handedness = result.handedness[hand_index]
-                    hand = (
-                        handedness[0].category_name
-                        if handedness
-                        else f"Hand {hand_index + 1}"
-                    )
-                    candidates.append((hand, landmark_index, x, y))
+                candidates = labelled_fingertips(result, width, height)
                 # shortcut: spatial stability stands in for cell occupancy until page mapping exists.
                 active = selector.update(candidates, timestamp_ms)
 
