@@ -132,8 +132,12 @@ class BookFromTextTests(unittest.TestCase):
         self.assertAlmostEqual((xs[0] - xs[-2]) / 23, FMT.cell_pitch_mm, delta=0.02)
 
     def test_line_longer_than_the_slate_row_is_rejected(self):
-        with tempfile.TemporaryDirectory() as temp, self.assertRaisesRegex(ValueError, 'line 2.*25 cells'):
-            make_template(Path(temp) / 'b.docx', FMT.cell_pitch_mm, 10, lines=['ก', 'ฮ' * 25])
+        with tempfile.TemporaryDirectory() as temp, self.assertRaises(ValueError) as caught:
+            make_template(Path(temp) / 'b.docx', FMT.cell_pitch_mm, 10, lines=['ก', 'ฮ' * 25, 'ไก่', 'ฮ' * 26])
+        message = str(caught.exception)
+        self.assertIn('25 cells: ' + 'ฮ' * 25, message)  # every long line, with its text
+        self.assertIn('26 cells: ' + 'ฮ' * 26, message)
+        self.assertNotIn('ไก่', message)
 
     def test_nine_lines_make_two_sheets_with_markers_on_each_front(self):
         lines = ['ไก่'] * 9

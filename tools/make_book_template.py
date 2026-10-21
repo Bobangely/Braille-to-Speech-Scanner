@@ -93,10 +93,10 @@ def make_template(out: Path, cell_pitch_mm: float, line_pitch_mm: float,
     """
     per_sheet = 2 * fmt.line_pairs  # colored lines per A4 sheet (two A5 halves)
     if lines is not None:
-        for number, text in enumerate(lines, 1):
-            cells = len(text_to_braille_cells(text, 'thai'))
-            if cells > fmt.cells_per_line:
-                raise ValueError(f'line {number} uses {cells} cells; a slate row holds {fmt.cells_per_line}')
+        too_long = [f'  {cells} cells: {text}' for text in lines
+                    if (cells := len(text_to_braille_cells(text, 'thai'))) > fmt.cells_per_line]
+        if too_long:
+            raise ValueError(f'a slate row holds {fmt.cells_per_line} cells; split these lines:\n' + '\n'.join(too_long))
     doc = Document()
     _add_styles(doc, cell_pitch_mm, line_pitch_mm)
     sheets = [lines[i:i + per_sheet] for i in range(0, len(lines), per_sheet)] if lines else [None]
@@ -294,11 +294,21 @@ def main() -> int:
     if args.pitch_test:
         print(make_pitch_test(args.out, line_pitch_mm=args.line_pitch_mm))
         return 0
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8')  # Thai text in messages
     lines = None
     if args.text:
+        if not args.text.is_file():
+            print(f'ไม่พบไฟล์ข้อความ: {args.text}', file=sys.stderr)
+            return 1
         lines = [line.strip() for line in args.text.read_text(encoding='utf-8-sig').splitlines() if line.strip()]
-    path = make_template(args.out, args.cell_pitch_mm, args.line_pitch_mm,
-                         fmt=page_format(args.marker_size_mm), lines=lines)
+    try:
+        path = make_template(args.out, args.cell_pitch_mm, args.line_pitch_mm,
+                             fmt=page_format(args.marker_size_mm), lines=lines)
+    except (ValueError, PermissionError) as error:  # long lines, or the .docx is open in Word
+        print(error, file=sys.stderr)
+        return 1
     print(f'{path}  Expanded {expanded_pt(args.cell_pitch_mm):.2f} pt, '
           f'line spacing exactly {line_spacing_pt(args.line_pitch_mm):.2f} pt')
     return 0
