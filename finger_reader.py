@@ -22,7 +22,7 @@ from pathlib import Path
 
 from finger_state import EnterCell, FingerState
 from page_calibration import DEFAULT_FORMAT, CalibrationTracker, PageFormat
-from page_map import PageLearner, read_page as read_colored_page
+from page_map import PageLearner, page_signature, read_page as read_colored_page
 from speech_queue import UNKNOWN, SpeechQueue
 from thai_speech import SYMBOL_NAMES, THAI_CONSONANT_NAMES
 
@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parent
 log = logging.getLogger(__name__)
 PLACE_PAGE = 'วางหน้าให้เห็นมุมครบ'
 LIFT_HAND = 'ยกมือออกก่อน'
+RECHECK_S = 1.0  # re-read the colored lines this often while no hand is in view
 
 
 class FingerReader:
@@ -55,19 +56,29 @@ class FingerReader:
         elif changed or self.status == 'waiting_page':
             self._set('learning')
         if self.status == 'learning':
-            self._learn(frame, calibration)
+            self._learn(frame, calibration, now_s)
         elif self.status == 'reading':
             point = calibration.to_page([tip])[0] if tip is not None else None
             self.last_events = self._finger.update(None if point is None else tuple(point), now_s)
             self.speech.handle(self.last_events)
+            if not self.tracker.hand_present and now_s - self._checked_s >= RECHECK_S:
+                self._recheck(frame, calibration, now_s)
         return self.status
+
+    def _recheck(self, frame, calibration, now_s: float) -> None:
+        """A spiral-book page turned onto the same markers changes only its dots."""
+        self._checked_s = now_s
+        same = page_signature(self.read_page(frame, calibration, self.fmt)) == self._signature
+        self._mismatches = 0 if same else self._mismatches + 1
+        if self._mismatches >= self.required_maps:
+            self._set('learning')
 
     @property
     def entered_s(self) -> float | None:
         """When the fingertip reached the last spoken cell (start of the speech latency)."""
         return self._finger.entered_s if self._finger else None
 
-    def _learn(self, frame, calibration) -> None:
+    def _learn(self, frame, calibration, now_s: float) -> None:
         if self.tracker.hand_present:
             self._tell(LIFT_HAND)
             return
@@ -77,6 +88,7 @@ class FingerReader:
         self.speech.prepare_page(page)
         self._set('reading')
         self._finger = FingerState(page)
+        self._signature, self._checked_s, self._mismatches = page_signature(page), now_s, 0
         self._tell(f'พร้อม {len(page.lines)} บรรทัด')
 
     def _set(self, status: str) -> None:

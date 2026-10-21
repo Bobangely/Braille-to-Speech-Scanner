@@ -149,6 +149,11 @@ def _decode_words(slots: list[list], words: list[str]) -> None:
         words.append(UNKNOWN_WORD if unreadable else decode_cells(cells, 'thai'))
 
 
+def page_signature(page_map: PageMap):
+    """What a page says, ignoring sub-millimetre positions that jitter between frames."""
+    return tuple(tuple(c.dots for c in line.cells) for line in page_map.lines)
+
+
 class PageLearner:
     """Accept a page map once the same cells were read ``required`` times in a row."""
 
@@ -158,7 +163,7 @@ class PageLearner:
         self._count = 0
 
     def update(self, page_map: PageMap) -> PageMap | None:
-        signature = tuple(tuple(c.dots for c in line.cells) for line in page_map.lines)
+        signature = page_signature(page_map)
         self._count = self._count + 1 if signature == self._signature else 1
         self._signature = signature
         return page_map if self._count >= self.required else None

@@ -60,10 +60,11 @@ class FingerReaderTests(unittest.TestCase):
     def setUp(self):
         self.calibrator, self.tracker, self.speaker = FakeCalibrator(), FakeTracker(), RecordingSpeaker()
         self.reads = []
+        self.lines_on_page = 3
 
         def read_page(frame, calibration, fmt):
             self.reads.append(frame)
-            return page()
+            return page(self.lines_on_page)
 
         self.reader = FingerReader(self.tracker, self.calibrator, SpeechQueue(self.speaker),
                                    read_page=read_page, required_maps=3)
@@ -103,6 +104,30 @@ class FingerReaderTests(unittest.TestCase):
         self.tracker.tip = (13, 25)
         self.reader.step(FRAME, 2.1)
         self.assertEqual(self.reader.last_events, [])
+
+    def test_page_flipped_in_place_is_learned_again(self):
+        # Spiral book: the next sheet lands on the same markers, so calibration cannot tell.
+        self.learn()
+        self.lines_on_page = 2
+        # Rechecked once a second after learning (t=0.2): three differing reads, then relearn.
+        statuses = [self.reader.step(FRAME, 1.0 + i) for i in range(4)]
+        self.assertEqual(statuses, ['reading', 'reading', 'reading', 'learning'])
+        self.learn(start=6.0)
+        self.assertEqual(self.speaker.spoken[-1], 'พร้อม 2 บรรทัด')
+
+    def test_same_page_recheck_keeps_reading(self):
+        self.learn()
+        reads = len(self.reads)
+        self.assertEqual([self.reader.step(FRAME, 1.0 + i * 0.1) for i in range(30)], ['reading'] * 30)
+        self.assertLessEqual(len(self.reads) - reads, 4)  # about once a second, not every frame
+
+    def test_no_recheck_while_a_hand_is_reading(self):
+        self.learn()
+        reads = len(self.reads)
+        self.tracker.hand_present = True
+        self.lines_on_page = 2
+        self.assertEqual([self.reader.step(FRAME, 1.0 + i) for i in range(5)], ['reading'] * 5)
+        self.assertEqual(len(self.reads), reads)
 
     def test_lost_page_waits_again(self):
         self.learn()
