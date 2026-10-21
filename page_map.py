@@ -26,22 +26,44 @@ def read_page(image, calibration: PageCalibration, fmt: PageFormat = DEFAULT_FOR
     dots, _ = ColoredCellStream(color).find_dots(flat)
     points = np.array([d['center'] for d in dots], dtype=float).reshape(-1, 2) / PX_PER_MM
     rows = _line_rows(points, fmt.dot_spacing_mm)
+    tops = _line_tops(points, rows, fmt.dot_spacing_mm)
     lines, words = [], []
-    for line_id, (top, members) in enumerate(rows):
+    for line_id, ((first_y, members), top) in enumerate(zip(rows, tops)):
         next_top = rows[line_id + 1][0] if line_id + 1 < len(rows) else None
-        bottom = top + 2 * fmt.dot_spacing_mm + _BAND_GAP_MM
+        bottom = (top if top is not None else first_y) + 2 * fmt.dot_spacing_mm + _BAND_GAP_MM
         band_end = next_top - _BAND_GAP_MM if next_top is not None else bottom + fmt.raised_band_mm
-        cells = _line_cells(points[members], top, fmt, words)
+        cells = _line_cells(points[members], first_y if top is None else top, fmt, words,
+                            trusted=top is not None)
         lines.append(LinePair(line_id, bottom, band_end, cells))
     return PageMap(tuple(lines), tuple(words))
 
 
-def _line_rows(points: np.ndarray, spacing: float) -> list[tuple[float, np.ndarray]]:
-    """Group dots into colored lines: rows closer than 1.5 dot spacings join one line.
+def _line_tops(points: np.ndarray, rows, spacing: float) -> list[float | None]:
+    """Row-1 y of each colored line, or None when it cannot be known.
 
-    shortcut: a line whose dots use only two adjacent rows is assumed to start at
-    its upper row; revisit if real pages show lines without row-1 dots.
+    A line with dots in all three rows fixes its own top. A line using only two
+    rows (no row-1 dot, or no row-3 dot) takes its top from the spacing of the
+    fully anchored lines, since Word prints the lines at an exact line spacing.
     """
+    spans = [np.ptp(points[members, 1]) for _, members in rows]
+    full = [i for i, span in enumerate(spans) if span > 1.5 * spacing]
+    tops: list[float | None] = [rows[i][0] if i in full else None for i in range(len(rows))]
+    if len(full) < 2:
+        return tops
+    line_pitch = (rows[full[-1]][0] - rows[full[0]][0]) / (full[-1] - full[0])
+    for i, top in enumerate(tops):
+        if top is None:
+            ref = min(full, key=lambda f: abs(f - i))
+            expected = rows[ref][0] + (i - ref) * line_pitch
+            first_y = rows[i][0]
+            candidate = min((first_y, first_y - spacing), key=lambda t: abs(t - expected))
+            if abs(candidate - expected) < .5 * spacing:
+                tops[i] = candidate
+    return tops
+
+
+def _line_rows(points: np.ndarray, spacing: float) -> list[tuple[float, np.ndarray]]:
+    """Group dots into colored lines: (y of the highest dot, dot indices)."""
     if not len(points):
         return []
     order = np.argsort(points[:, 1])
@@ -57,7 +79,9 @@ def _line_rows(points: np.ndarray, spacing: float) -> list[tuple[float, np.ndarr
     return [(float(points[members, 1].min()), np.array(members)) for members in lines]
 
 
-def _line_cells(points: np.ndarray, top: float, fmt: PageFormat, words: list[str]) -> tuple[CellSlot, ...]:
+def _line_cells(points: np.ndarray, top: float, fmt: PageFormat, words: list[str],
+                trusted: bool = True) -> tuple[CellSlot, ...]:
+    """Cells of one line; with ``trusted`` False the rows are unsure, so nothing is named."""
     pitch, spacing = fmt.cell_pitch_mm, fmt.dot_spacing_mm
     origin = _column_origin(points[:, 0], pitch, spacing)
     offset = points[:, 0] - origin
@@ -74,7 +98,12 @@ def _line_cells(points: np.ndarray, top: float, fmt: PageFormat, words: list[str
     for k in range(count):
         x1 = origin + (first + k) * pitch - pad
         slots.append([k, x1, x1 + pitch, frozenset(patterns.get(first + k, ())), None, None])
+    start = len(words)
     _decode_words(slots, words)
+    if not trusted:  # never guess: a row shift turns every symbol into another one
+        words[start:] = [UNKNOWN_WORD] * (len(words) - start)
+        for s in slots:
+            s[4] = None
     return tuple(CellSlot(*s) for s in slots)
 
 

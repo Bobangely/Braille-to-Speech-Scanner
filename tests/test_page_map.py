@@ -68,6 +68,19 @@ class ReadPageTests(unittest.TestCase):
             else:
                 self.assertLess(line.raised_y2_mm, next_top)
 
+    def test_line_without_row_one_is_anchored_by_full_lines(self):
+        # Short lines can lack any dot in row 1: their rows follow the page's line spacing.
+        lines = page_lines()
+        lines[1] = [{2, 5}, {3, 6}, {2, 3}]
+        page = read(lines)
+        self.assertEqual([c.dots for c in page.lines[1].cells],
+                         [frozenset({2, 5}), frozenset({3, 6}), frozenset({2, 3})])
+
+    def test_unanchored_partial_line_is_unreadable_not_guessed(self):
+        page = read([[{2, 5}, {3, 6}, {2, 3}]])
+        self.assertEqual([c.name for c in page.lines[0].cells], [None, None, None])
+        self.assertEqual(page.words, ('ไม่ทราบ',))
+
     def test_no_dots_gives_empty_page(self):
         page = read([[]])
         self.assertEqual((page.lines, page.words), ((), ()))
