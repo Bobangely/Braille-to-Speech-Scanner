@@ -59,7 +59,7 @@ class ReadPageTests(unittest.TestCase):
 
     def test_raised_band_sits_between_colored_lines(self):
         page = read(page_lines())
-        ys = [y for _, y in FMT.line_origins_mm]
+        ys = [y for _, y in FMT.line_origins_mm][:len(page.lines)]
         bottom = [y + 2 * FMT.dot_spacing_mm for y in ys]
         for line, colored_bottom, next_top in zip(page.lines, bottom, ys[1:] + [None]):
             self.assertGreater(line.raised_y1_mm, colored_bottom)

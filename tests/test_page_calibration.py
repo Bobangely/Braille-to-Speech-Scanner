@@ -57,8 +57,14 @@ class PageCalibrationTests(unittest.TestCase):
     def test_default_format_is_a5_landscape(self):
         self.assertEqual((FMT.width_mm, FMT.height_mm), (210.0, 148.0))
         self.assertEqual((FMT.marker_size_mm, FMT.margin_mm), (15.0, 10.0))
-        self.assertEqual(FMT.line_pairs, 3)
         FMT.validate()
+
+    def test_default_format_matches_the_slate(self):
+        # Slate: 27 cell gaps measure 165 mm; rows 10 mm apart, used alternately (colored, raised).
+        self.assertAlmostEqual(FMT.cell_pitch_mm, 165 / 27, delta=0.02)
+        self.assertEqual(FMT.line_pairs, 4)
+        ys = [y for _, y in FMT.line_origins_mm]
+        self.assertEqual([round(b - a, 6) for a, b in zip(ys, ys[1:])], [20.0] * 3)
 
     def test_format_geometry(self):
         slots = FMT.cell_slots_mm(1)
