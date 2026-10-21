@@ -10,21 +10,27 @@ class RecordingSpeaker:
     def __init__(self):
         self.calls = []
         self.prepared = []
+        self.fail = False
 
     def speak(self, text, lang):
+        if self.fail:
+            raise RuntimeError('audio device gone')
         self.calls.append(('speak', text))
         return True
 
     def stop(self):
         self.calls.append('stop')
 
-    def prepare(self, text, lang):
-        self.prepared.append(text)
+    def prepare_many(self, texts, lang):
+        self.prepared.extend(texts)
+        return set() if self.fail else set(texts)
 
 
 def page(words=('ไก่', 'ม')):
-    cell = CellSlot(0, 0.0, 6.0, frozenset({1}), 'สระไอ', 0)
-    return PageMap((LinePair(0, 10.0, 20.0, (cell,)),), words)
+    cells = (CellSlot(0, 0.0, 6.0, frozenset({1}), 'สระไอ', 0),
+             CellSlot(1, 6.0, 12.0, frozenset({2}), '๕', 0),
+             CellSlot(2, 12.0, 18.0, frozenset({3}), None, 1))
+    return PageMap((LinePair(0, 10.0, 20.0, cells),), words)
 
 
 class SpeechQueueTests(unittest.TestCase):
@@ -56,24 +62,28 @@ class SpeechQueueTests(unittest.TestCase):
             self.queue.handle([FinishWord(0, 'ไก่')])
         self.assertEqual(self.speaker.calls[-1], ('speak', 'สระไอ กอไก่ ไม้เอก'))
 
-    def test_prepare_page_prepares_every_word(self):
+    def test_prepare_page_prepares_everything_the_page_can_say(self):
         self.queue.prepare_page(page())
-        self.assertEqual(self.speaker.prepared, ['ไก่', 'ม'])
+        self.assertEqual(set(self.speaker.prepared),
+                         {'ไก่', 'ม', 'สระไอ กอไก่ ไม้เอก', 'มอม้า', 'สระไอ', '๕', 'ไม่ทราบ'})
         self.assertTrue(self.queue.ready('ไก่'))
         self.queue.handle([FinishWord(0, 'ไก่')])
         self.assertEqual(self.speaker.calls[-1], ('speak', 'ไก่'))
+
+    def test_failed_preparation_is_not_ready(self):
+        self.speaker.fail = True
+        with self.assertLogs('speech_queue', 'WARNING'):
+            self.queue.prepare_page(page())
+        self.assertFalse(self.queue.ready('ไก่'))
 
     def test_say_interrupts_and_speaks_text(self):
         self.queue.say('พร้อม 3 บรรทัด')
         self.assertEqual(self.speaker.calls, ['stop', ('speak', 'พร้อม 3 บรรทัด')])
 
-    def test_failed_preparation_is_not_ready(self):
-        def broken(text, lang):
-            raise OSError('no model')
-        self.speaker.prepare = broken
-        with self.assertLogs('speech_queue', 'WARNING'):
-            self.queue.prepare_page(page())
-        self.assertFalse(self.queue.ready('ไก่'))
+    def test_playback_failure_is_logged_not_raised(self):
+        self.speaker.fail = True
+        with self.assertLogs('speech_queue', 'ERROR'):
+            self.queue.handle([EnterCell(0, 0, 'สระไอ')])
 
 
 if __name__ == '__main__':

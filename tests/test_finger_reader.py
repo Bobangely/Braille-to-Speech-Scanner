@@ -52,8 +52,8 @@ class RecordingSpeaker:
     def stop(self):
         pass
 
-    def prepare(self, text, lang):
-        pass
+    def prepare_many(self, texts, lang):
+        return set(texts)
 
 
 class FingerReaderTests(unittest.TestCase):
@@ -115,25 +115,49 @@ class CachedWavSpeakerTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 CachedWavSpeaker(Path(cache) / 'missing.onnx', Path(cache))
 
-    def test_prepared_text_is_played_from_cache_without_synthesis(self):
+    def speaker(self, cache, batches, played, fail=()):
+        model = Path(cache) / 'thai.onnx'
+        model.write_bytes(b'')
+
+        def synthesize(model, jobs):
+            batches.append([text for text, _ in jobs])
+            for text, output in jobs:
+                if text not in fail:
+                    Path(output).write_bytes(b'RIFF')
+
+        return CachedWavSpeaker(model, Path(cache), synthesize=synthesize, play=played.append)
+
+    def test_prepare_many_synthesizes_missing_texts_in_one_batch(self):
         with tempfile.TemporaryDirectory() as cache:
-            model = Path(cache) / 'thai.onnx'
-            model.write_bytes(b'')
-            synthesized, played = [], []
+            batches, played = [], []
+            speaker = self.speaker(cache, batches, played)
+            self.assertEqual(speaker.prepare_many(['ไก่', 'มา'], 'thai'), {'ไก่', 'มา'})
+            self.assertEqual(speaker.prepare_many(['ไก่', 'ดี'], 'thai'), {'ไก่', 'ดี'})
+            self.assertEqual(batches, [['ไก่', 'มา'], ['ดี']])
 
-            def synthesize(model, text, output):
-                synthesized.append(text)
-                Path(output).write_bytes(b'RIFF')
-
-            speaker = CachedWavSpeaker(model, Path(cache), synthesize=synthesize, play=played.append)
-            speaker.prepare('ไก่', 'thai')
-            speaker.prepare('ไก่', 'thai')
-            speaker.speak('ไก่', 'thai')
+    def test_prepared_text_is_played_from_cache(self):
+        with tempfile.TemporaryDirectory() as cache:
+            batches, played = [], []
+            speaker = self.speaker(cache, batches, played)
+            speaker.prepare_many(['ไก่'], 'thai')
+            self.assertTrue(speaker.speak('ไก่', 'thai'))
             speaker.stop()
-            self.assertEqual(synthesized, ['ไก่'])
-            self.assertEqual(len(played), 2)
             self.assertTrue(str(played[0]).endswith('.wav'))
             self.assertIsNone(played[1])
+
+    def test_speak_never_synthesizes_in_the_frame_loop(self):
+        with tempfile.TemporaryDirectory() as cache:
+            batches, played = [], []
+            speaker = self.speaker(cache, batches, played)
+            with self.assertLogs('finger_reader', 'WARNING'):
+                self.assertFalse(speaker.speak('ไม่เคยเตรียม', 'thai'))
+            self.assertEqual((batches, played), ([], []))
+
+    def test_failed_texts_are_not_reported_ready(self):
+        with tempfile.TemporaryDirectory() as cache:
+            batches, played = [], []
+            speaker = self.speaker(cache, batches, played, fail={'มา'})
+            self.assertEqual(speaker.prepare_many(['ไก่', 'มา'], 'thai'), {'ไก่'})
 
 
 if __name__ == '__main__':

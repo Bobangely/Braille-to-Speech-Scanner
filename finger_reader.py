@@ -14,6 +14,7 @@ import argparse
 import csv
 import hashlib
 import json
+import logging
 import subprocess
 import sys
 import time
@@ -26,6 +27,7 @@ from speech_queue import UNKNOWN, SpeechQueue
 from thai_speech import SYMBOL_NAMES, THAI_CONSONANT_NAMES
 
 ROOT = Path(__file__).resolve().parent
+log = logging.getLogger(__name__)
 PLACE_PAGE = 'วางหน้าให้เห็นมุมครบ'
 LIFT_HAND = 'ยกมือออกก่อน'
 
@@ -102,30 +104,45 @@ class CachedWavSpeaker:
         self._synthesize = synthesize or self._synthesize_in_tts_env
         self._play = play or _winsound_play
 
-    def prepare(self, text: str, lang: str = 'thai') -> Path:
+    def _path(self, text: str) -> Path:
         key = hashlib.sha1(f'{self.backend}|{self.model}|{text}'.encode('utf-8')).hexdigest()
-        path = self.cache_dir / f'{key}.wav'
-        if not path.is_file():
-            self._synthesize(self.model, text, path)
-        return path
+        return self.cache_dir / f'{key}.wav'
+
+    def prepare_many(self, texts, lang: str = 'thai') -> set[str]:
+        """Synthesize the uncached texts in one batch; return the texts ready to play."""
+        missing = [(t, self._path(t)) for t in dict.fromkeys(texts) if not self._path(t).is_file()]
+        if missing:
+            try:
+                self._synthesize(self.model, missing)
+            except Exception as error:
+                log.warning('speech synthesis failed: %s', error)
+        return {t for t in texts if self._path(t).is_file()}
 
     def speak(self, text: str, lang: str = 'thai') -> bool:
-        self._play(self.prepare(text, lang))
+        path = self._path(text)
+        if not path.is_file():  # never synthesize inside the frame loop
+            log.warning('no prepared speech for %r', text)
+            return False
+        self._play(path)
         return True
 
     def stop(self) -> None:
         self._play(None)
 
-    def _synthesize_in_tts_env(self, model: Path, text: str, output: Path) -> None:
-        job = json.dumps(dict(model=str(model), text=text, output=str(output), backend=self.backend))
-        code = ('import json, sys; sys.path.insert(0, %r); from piper_tts import synthesize_wav; '
-                'j = json.load(sys.stdin); synthesize_wav(j["model"], j["text"], j["output"], backend=j["backend"])'
-                % str(ROOT))
-        done = subprocess.run([self.python, '-X', 'utf8', '-c', code], input=job.encode('utf-8'),
+    def _synthesize_in_tts_env(self, model: Path, jobs: list[tuple[str, Path]]) -> None:
+        # One process, one model load: synthesize_wav caches the loaded voice per model.
+        payload = json.dumps(dict(model=str(model), backend=self.backend,
+                                  jobs=[[text, str(path)] for text, path in jobs]))
+        code = ('import json, os, sys; sys.path.insert(0, %r); from piper_tts import synthesize_wav\n'
+                'j = json.load(sys.stdin)\n'
+                'for text, out in j["jobs"]:\n'
+                '    tmp = out + ".tmp.wav"\n'
+                '    synthesize_wav(j["model"], text, tmp, backend=j["backend"])\n'
+                '    os.replace(tmp, out)\n' % str(ROOT))
+        done = subprocess.run([self.python, '-X', 'utf8', '-c', code], input=payload.encode('utf-8'),
                               capture_output=True)
-        if done.returncode or not output.is_file():
-            raise RuntimeError(f'speech synthesis failed for {text!r}: '
-                               f'{done.stderr.decode("utf-8", "replace")[-500:]}')
+        if done.returncode:
+            raise RuntimeError(done.stderr.decode('utf-8', 'replace')[-500:])
 
 
 def _winsound_play(path: Path | None) -> None:
@@ -140,7 +157,7 @@ def _winsound_play(path: Path | None) -> None:
 def symbol_texts() -> list[str]:
     """Every fixed phrase the reader may speak, to synthesize before the first page."""
     return [UNKNOWN, PLACE_PAGE, LIFT_HAND, *SYMBOL_NAMES.values(), *THAI_CONSONANT_NAMES.values(),
-            *(f'พร้อม {n} บรรทัด' for n in range(1, 6))]
+            *(f'พร้อม {n} บรรทัด' for n in range(1, 11))]
 
 
 def main() -> int:
@@ -163,8 +180,9 @@ def main() -> int:
 
     speaker = CachedWavSpeaker(args.tts_thai_model, args.cache, args.tts_python, args.tts_thai_backend)
     print('preparing fixed phrases...')
-    for text in symbol_texts():
-        speaker.prepare(text)  # fails here, at startup, if the voice cannot synthesize
+    missing = [t for t in symbol_texts() if t not in speaker.prepare_many(symbol_texts())]
+    if missing:  # fail at startup, never silently while reading
+        raise RuntimeError(f'Thai voice cannot synthesize {len(missing)} phrases, e.g. {missing[:3]}')
     reader = FingerReader(FingertipTracker(), CalibrationTracker(DEFAULT_FORMAT), SpeechQueue(speaker))
     capture = _open_camera(args.camera, 1920, 1080, 30)
     if not capture.isOpened():
