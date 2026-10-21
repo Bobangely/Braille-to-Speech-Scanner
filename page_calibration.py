@@ -233,9 +233,10 @@ class CalibrationTracker:
     """Keep the last good calibration while markers are covered; flag page changes.
 
     A camera on a stand does not move, so a hand over some markers keeps the
-    previous calibration. The page counts as changed when a new calibration
-    moves the markers by more than ``move_mm``, or when no marker at all has
-    been seen for ``lost_s`` seconds.
+    previous calibration. Every full calibration replaces it (the page map is in
+    page millimetres, so a nudged page still maps correctly). The page counts as
+    changed when the markers jump by more than ``move_mm`` between two full
+    calibrations, or when no marker at all has been seen for ``lost_s`` seconds.
     """
 
     def __init__(self, fmt: PageFormat = DEFAULT_FORMAT, move_mm: float = 3.0, lost_s: float = 2.0):
@@ -254,10 +255,9 @@ class CalibrationTracker:
                 return found, True
             centres_px = np.array([found.markers[c].mean(axis=0) for c in CORNERS])
             drift = np.linalg.norm(self.current.to_page(centres_px) - self._centres_mm, axis=1).max()
-            if drift > self.move_mm:
-                self.current = found
-                return found, True
-            return self.current, False
+            # A small nudge is the same page: follow it, since half a cell is ~3 mm.
+            self.current = found
+            return found, drift > self.move_mm
         if self.current is not None and now_s - self._seen_s > self.lost_s:
             self.current = None
             return None, True

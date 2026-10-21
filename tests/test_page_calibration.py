@@ -229,8 +229,18 @@ class CalibrationTrackerTests(unittest.TestCase):
         tracker.update(self.frame, 0.0)
         _, changed = tracker.update(self.shifted(1), 0.1)
         self.assertFalse(changed)
-        _, changed = tracker.update(self.shifted(4), 0.2)
+        _, changed = tracker.update(self.shifted(5), 0.2)  # jumps 4 mm from the last position
         self.assertTrue(changed)
+
+    def test_small_shift_updates_calibration(self):
+        # A reading hand nudges the page 2 mm: same page, but fingertips must map to the new position.
+        tracker = CalibrationTracker(FMT)
+        first, _ = tracker.update(self.frame, 0.0)
+        calib, changed = tracker.update(self.shifted(2), 0.1)
+        self.assertFalse(changed)
+        self.assertIsNot(calib, first)
+        _, changed = tracker.update(self.shifted(4), 0.2)
+        self.assertFalse(changed)  # 2 mm from the updated position
 
     def test_markers_lost_over_2s_flags_page_change(self):
         blank = np.full_like(self.frame, 90)
