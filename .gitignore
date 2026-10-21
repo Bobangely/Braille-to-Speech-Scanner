@@ -39,6 +39,7 @@ output/niwat_probe/
 datasets/
 runs/
 yolov8n.pt
+models/*.task
 scratch/
 *.cache
 

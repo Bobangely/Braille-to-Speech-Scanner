@@ -164,6 +164,21 @@ class PiperSpeechTests(unittest.TestCase):
         self.assertEqual(metrics['audio_seconds'], .1)
         self.assertGreater(output.stat().st_size, 44)
 
+    def test_batch_synthesis_loads_the_piper_voice_once(self):
+        # The finger reader synthesizes a whole page in one process.
+        from piper_tts import synthesize_wav
+        fake_voice = Mock()
+        fake_voice.synthesize_wav.side_effect = lambda text, wav: (
+            wav.setnchannels(1), wav.setsampwidth(2), wav.setframerate(22050),
+            wav.writeframes(b'\0\0' * 2205))
+        module = Mock()
+        module.PiperVoice.load.return_value = fake_voice
+        with patch.dict('sys.modules', {'piper': module}):
+            for index in range(3):
+                synthesize_wav(self.model, f'word {index}', Path(self.temp.name) / f'{index}.wav')
+        module.PiperVoice.load.assert_called_once()
+        self.assertEqual(fake_voice.synthesize_wav.call_count, 3)
+
 
 class ScannerSpeechTests(unittest.TestCase):
     def scanner(self):

@@ -1,3 +1,5 @@
+mediapipe==1.1.1
+python-docx>=1.1
 opencv-python>=4.5.0
 numpy>=1.20.0
 Pillow>=8.0.0
