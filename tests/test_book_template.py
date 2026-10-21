@@ -101,6 +101,79 @@ class BookTemplateTests(unittest.TestCase):
                                    front_left.mm, delta=0.1)
 
 
+class BookFromTextTests(unittest.TestCase):
+    """Text in, book out: colored lines on the front, every dot to punch on the back."""
+
+    def test_guide_dots_are_mirrored_under_the_colored_line(self):
+        from tools.make_book_template import guide_dots_mm
+        dots = guide_dots_mm(['ก'], FMT, 10.0)  # ก = dots 1, 2, 4, 5 in the first cell
+        self.assertEqual(len(dots), 4)
+        sheet, page_x, page_y = zip(*dots)
+        self.assertEqual(set(sheet), {0})
+        left, right = sorted(set(round(x, 2) for x in page_x))
+        self.assertAlmostEqual(right - left, FMT.dot_spacing_mm, delta=0.05)
+        self.assertGreater(left, 210 / 2)  # the first cell sits on the right of the back side
+        top, middle = sorted(set(round(y, 2) for y in page_y))
+        self.assertAlmostEqual(middle - top, FMT.dot_spacing_mm, delta=0.05)
+        self.assertGreater(top, 28.0 + 10.0)  # in the raised row, one slate row below the colored line
+
+    def test_two_cell_letter_gets_dots_in_two_cells(self):
+        from tools.make_book_template import guide_dots_mm
+        one, two = guide_dots_mm(['ก'], FMT, 10.0), guide_dots_mm(['ฃ'], FMT, 10.0)
+        width = lambda dots: max(x for _, x, _ in dots) - min(x for _, x, _ in dots)  # noqa: E731
+        self.assertAlmostEqual(width(one), FMT.dot_spacing_mm, delta=0.05)  # one cell: two columns
+        self.assertAlmostEqual(width(two), FMT.cell_pitch_mm, delta=0.05)  # ฃ = [3,5,6] + [1,3]: next cell's left column
+        self.assertEqual(len(two), 5)
+
+    def test_cells_follow_the_slate_pitch(self):
+        from tools.make_book_template import guide_dots_mm
+        dots = guide_dots_mm(['ฮ' * 24], FMT, 10.0)
+        xs = sorted({round(x, 3) for _, x, _ in dots}, reverse=True)
+        self.assertAlmostEqual((xs[0] - xs[-2]) / 23, FMT.cell_pitch_mm, delta=0.02)
+
+    def test_line_longer_than_the_slate_row_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp, self.assertRaisesRegex(ValueError, 'line 2.*25 cells'):
+            make_template(Path(temp) / 'b.docx', FMT.cell_pitch_mm, 10, lines=['ก', 'ฮ' * 25])
+
+    def test_nine_lines_make_two_sheets_with_markers_on_each_front(self):
+        lines = ['ไก่'] * 9
+        with tempfile.TemporaryDirectory() as temp:
+            path = make_template(Path(temp) / 'b.docx', FMT.cell_pitch_mm, 10, lines=lines)
+            doc = Document(str(path))
+            answers = sorted(p.name for p in Path(temp).glob('b_page*.txt'))
+            page3 = (Path(temp) / 'b_page3.txt').read_text(encoding='utf-8')
+        self.assertEqual(len(doc.sections), 4)  # front, back, front, back
+        self.assertEqual(len(anchors(doc.sections[0].header)), 8)
+        self.assertEqual(len(anchors(doc.sections[2].header)), 8)
+        self.assertEqual(answers, ['b_page1.txt', 'b_page2.txt', 'b_page3.txt'])
+        self.assertEqual(page3.split(), ['ไก่'])
+
+    def test_front_lines_hold_the_text(self):
+        with tempfile.TemporaryDirectory() as temp:
+            doc = Document(str(make_template(Path(temp) / 'b.docx', FMT.cell_pitch_mm, 10, lines=['ไก่ มา', 'ดี'])))
+        colored = [p.text for p in doc.sections[0].iter_inner_content() if p.style.name == COLOR_STYLE]
+        self.assertEqual(colored[:2], ['ไก่ มา', 'ดี'])
+        self.assertEqual(len(colored), 2 * FMT.line_pairs)
+
+    def test_wide_letters_get_expanded_spacing_per_cell(self):
+        # Word adds 'Expanded' once per character, so a 2-cell letter needs it twice to keep the slate pitch.
+        w = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+        with tempfile.TemporaryDirectory() as temp:
+            doc = Document(str(make_template(Path(temp) / 'b.docx', FMT.cell_pitch_mm, 10, lines=['ก ฃ ค'])))
+        paragraph = next(p for p in doc.paragraphs if p.text == 'ก ฃ ค')
+        spacing = {}
+        for run in paragraph.runs:
+            node = run._r.rPr.find(w + 'spacing') if run._r.rPr is not None else None
+            spacing[run.text] = None if node is None else int(node.get(w + 'val'))
+        self.assertEqual(spacing['ฃ'], 56)  # 2 × 1.4 pt in twentieths
+        self.assertEqual([value for text, value in spacing.items() if 'ก' in text], [None])  # style's 1.4 pt
+
+    def test_back_side_carries_the_guide_picture(self):
+        with tempfile.TemporaryDirectory() as temp:
+            doc = Document(str(make_template(Path(temp) / 'b.docx', FMT.cell_pitch_mm, 10, lines=['ไก่'])))
+        self.assertEqual(anchors(doc.sections[1].header), [(0.0, 0.0, 210.0)])
+
+
 class PitchTestPageTests(unittest.TestCase):
     """Lay the slate over the page: the line whose 24 full cells sit in the windows wins."""
 
