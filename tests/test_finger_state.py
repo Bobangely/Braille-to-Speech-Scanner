@@ -90,6 +90,40 @@ class FingerStateTest(unittest.TestCase):
         fs = FingerState(PageMap((LinePair(0, 20, 30, (c,)),), ("?",)))
         self.assertEqual(run(fs, [3]), [EnterCell(0, 0, None)])
 
+    def test_dropped_frame_entering_space_still_finishes_word(self):
+        ev = run(self.fs, [13, 19, 25])
+        ev += self.fs.update((31, 25), 0.60)
+        ev += self.fs.update(None, 0.65)  # one frame without a hand
+        for k in range(4):
+            ev += self.fs.update((31, 25), 0.70 + k * 0.05)
+        self.assertEqual(ev[-1], FinishWord(0, "ไก่"))
+
+    def test_vertical_exit_then_land_on_space_finishes_word(self):
+        ev = run(self.fs, [13, 19, 25])
+        ev += self.fs.update((28, 35), 0.60)
+        for k in range(4):
+            ev += self.fs.update((31, 25), 0.65 + k * 0.05)
+        self.assertEqual(ev[-1], FinishWord(0, "ไก่"))
+
+    def test_jump_to_other_line_space_does_not_finish_old_word(self):
+        ev = run(self.fs, [19])
+        for k in range(4):
+            ev += self.fs.update((31, 55), 0.3 + k * 0.05)
+        self.assertEqual(ev, [EnterCell(0, 1, "กอไก่")])
+
+    def test_past_edge_of_other_line_does_not_finish_old_word(self):
+        ev = run(self.fs, [37])
+        ev += self.fs.update((70, 55), 0.3)
+        self.assertEqual(ev, [EnterCell(0, 4, "มอม้า")])
+
+    def test_moving_left_onto_space_does_not_finish(self):
+        self.assertEqual(run(self.fs, [37, 31]), [EnterCell(0, 4, "มอม้า")])
+
+    def test_word_finishes_once(self):
+        ev = run(self.fs, [13, 19, 25, 31, 70])
+        self.assertEqual(ev.count(FinishWord(0, "ไก่")), 1)
+        self.assertNotIn(FinishWord(1, "ม"), ev)  # ม was never entered
+
 
 if __name__ == "__main__":
     unittest.main()

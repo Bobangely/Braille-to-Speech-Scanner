@@ -31,7 +31,7 @@ class FingerState:
         self._active: tuple[LinePair, CellSlot] | None = None
         self._candidate: tuple[LinePair, CellSlot] | None = None
         self._since = 0.0
-        self._pending: set[int] = set()  # words entered but not yet finished
+        self._pending: set[tuple[int, int]] = set()  # (line_id, word) entered, not yet finished
 
     def _locate(self, x, y):
         """Return ('cell', line, cell), ('past', line) or None."""
@@ -59,8 +59,8 @@ class FingerState:
         if loc is None:
             self._active = self._candidate = None
         elif loc[0] == "past":
-            if self._active and self._active[0] is loc[1]:
-                events += self._finish(self._active[1].word_index)
+            line = loc[1]
+            events += self._finish(line, self._word_left_of(line, len(line.cells)))
             self._active = self._candidate = None
         else:
             _, line, cell = loc
@@ -72,17 +72,25 @@ class FingerState:
                 events += self._promote(line, cell)
         return events
 
-    def _finish(self, word):
-        if word is not None and word in self._pending:
-            self._pending.discard(word)
+    @staticmethod
+    def _word_left_of(line, index):
+        """Word of the nearest non-empty cell left of ``index`` on the line."""
+        return next((c.word_index for c in reversed(line.cells[:index]) if c.word_index is not None), None)
+
+    def _finish(self, line, word):
+        # Pending words are kept even when the finger drops out for a frame,
+        # so a lost frame or a lift onto the space still speaks the word.
+        key = (line.line_id, word)
+        if word is not None and key in self._pending:
+            self._pending.discard(key)
             return [FinishWord(word, self.page.words[word])]
         return []
 
     def _promote(self, line, cell):
-        prev, self._active, self._candidate = self._active, (line, cell), None
+        self._active, self._candidate = (line, cell), None
+        # Moving to another line pair abandons the words started there.
+        self._pending = {key for key in self._pending if key[0] == line.line_id}
         if cell.word_index is None:
-            if prev and prev[0] is line and cell.index > prev[1].index:
-                return self._finish(prev[1].word_index)
-            return []
-        self._pending.add(cell.word_index)
+            return self._finish(line, self._word_left_of(line, cell.index))
+        self._pending.add((line.line_id, cell.word_index))
         return [EnterCell(line.line_id, cell.index, cell.name)]
