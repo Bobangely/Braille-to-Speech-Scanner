@@ -15,7 +15,7 @@ A calibration is returned only when every check passes; otherwise
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import cv2
 import numpy as np
@@ -93,6 +93,15 @@ class PageFormat:
 
 
 DEFAULT_FORMAT = PageFormat()
+
+
+def page_format(marker_size_mm: float | None = None) -> PageFormat:
+    """The book format with the marker size actually printed; template and reader must agree."""
+    if marker_size_mm is None:
+        return DEFAULT_FORMAT
+    fmt = replace(DEFAULT_FORMAT, marker_size_mm=marker_size_mm)
+    fmt.validate()
+    return fmt
 
 
 @dataclass

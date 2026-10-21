@@ -23,11 +23,12 @@ from docx.oxml.ns import nsdecls, qn
 from docx.shared import Mm, Pt, RGBColor
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from page_calibration import CORNERS, DEFAULT_FORMAT, PageFormat  # noqa: E402
+from page_calibration import CORNERS, DEFAULT_FORMAT, PageFormat, page_format  # noqa: E402
 from tools.export_markers import export_markers  # noqa: E402
 
 FONT = 'SOV_braille_only'
 FONT_PT = 30
+LOWERED_PT = 2  # the exact 10 mm line is shorter than 30 pt: lower the dots so row 1 is not clipped
 PT_MM = 25.4 / 72
 COLOR_STYLE = 'Braille สี'
 RAISED_STYLE = 'บรรทัดนูน'
@@ -112,6 +113,7 @@ def _add_styles(doc, cell_pitch_mm: float, line_pitch_mm: float) -> None:
     rpr.rFonts.set(qn('w:cs'), FONT)  # Thai text is complex script in Word
     rpr.append(parse_xml(f'<w:szCs {nsdecls("w")} w:val="{FONT_PT * 2}"/>'))
     rpr.append(parse_xml(f'<w:spacing {nsdecls("w")} w:val="{round(expanded_pt(cell_pitch_mm) * 20)}"/>'))
+    rpr.append(parse_xml(f'<w:position {nsdecls("w")} w:val="{-LOWERED_PT * 2}"/>'))  # half-points
 
 
 def _float_picture(run, path: Path, x_mm: float, y_mm: float, size_mm: float) -> None:
@@ -138,9 +140,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--cell-pitch-mm', type=float, default=165 / 27, help='slate cell pitch')
     parser.add_argument('--line-pitch-mm', type=float, default=10.0, help='slate row pitch')
+    parser.add_argument('--marker-size-mm', type=float,
+                        help=f'printed marker side (default {DEFAULT_FORMAT.marker_size_mm:g}); '
+                             'pass the same value to finger_reader.py')
     parser.add_argument('--out', type=Path, default=Path('output/book_template.docx'))
     args = parser.parse_args()
-    path = make_template(args.out, args.cell_pitch_mm, args.line_pitch_mm)
+    path = make_template(args.out, args.cell_pitch_mm, args.line_pitch_mm, fmt=page_format(args.marker_size_mm))
     print(f'{path}  Expanded {expanded_pt(args.cell_pitch_mm):.2f} pt, '
           f'line spacing exactly {line_spacing_pt(args.line_pitch_mm):.2f} pt')
     return 0

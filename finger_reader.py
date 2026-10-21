@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 from finger_state import EnterCell, FingerState
-from page_calibration import DEFAULT_FORMAT, CalibrationTracker, PageFormat
+from page_calibration import DEFAULT_FORMAT, CalibrationTracker, PageFormat, page_format
 from page_map import PageLearner, page_signature, read_page as read_colored_page
 from speech_queue import UNKNOWN, SpeechQueue
 from thai_speech import SYMBOL_NAMES, THAI_CONSONANT_NAMES
@@ -193,14 +193,16 @@ def main() -> int:
     parser.add_argument('--cache', type=Path, default=ROOT / 'output' / 'finger_speech')
     parser.add_argument('--log-latency', type=Path, help='CSV of per-event timings in seconds')
     parser.add_argument('--headless', action='store_true')
+    parser.add_argument('--marker-size-mm', type=float, help='printed marker side, as in the book template')
     args = parser.parse_args()
+    fmt = page_format(args.marker_size_mm)
 
     speaker = CachedWavSpeaker(args.tts_thai_model, args.cache, args.tts_python, args.tts_thai_backend)
     print('preparing fixed phrases...')
     missing = [t for t in symbol_texts() if t not in speaker.prepare_many(symbol_texts())]
     if missing:  # fail at startup, never silently while reading
         raise RuntimeError(f'Thai voice cannot synthesize {len(missing)} phrases, e.g. {missing[:3]}')
-    reader = FingerReader(FingertipTracker(), CalibrationTracker(DEFAULT_FORMAT), SpeechQueue(speaker))
+    reader = FingerReader(FingertipTracker(), CalibrationTracker(fmt), SpeechQueue(speaker), fmt)
     capture = _open_camera(args.camera, 1920, 1080, 30)
     if not capture.isOpened():
         raise RuntimeError(f'Cannot open camera {args.camera}')

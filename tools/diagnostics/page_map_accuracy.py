@@ -14,7 +14,7 @@ import cv2
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from generate_test import text_to_braille_cells  # noqa: E402
-from page_calibration import DEFAULT_FORMAT, calibrate  # noqa: E402
+from page_calibration import calibrate, page_format  # noqa: E402
 from page_layout import PageMap  # noqa: E402
 from page_map import read_page  # noqa: E402
 
@@ -39,15 +39,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('image', type=Path)
     parser.add_argument('--truth', type=Path, required=True)
+    parser.add_argument('--marker-size-mm', type=float, help='printed marker side, as in the book template')
     args = parser.parse_args()
+    fmt = page_format(args.marker_size_mm)
     image = cv2.imread(str(args.image))
     if image is None:
         parser.error(f'cannot read {args.image}')
-    calibration = calibrate(image, DEFAULT_FORMAT)
+    calibration = calibrate(image, fmt)
     if not calibration.ok:
         print(f'calibration failed: {calibration.reason}')
         return 1
-    page = read_page(image, calibration, DEFAULT_FORMAT)
+    page = read_page(image, calibration, fmt)
     texts = [t for t in args.truth.read_text(encoding='utf-8').splitlines() if t.strip()]
     correct, total = cell_accuracy(page, texts)
     print(f'{correct}/{total} cells = {100 * correct / total:.1f}%  words: {" ".join(page.words)}')

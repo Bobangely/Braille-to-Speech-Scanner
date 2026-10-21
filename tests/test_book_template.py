@@ -75,6 +75,21 @@ class BookTemplateTests(unittest.TestCase):
         self.assertEqual(int(spacing.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')), 22)
         self.assertAlmostEqual(style.paragraph_format.line_spacing.pt, 28.35, delta=0.05)
 
+    def test_colored_style_is_lowered_into_the_exact_line(self):
+        # 30 pt dots are taller than a 10 mm exact line; Word clips row 1 unless lowered.
+        position = self.doc.styles[COLOR_STYLE].element.rPr.find(
+            '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}position')
+        self.assertEqual(int(position.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')), -4)
+
+    def test_marker_size_is_configurable(self):
+        from dataclasses import replace
+        fmt = replace(FMT, marker_size_mm=12.0)
+        with tempfile.TemporaryDirectory() as temp:
+            doc = Document(str(make_template(Path(temp) / 'small.docx', 165 / 27, 10, fmt=fmt)))
+        placed = anchors(doc.sections[0].header)
+        self.assertEqual({size for _, _, size in placed}, {12.0})
+        self.assertIn((188.0, 10.0, 12.0), placed)  # TR: 210 - 10 margin - 12
+
     def test_back_guides_are_mirrored(self):
         # The slate is written from the back, right to left: the guide sits on the mirrored side.
         guides = [p for p in self.doc.sections[1].iter_inner_content() if p.text.strip()]

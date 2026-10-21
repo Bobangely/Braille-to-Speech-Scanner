@@ -66,6 +66,13 @@ class PageCalibrationTests(unittest.TestCase):
         ys = [y for _, y in FMT.line_origins_mm]
         self.assertEqual([round(b - a, 6) for a, b in zip(ys, ys[1:])], [20.0] * 3)
 
+    def test_page_format_takes_the_printed_marker_size(self):
+        from page_calibration import page_format
+        self.assertEqual(page_format(12.0).marker_size_mm, 12.0)
+        self.assertIs(page_format(None), DEFAULT_FORMAT)
+        with self.assertRaises(ValueError):
+            page_format(25.0)  # would overlap the Braille lines
+
     def test_format_geometry(self):
         slots = FMT.cell_slots_mm(1)
         origin = FMT.line_origins_mm[0]
