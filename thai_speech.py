@@ -39,3 +39,18 @@ def expand_thai_speech_units(text):
             return match[0]
         return THAI_CONSONANT_NAMES[match[0]]
     return _LESSON_NUMBER.sub(_lesson_number, _LETTERS.sub(consonant, text))
+
+
+# Names spoken for one symbol under the fingertip; consonants use THAI_CONSONANT_NAMES.
+SYMBOL_NAMES = {
+    '่': 'ไม้เอก', '้': 'ไม้โท', '๊': 'ไม้ตรี', '๋': 'ไม้จัตวา', '์': 'ไม้ทัณฑฆาต',
+    '็': 'ไม้ไต่คู้', 'ะ': 'สระอะ', 'ั': 'ไม้หันอากาศ', 'า': 'สระอา', 'ำ': 'สระอำ',
+    'ิ': 'สระอิ', 'ี': 'สระอี', 'ึ': 'สระอึ', 'ื': 'สระอือ', 'ุ': 'สระอุ', 'ู': 'สระอู',
+    'เ': 'สระเอ', 'แ': 'สระแอ', 'โ': 'สระโอ', 'ใ': 'สระใอ', 'ไ': 'สระไอ',
+    'เ◌อ': 'สระเออ', 'เ◌า': 'สระเอา', 'เ◌ีย': 'สระเอีย', 'เ◌ือ': 'สระเอือ', '◌ัว': 'สระอัว',
+}
+
+
+def symbol_name(text):
+    """Spoken name of one decoded Braille symbol; unknown text is spoken as is."""
+    return SYMBOL_NAMES.get(text) or THAI_CONSONANT_NAMES.get(text, text)
