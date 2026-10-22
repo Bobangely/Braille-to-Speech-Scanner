@@ -647,7 +647,7 @@ class RealTimeBrailleScanner:
                 raise ValueError('Camera dimensions must be positive')
             self.target_width, self.target_height = int(width), int(height)
         else:
-            preset = ('4k' if res_preset in (None, 'auto') else res_preset).lower()
+            preset = ('1080p' if res_preset in (None, 'auto') else res_preset).lower()
             if preset not in RESOLUTION_PRESETS:
                 raise ValueError(f'Unknown camera resolution: {res_preset}')
             self.target_width, self.target_height = RESOLUTION_PRESETS[preset]
