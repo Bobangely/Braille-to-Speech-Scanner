@@ -1,0 +1,82 @@
+"""
+Unit tests for finger_braille_reader module.
+"""
+
+import unittest
+import numpy as np
+
+from finger_braille_reader import (
+    FingerBrailleTouchReader,
+    IndexFingerSkeletonDetector,
+    THAI_VOWEL_TONE_NAMES,
+)
+from thai_speech import THAI_CONSONANT_NAMES
+
+
+class TestFingerBrailleReader(unittest.TestCase):
+    def setUp(self):
+        self.reader = FingerBrailleTouchReader()
+
+    def tearDown(self):
+        self.reader.close()
+
+    def test_detector_initialization(self):
+        self.assertTrue(self.reader.detector.available)
+
+    def test_grid_cache_update_and_lookup(self):
+        cells = [
+            {'center': (100, 100), 'width': 30, 'height': 50, 'dots': [1, 2]},
+            {'center': (200, 100), 'width': 30, 'height': 50, 'dots': [1, 3]}
+        ]
+        verbose = [{'char': 'ข'}, {'char': 'ก'}]
+
+        self.reader.update_grid_cache(cells, verbose)
+        self.assertEqual(len(self.reader.cached_cells), 2)
+
+        # Point inside cell 0
+        idx, item = self.reader.find_cell_at_point((102, 105))
+        self.assertEqual(idx, 0)
+        self.assertEqual(item['char'], 'ข')
+
+        # Point inside cell 1
+        idx, item = self.reader.find_cell_at_point((198, 95))
+        self.assertEqual(idx, 1)
+        self.assertEqual(item['char'], 'ก')
+
+        # Point far away
+        idx, item = self.reader.find_cell_at_point((500, 500))
+        self.assertEqual(idx, -1)
+
+    def test_pronunciation_mapping(self):
+        # Consonant
+        self.assertEqual(self.reader.get_spoken_name('ก'), 'กอไก่')
+        self.assertEqual(self.reader.get_spoken_name('ข'), 'ขอไข่')
+
+        # Vowel & Tone
+        self.assertEqual(self.reader.get_spoken_name('ะ'), 'สระอะ')
+        self.assertEqual(self.reader.get_spoken_name('า'), 'สระอา')
+        self.assertEqual(self.reader.get_spoken_name('่'), 'ไม้เอก')
+
+        # English
+        self.assertEqual(self.reader.get_spoken_name('a'), 'Letter A')
+
+    def test_word_mode_mapping(self):
+        cells = [
+            {'center': (100, 100), 'width': 30, 'height': 50, 'dots': [1]},
+            {'center': (140, 100), 'width': 30, 'height': 50, 'dots': [1, 6]}
+        ]
+        verbose = [{'char': 'ก'}, {'char': 'า'}]
+        self.reader.update_grid_cache(cells, verbose, decoded_text="กา")
+        self.assertEqual(self.reader.cached_cells[0]['word'], 'กา')
+        self.assertEqual(self.reader.cached_cells[1]['word'], 'กา')
+        self.assertEqual(self.reader.cached_cells[0]['word_id'], self.reader.cached_cells[1]['word_id'])
+
+    def test_process_empty_frame(self):
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        out_frame, touched = self.reader.process(frame)
+        self.assertEqual(out_frame.shape, (480, 640, 3))
+        self.assertIsNone(touched)
+
+
+if __name__ == '__main__':
+    unittest.main()
