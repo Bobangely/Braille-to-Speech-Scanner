@@ -716,6 +716,8 @@ class RealTimeBrailleScanner:
     def _reset_confirmation(self):
         self.history.clear()
         self._line_confirmation.reset()
+        if hasattr(self, 'finger_reader'):
+            self.finger_reader.unlock_grid()
 
 
     def cycle_dot_color(self):
@@ -1001,14 +1003,21 @@ class RealTimeBrailleScanner:
             if hasattr(self, 'finger_reader') and self.finger_reader.enabled:
                 sx = self._preview_image_size[0] / max(1, enhanced_frame.shape[1])
                 sy = self._preview_image_size[1] / max(1, enhanced_frame.shape[0])
-                if result.get('cells'):
+                cells_list = result.get('cells', [])
+
+                # อัปเดต Cache เฉพาะเมื่อตารางยังไม่ล็อก และไม่มีมือวางขวาง
+                if cells_list and not self.finger_reader.grid_locked and not self.finger_reader.is_hand_present:
                     self.finger_reader.update_grid_cache(
-                        result.get('cells', []),
+                        cells_list,
                         result.get('verbose_results', []),
                         scale_x=sx,
                         scale_y=sy,
                         decoded_text=decoded_text
                     )
+                    # เมื่อผลสแกนทั้งหน้านิ่งและยืนยันแล้ว (is_locked) ให้ Freeze Grid ทันทีสำหรับการอ่าน
+                    if is_locked and len(self.finger_reader.cached_cells) > 0:
+                        self.finger_reader.lock_grid()
+
                 camera_view, self._last_touched_info = self.finger_reader.process(camera_view)
             else:
                 self._last_touched_info = None
@@ -1085,6 +1094,7 @@ class RealTimeBrailleScanner:
         elif key in (ord('f'), ord('F'), ord('t'), ord('T')):
             if hasattr(self, 'finger_reader'):
                 self.finger_reader.enabled = not self.finger_reader.enabled
+                self.finger_reader.unlock_grid()
                 mode_str = "เปิด (ON)" if self.finger_reader.enabled else "ปิด (OFF)"
                 print(f"  👉 สลับโหมดตรวจจับนิ้วชี้สัมผัสอ่าน: {mode_str} [F]")
         elif key in (ord('m'), ord('M')):
@@ -1102,6 +1112,8 @@ class RealTimeBrailleScanner:
             self.zoom_out()
         elif key in (ord('r'), ord('R'), ord('0')):
             self.reset_zoom()
+            if hasattr(self, 'finger_reader'):
+                self.finger_reader.unlock_grid()
         elif key in (ord('l'), ord('L')):
             if self._speech is not None:
                 self._speech.stop()

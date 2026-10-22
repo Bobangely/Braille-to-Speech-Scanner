@@ -410,16 +410,26 @@ class FingerBrailleTouchReader:
         self.detector = IndexFingerSkeletonDetector()
         self.speaker = NonBlockingSpeechQueue(fallback_tts=external_tts)
         self.dwell_threshold = dwell_threshold  # จำนวนเฟรมที่ต้องแช่เพื่อยืนยันการแตะ
-        self.touch_radius = touch_radius        # รัศมีความเผื่อในการแตะ (pixels)
+        self.touch_radius = 26                  # รัศมีแตะกระชับพอดีเซลล์ ไม่เหลื่อมเซลล์ข้างเคียง
         self.speech_mode = mode                 # 'word' (อ่านเป็นคำ), 'char' (อ่านสะกดทีละตัว), 'smart'
 
         self.cached_cells = []          # ข้อมูลตำแหน่ง Cell และตัวอักษรที่จำไว้
+        self.grid_locked = False        # สถานะแช่แข็งพิกัด (Freeze Grid) เมื่อหน้ากระดาษสแกนสมบูรณ์แล้ว
+        self.is_hand_present = False    # ติดตามว่ามีมือ/นิ้วอยู่ในกรอบกล้องหรือไม่
         self.current_candidate_idx = -1
         self.dwell_counter = 0
         self.last_spoken_cell_idx = -1
         self.last_spoken_char = ""
         self.last_spoken_word = ""
         self.enabled = True
+
+    def lock_grid(self):
+        """แช่แข็งพิกัดตารางเซลล์อักษรเบรลล์ ไม่ให้ YOLO เขียนทับ"""
+        self.grid_locked = True
+
+    def unlock_grid(self):
+        """ปลดล็อกพิกัดตาราง เพื่อให้สแกนหน้าใหม่ได้"""
+        self.grid_locked = False
 
     def toggle_mode(self):
         """สลับระหว่างโหมดอ่านเป็นคำ (Word) และโหมดสะกดทีละตัว (Char)"""
@@ -428,13 +438,22 @@ class FingerBrailleTouchReader:
         self.speech_mode = modes[(curr_idx + 1) % len(modes)]
         return self.speech_mode
 
-    def update_grid_cache(self, cells, verbose_results, scale_x=1.0, scale_y=1.0, decoded_text=""):
+    def update_grid_cache(self, cells, verbose_results, scale_x=1.0, scale_y=1.0, decoded_text="", force=False):
         """
         บันทึกพิกัดและตัวอักษรของแต่ละ Cell ลงใน Cache เมื่อระบบสแกนได้ผลลัพธ์
         พร้อมจัดกลุ่มเซลล์เป็นคำ (Word Grouping) จาก decoded_text
+        จะไม่เขียนทับหาก Grid ถูกล็อก หรือมีมือวางอยู่บนกระดาษ
         """
         if not cells:
             return
+
+        if not force:
+            if self.grid_locked:
+                return
+            if self.is_hand_present:
+                return
+            if len(self.cached_cells) > 0 and len(cells) < len(self.cached_cells) * 0.6:
+                return
 
         # ทำ Word Segmentation เพื่อแมปว่า Cell ไหนสังกัดคำว่าอะไร
         word_by_cell = {}
@@ -492,27 +511,30 @@ class FingerBrailleTouchReader:
             self.cached_cells = updated
 
     def find_cell_at_point(self, pt):
-        """ค้นหาว่าจุด (x, y) ของปลายนิ้วตรงกับ Cell ไหนมากที่สุด"""
+        """ค้นหาว่าจุด (x, y) ของปลายนิ้วตรงกับ Cell ไหนมากที่สุด โดยกำจัดปัญหา overlap"""
         if pt is None or not self.cached_cells:
             return -1, None
 
         tx, ty = pt
         best_idx = -1
         min_dist = float('inf')
+        best_in_box = False
 
         for idx, item in enumerate(self.cached_cells):
             x1, y1, x2, y2 = item['bbox']
-            # ถ้าอยู่ใน Bounding Box พอดี
-            if (x1 - 10 <= tx <= x2 + 10) and (y1 - 10 <= ty <= y2 + 10):
-                return idx, item
-
             cx, cy = item['center']
             dist = math.hypot(tx - cx, ty - cy)
-            if dist < min_dist:
-                min_dist = dist
-                best_idx = idx
 
-        if min_dist <= self.touch_radius and best_idx != -1:
+            # เช็คว่าอยู่ในกล่องเซลล์จริงหรือไม่ (เผื่อขอบแค่ 3px ป้องกันทับเซลล์ติดกัน)
+            in_box = (x1 - 3 <= tx <= x2 + 3) and (y1 - 3 <= ty <= y2 + 3)
+            effective_dist = dist * 0.65 if in_box else dist
+
+            if effective_dist < min_dist:
+                min_dist = effective_dist
+                best_idx = idx
+                best_in_box = in_box
+
+        if best_idx != -1 and (best_in_box or min_dist <= self.touch_radius):
             return best_idx, self.cached_cells[best_idx]
 
         return -1, None
@@ -541,7 +563,18 @@ class FingerBrailleTouchReader:
             return frame, None
 
         tip_pt, index_pts = self.detector.detect_index_finger(frame)
+        self.is_hand_present = (tip_pt is not None)
         touched_cell = None
+
+        # แสดงสถานะ Grid Lock / Scanning บนภาพมุมบนซ้าย (Non-intrusive)
+        if self.grid_locked:
+            badge_text = f"GRID: LOCKED ({len(self.cached_cells)} cells)"
+            badge_color = (0, 255, 120)
+        else:
+            badge_text = f"GRID: SCANNING ({len(self.cached_cells)} cells)" if self.cached_cells else "GRID: SCANNING..."
+            badge_color = (0, 210, 255)
+        cv2.putText(frame, badge_text, (15, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (20, 20, 20), 2, cv2.LINE_AA)
+        cv2.putText(frame, badge_text, (15, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.44, badge_color, 1, cv2.LINE_AA)
 
         if tip_pt is not None:
             # วาดกระดูกนิ้วชี้และเป้าเล็งปลายเล็บ

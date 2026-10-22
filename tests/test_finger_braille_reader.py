@@ -71,6 +71,28 @@ class TestFingerBrailleReader(unittest.TestCase):
         self.assertEqual(self.reader.cached_cells[1]['word'], 'กา')
         self.assertEqual(self.reader.cached_cells[0]['word_id'], self.reader.cached_cells[1]['word_id'])
 
+    def test_grid_lock_and_hand_presence_prevents_overwrite(self):
+        cells = [{'center': (100, 100), 'width': 30, 'height': 50, 'dots': [1]}]
+        verbose = [{'char': 'ก'}]
+        self.reader.update_grid_cache(cells, verbose)
+        self.assertEqual(len(self.reader.cached_cells), 1)
+
+        # 1. When grid is locked, updates must be ignored
+        self.reader.lock_grid()
+        self.reader.update_grid_cache([], [])
+        self.assertEqual(len(self.reader.cached_cells), 1)
+        self.reader.unlock_grid()
+
+        # 2. When hand is present, updates must be ignored
+        self.reader.is_hand_present = True
+        self.reader.update_grid_cache([{'center': (200, 200), 'width': 30, 'height': 50, 'dots': [1, 2]}], [{'char': 'ข'}])
+        self.assertEqual(self.reader.cached_cells[0]['char'], 'ก')
+        self.reader.is_hand_present = False
+
+        # 3. When hand leaves, cache can update
+        self.reader.update_grid_cache([{'center': (200, 200), 'width': 30, 'height': 50, 'dots': [1, 2]}], [{'char': 'ข'}])
+        self.assertEqual(self.reader.cached_cells[0]['char'], 'ข')
+
     def test_process_empty_frame(self):
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         out_frame, touched = self.reader.process(frame)
