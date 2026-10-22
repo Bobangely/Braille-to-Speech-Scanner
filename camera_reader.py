@@ -1188,8 +1188,7 @@ class RealTimeBrailleScanner:
         try:
             self.camera = ThreadedCameraCapture(camera_id=self.camera_id,
             target_width=self.target_width, target_height=self.target_height, target_fps=60,
-            preferred_resolution=None if self._auto_resolution else
-            (self.target_width, self.target_height))
+            preferred_resolution=(self.target_width, self.target_height))
             if not self.camera.is_opened():
                 print(f"[ERR] ไม่สามารถเปิดกล้อง ID: {self.camera_id}; ตรวจสอบการเชื่อมต่อหรือ --camera")
                 return
