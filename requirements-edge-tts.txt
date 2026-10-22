@@ -1,0 +1,4 @@
+# Online Edge speech, streaming playback, and PCM WAV export.
+edge-tts==7.3.1
+soundfile==0.13.1
+miniaudio==1.71

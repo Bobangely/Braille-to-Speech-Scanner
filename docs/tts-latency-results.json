@@ -1,0 +1,67 @@
+{
+  "before": [
+    {
+      "case": "short",
+      "first_mp3_seconds": 0.5107705999980681,
+      "full_mp3_seconds": 0.6817567999969469,
+      "bytes": 16272,
+      "text": "เขียดเขียวเกาะขอน"
+    },
+    {
+      "case": "page",
+      "first_mp3_seconds": 6.4617022999991605,
+      "full_mp3_seconds": 22.33407889999944,
+      "bytes": 87120,
+      "text": "คำที่มีใช้: ฐาน ฐิติ\nเขียดเขียวเกาะขอน\nสวัสดีครับผม\nวันนี้มีนักเรียนสิบสองคน อ่านหนังสือที่ห้องสมุด เวลาเก้าโมงสามสิบนาที"
+    }
+  ],
+  "after": {
+    "first_mp3_seconds": 0.8304648999983328,
+    "first_audio_seconds": 0.8593015999977069,
+    "network_seconds": 11.149362199997995,
+    "audio_seconds": 14.472,
+    "cached": false
+  },
+  "controller": {
+    "s_call_seconds": 0.0073842000019794796,
+    "pending_repeat_kept_pid": true,
+    "first_read": {
+      "first_mp3_seconds": 0.9193606000008003,
+      "first_audio_seconds": 1.0423235000016575,
+      "network_seconds": 1.1589889999995648,
+      "audio_seconds": 2.664,
+      "cached": false
+    },
+    "repeat_s_call_seconds": 0.003952199997002026,
+    "repeat_ready_marker_seconds": 0.12899799999649986,
+    "b_call_seconds": 0.0026885999977821484,
+    "b_stopped_worker_tree": true,
+    "b_cleared_job_files": true,
+    "repeat_after_b": {
+      "cached": true
+    }
+  },
+  "fidelity": {
+    "first_mp3_seconds": 0.43718430000080843,
+    "first_audio_seconds": 0.5337585000015679,
+    "network_seconds": 0.6808296000017435,
+    "audio_seconds": 2.664,
+    "cached": false,
+    "reference_samples": 65088,
+    "stream_samples": 63936,
+    "sample_rates": [
+      24000,
+      24000
+    ],
+    "reference_alignment_offset": 1152,
+    "aligned_max_pcm_difference": 1,
+    "aligned_mse": 0.0008602352352352353
+  },
+  "platform": "Windows x64; Python 3.12.13",
+  "tests_passed": 155,
+  "limitations": [
+    "Different network rounds; no controlled percentage speedup",
+    "First audio is PCM callback, cache timing is ready marker; neither is acoustic onset",
+    "Linux ARM64 board unavailable"
+  ]
+}

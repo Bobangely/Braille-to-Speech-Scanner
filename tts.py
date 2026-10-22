@@ -9,9 +9,23 @@ Braille Reader - Text to Speech (TTS) Module
 
 import os
 import sys
-import threading
+import re
 
 from decoder import normalize_thai_text
+from config_thai import THAI_MULTI_CELL_SYMBOLS
+from thai_speech import expand_thai_speech_units
+
+
+def prepare_thai_speech_text(text):
+    """Expand independent consonants and configured punctuation only in speech."""
+    text = expand_thai_speech_units(normalize_thai_text(text))
+    labels = {symbol['output']: symbol['tts'] for symbol in THAI_MULTI_CELL_SYMBOLS.values()
+              if symbol.get('output') and symbol.get('tts')}
+    if not labels:
+        return text
+    pattern = '|'.join(re.escape(output) for output in sorted(labels, key=len, reverse=True))
+    return re.sub(pattern, lambda match: ' ' + labels[match.group()] + ' ',
+                  text).strip()
 
 
 class TextToSpeech:
@@ -29,7 +43,7 @@ class TextToSpeech:
             self._offline_engine = pyttsx3.init()
             self._offline_engine.setProperty('rate', 150)    # ความเร็วในการพูด
             self._offline_engine.setProperty('volume', 1.0)  # ระดับเสียง (0.0 - 1.0)
-        except Exception as e:
+        except Exception:
             self._offline_engine = None
 
     def speak(self, text, lang='english', method='auto', save_file=None):
@@ -60,7 +74,7 @@ class TextToSpeech:
         is_thai = lang_lower in ('thai', 'th')
 
         if is_thai:
-            text = normalize_thai_text(text)
+            text = prepare_thai_speech_text(text)
 
         # เลือก method
         if method == 'auto':
@@ -146,7 +160,7 @@ class TextToSpeech:
                     pass
 
             return True
-        except Exception as e:
+        except Exception:
             return False
 
     def _play_audio(self, audio_file):

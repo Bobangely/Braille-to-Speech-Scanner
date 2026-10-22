@@ -1,0 +1,131 @@
+{
+  "source": "sample_images/Test_thai_01.png",
+  "source_kind": "project synthetic image saved cell stream",
+  "expected_text": "สวัสดีครับผม",
+  "image_sha256": "7ce3d7dcc8bd13830853aae5f935b1c07a22091bd45f2b61cf48a3654c24e3d4",
+  "cells": [
+    {
+      "dots": [
+        2,
+        3,
+        4
+      ],
+      "line_id": 0,
+      "reading_x": 111.192345050273,
+      "cell_pitch": 93.33051855189711
+    },
+    {
+      "dots": [
+        2,
+        4,
+        5,
+        6
+      ],
+      "line_id": 0,
+      "reading_x": 204.72046029379754,
+      "cell_pitch": 93.33051855189711
+    },
+    {
+      "dots": [
+        3,
+        4,
+        5
+      ],
+      "line_id": 0,
+      "reading_x": 297.7957583202636,
+      "cell_pitch": 93.33051855189711
+    },
+    {
+      "dots": [
+        2,
+        3,
+        4
+      ],
+      "line_id": 0,
+      "reading_x": 391.20560236420283,
+      "cell_pitch": 93.33051855189711
+    },
+    {
+      "dots": [
+        1,
+        4,
+        5
+      ],
+      "line_id": 0,
+      "reading_x": 484.48618172422965,
+      "cell_pitch": 93.33051855189711
+    },
+    {
+      "dots": [
+        2,
+        3
+      ],
+      "line_id": 0,
+      "reading_x": 577.892086108659,
+      "cell_pitch": 93.33051855189711
+    },
+    {
+      "dots": [
+        1,
+        3,
+        6
+      ],
+      "line_id": 0,
+      "reading_x": 671.0011103537919,
+      "cell_pitch": 93.33051855189711
+    },
+    {
+      "dots": [
+        1,
+        2,
+        3,
+        5
+      ],
+      "line_id": 0,
+      "reading_x": 764.2624823314843,
+      "cell_pitch": 93.33051855189711
+    },
+    {
+      "dots": [
+        3,
+        4,
+        5
+      ],
+      "line_id": 0,
+      "reading_x": 857.6554205400862,
+      "cell_pitch": 93.33051855189711
+    },
+    {
+      "dots": [
+        1,
+        2,
+        3,
+        6
+      ],
+      "line_id": 0,
+      "reading_x": 950.7540161979523,
+      "cell_pitch": 93.33051855189711
+    },
+    {
+      "dots": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "line_id": 0,
+      "reading_x": 1044.3038085786875,
+      "cell_pitch": 93.33051855189711
+    },
+    {
+      "dots": [
+        1,
+        3,
+        4
+      ],
+      "line_id": 0,
+      "reading_x": 1137.377134161358,
+      "cell_pitch": 93.33051855189711
+    }
+  ]
+}

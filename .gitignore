@@ -8,10 +8,25 @@ wheels/
 
 # Virtual environments
 .venv/
+dist/
+build/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
 
 # Output artifacts
 output/*.png
 output/*.mp3
+output/thai_tts/
+output/edge_tts/
+output/*_stream/
+output/diagnostic_*/
+output/diag_*/
+output/jenny_probe/
+output/niwat_probe/
 !output/.gitkeep
 
 # IDE / Editor
@@ -25,3 +40,7 @@ datasets/
 runs/
 yolov8n.pt
 scratch/
+*.cache
+
+# เก็บไฟล์ export ชุดข้อมูลเฉพาะเครื่องไว้ แต่ไม่รวมในการ merge
+/data.yaml

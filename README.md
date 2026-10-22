@@ -1,171 +1,170 @@
-#  Braille-to-Speech Scanner (Color-Assisted OBR)
+# Thai Braille Reader — Painted Dots
 
-ระบบอ่านและออกเสียงอักษรเบรลล์ภาษาไทยและภาษาอังกฤษแบบสด (Optical Braille Recognition & Text-to-Speech)  
-โดยใช้เทคนิคการแต้มสีบนจุดนูนร่วมกับ Computer Vision (**OpenCV + P- 🧠 **ระบบตรวจจับอัจฉริยะแบบผสมผสาน (Hybrid CV + YOLO Deep Learning)**
-  - ผสานพลัง AI **YOLOv8** ในการค้นหา Candidate Dots ทุกสภาพแสง/เงา/สี ร่วมกับ **OpenCV Sub-pixel Moments Refinement** ในการปรับจุดกึ่งกลางและตรวจสอบความกลม
-  - สลับโหมดการทำงานได้แบบสดๆ ขณะเปิดกล้องผ่านปุ่ม **`[Y]`**:
-    - **HYBRID (CV+YOLO)**: แนะนำสำหรับการใช้งานจริง (แม่นยำและทนทานสูงสุด)
-    - **YOLO ONLY**: ใช้ AI ตรวจจับจุดล้วนๆ
-    - **OPENCV ONLY**: ใช้ Color Masking และ Morphology ดั้งเดิม
-- 🇹🇭 **มาตรฐานอักษรเบรลล์ไทยสากล 100% (Thai Braille Grade 1)**
-  - พยัญชนะไทยครบ 44 ตัว (ก-ฮ) ทั้งแบบ 1 เซลล์ และ 2 เซลล์ (Prefix 6, 36, 356)
-  - สระครบทุกรูปแบบ (สระหน้า เ- แ- โ- ไ- ใ-, สระหลัง -ะ -า -ำ, สระบน/ล่าง -ิ -ี -ึ -ื -ุ -ู, ไม้หันอากาศ, ไม้ไต่คู้, การันต์)
-  - สระผสมสมบูรณ์แบบ (เ◌า, เ◌ีย, เ◌ือ, เ◌อ, เ◌ิ◌, ◌ัว)
-  - วรรณยุกต์ครบ 4 รูป (ไม้เอก, ไม้โท, ไม้ตรี, ไม้จัตวา)
-- 🇬🇧 **รองรับอักษรเบรลล์ภาษาอังกฤษ (English Braille Grade 1)**
-  - ตัวอักษร a-z, Capital Indicators (จุด 6), Number Indicators (#)
-- 📹 **รองรับความละเอียดกล้องระดับสูง (4K UHD & Full HD 1080p)**
-  - สลับความละเอียดสดขณะเปิดกล้องได้ทันที (กด `V` หรือ `F`)
-  - ใช้ MJPG FourCC Codec เพื่อปลดล็อกแบนด์วิธ USB ให้เฟรมเรตลื่นไหล
-- 🔍 **ระบบ Digital Zoom In / Zoom Out (1.0x – 4.0x)**
-  - ขยายจุดเบรลล์ขนาดเล็กให้ตรวจจับได้ง่ายและแม่นยำ พร้อม Mini Viewfinder มุมขวาบน
-  - ซูมได้ทั้งผ่านคีย์บอร์ด (`Z`/`X`/`R`) และล้อหมุนเมาส์ (Mouse Wheel Zoom)
-- ✨ **ระบบ Multi-Level Sharpness Filter (5 ระดับ)**
-  - ปรับเร่งความคมชัดของขอบจุดเบรลล์ได้ทันที (กด `E` เพื่อวนเลือกระดับ OFF -> LOW -> MED -> HIGH -> ULTRA)
-- 🔊 **ระบบสังเคราะห์เสียงพูด Real-Time (Text-to-Speech: TTS)**
-  - ออกเสียงได้ทั้งภาษาไทยและภาษาอังกฤษ มีระบบ Frame Stabilization & Auto-TTS Debounce ป้องกันเสียงอ่านซ้ำซ้อน
-  - รองรับทั้ง Offline Mode (pyttsx3 / SAPI5) และ Online Natural Voice (gTTS)
-- 🎯 **ระบบ Virtual 2x3 Grid Template Overlay**
-  - ตีกรอบล้อมรอบเซลล์และแบ่ง 6 ช่อง พร้อมแสดงผลลัพธ์คำที่อ่านได้ลงบนภาพอย่างสวยงาม
-- 🎨 **รองรับหลากหลายสีของจุดแต้ม**
-  - 🔵 Blue, 🔴 Red, 🟢 Green, ⚫ Black (และตรวจจับได้อัตโนมัติในโหมด YOLO/Hybrid)
-- 🧪 **ชุดทดสอบความแม่นยำอัตโนมัติ 100% (39/39 Tests Passed)**
+## ติดตั้งและเปิดจาก source
 
----
+ชุดนี้รองรับการรันจากโฟลเดอร์ source ไม่ใช่แพ็กเกจ pip/wheel และไม่มีคำสั่งติดตั้ง `braille-reader` ให้ใช้ Python 3.12 แบบ 64-bit แล้วเปิด terminal ในโฟลเดอร์ที่มี README นี้:
 
-## 📁 โครงสร้างไฟล์ในโปรเจกต์
-
-```
-braille-reader/
-├── Start_Scanner_YOLO.bat# ดับเบิ้ลคลิกเปิดกล้องในโหมด Real-Time Hybrid CV+YOLO
-├── Start_Scanner_FHD.bat # เปิดกล้องในโหมด Full HD 1080p
-├── Start_Scanner_4K.bat  # เปิดกล้องในโหมด 4K Ultra HD (3840x2160)
-├── Start_Scanner.bat     # เปิดกล้องโหมดเริ่มต้น
-├── Test_YOLO.bat         # เมนูทดสอบตรวจจับภาพด้วย Hybrid YOLOv8
-├── Test_Camera.bat       # ทดสอบและตรวจเช็คความละเอียดสูงสุดของกล้อง
-├── camera_reader.py      # Real-Time Scanner (Hybrid CV+YOLO, 4K/FHD, Zoom, Sharpness, TTS)
-├── yolo_detector.py      # Core Hybrid Detector (YOLOv8 + OpenCV Sub-pixel Refinement)
-├── detector.py           # Core OpenCV Detector (HSV Segment, 2x3 Lattice Grid Fitting)
-├── decoder.py            # Context-Aware Syllable Decoder (EN & TH)
-├── train_yolo.py         # สคริปต์เทรนโมเดล YOLOv8 สำหรับจุดเบรลล์
-├── auto_annotate_samples.py # สร้างชุดข้อมูล YOLO จากภาพตัวอย่าง + Camera Augmentations
-├── config.py             # English Braille Mapping + Detection HSV Parameters
-├── config_thai.py        # Thai Braille Standard Mapping
-├── tts.py                # Text-to-Speech Controller (Offline & Online)
-├── test_accuracy.py      # รัน Benchmark ประเมินความแม่นยำอัตโนมัติ
-├── models/
-│   └── braille_yolo.pt   # ไฟล์โมเดล YOLOv8 ที่ผ่านการเทรนสมบูรณ์
-├── sample_images/        # ชุดภาพทดสอบดิบ (Input)
-└── output/               # ภาพ Debug / Annotated พร้อม Grid และ Snapshot
-```��านซ้ำซ้อน
-  - รองรับทั้ง Offline Mode (pyttsx3 / SAPI5) และ Online Natural Voice (gTTS)
--  **ระบบ Virtual 2x3 Grid Template Overlay**
-  - ตีกรอบล้อมรอบเซลล์และแบ่ง 6 ช่อง พร้อมแสดงผลลัพธ์คำที่อ่านได้ลงบนภาพอย่างสวยงาม
--  **รองรับหลากหลายสีของจุดแต้ม**
-  -  Blue,  Red,  Green,  Black
--  **ชุดทดสอบความแม่นยำอัตโนมัติ 100% (39/39 Tests Passed)**
-
----
-
-##  โครงสร้างไฟล์ในโปรเจกต์
-
-```
-braille-reader/
-├── Start_Scanner.bat    # ดับเบิ้ลคลิกเปิดโปรแกรม Scanner ทันที
-├── Start_Scanner_4K.bat # เปิดกล้องในโหมด 4K Ultra HD (3840x2160)
-├── Start_Scanner_FHD.bat# เปิดกล้องในโหมด Full HD 1080p (1920x1080)
-├── Test_Camera.bat      # ทดสอบและตรวจเช็คความละเอียดสูงสุดของกล้อง
-├── camera_reader.py     # Real-Time Scanner (4K, Zoom, Sharpness, Auto-TTS, Grid)
-├── main.py              # CLI Entry point (อ่านจากไฟล์ภาพ หรือเปิดกล้อง)
-├── detector.py          # Core CV Pipeline (HSV Segment, 2x3 Lattice Grid Fitting)
-├── decoder.py           # Context-Aware Syllable Decoder (EN & TH)
-├── config.py            # English Braille Mapping + Detection HSV Parameters
-├── config_thai.py       # Thai Braille Standard Mapping
-├── tts.py               # Text-to-Speech Controller (Offline & Online)
-├── generate_test.py     # สร้างชุดภาพทดสอบอักษรเบรลล์ 39 ภาพ
-├── test_accuracy.py     # รัน Benchmark ประเมินความแม่นยำอัตโนมัติ
-├── requirements.txt     # รายการ Python dependencies
-├── sample_images/       # ชุดภาพทดสอบดิบ (Input)
-└── output/              # ภาพ Debug / Annotated พร้อม Grid และ Snapshot
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip check
+.\main.bat
 ```
 
----
+หรือใช้ `uv sync --locked` เพื่อเตรียม dependencies แล้วเรียก `uv run camera_reader.py` จากโฟลเดอร์โปรเจกต์ บน Linux ใช้ `python3.12` และ `.venv/bin/python` แทนคำสั่ง Windows; ต้องมี desktop/GUI กล้อง และอุปกรณ์เสียงที่ OS รองรับ ยังไม่รับรอง Linux ARM64 จนกว่าจะทดสอบบนบอร์ดจริง
 
-##  วิธีการติดตั้งและใช้งาน
+requirements หลักไม่รวมโมเดลเสียงหรือ dependencies เสียงเสริม: Edge ต้องติดตั้ง `requirements-edge-tts.txt` ใน environment เสียงและใช้อินเทอร์เน็ต ส่วน Piper/MMS ต้องติดตั้ง requirements และโมเดล local ตามคู่มือเสียงด้านล่าง ไม่ใช้ `uv build` หรือ `pip install .` เพื่อแจกโปรแกรมรุ่นนี้
 
-### 1. ติดตั้ง Dependencies
+กล้องเริ่มด้วย `--res auto`: ตรวจเฟรมจริงของ 4K / 2K / 1080p แล้วเลือกโหมดสูงสุดที่ใช้ได้ ปุ่ม `V` วนเฉพาะโหมดที่ตรวจผ่าน หากเปิดไม่ได้จะลองโหมดต่ำกว่า; CLI ที่ระบุ preset/ขนาดเองยังใช้ได้เป็น override
 
-```bash
-pip install -r requirements.txt
+ถอด Sharpness และปุ่ม `E` แล้ว ส่ง pixel ต้นฉบับเข้า Detection โดยตรง คง `--sharp 0` เพื่อ compatibility; ค่าอื่นไม่รองรับ ไม่ได้เปลี่ยนกฎ Parser ไทย/อังกฤษ
+
+รีวิวก่อน merge: [บั๊กที่แก้ การเก็บโค้ด ผลตรวจ และข้อจำกัด](docs/PRE_MERGE_REVIEW_TH.md)
+
+หน้าจอกล้องใหม่: [Preview, ปุ่มควบคุม, การ resize และผลทดสอบ UI](docs/SCANNER_UI_TH.md) — แสดงชื่อเซลล์ จุด 1–6 และ pattern บน Preview โดยตรง กด `H` เพื่อเปิด/ปิดข้อมูลตรวจสอบเพิ่มเติม ปุ่ม Sharpness เดิมถูกยกเลิกแล้ว
+
+เส้นทางกล้องและภาพเดี่ยวอ่าน **เฉพาะจุดที่แต้มสี** โดยค่าเริ่มต้นเป็นสีน้ำเงิน: ตรวจสี → กรอง noise → จัดกริดเซลล์ → ตำแหน่งจุด 1–6 → รวม marker → ข้อความไทย/อังกฤษ
+
+จุดนูนที่ไม่มีสีไม่ถูกนำมาสร้างเซลล์หรือ decode ค่าเริ่มต้น `--roi off` ไม่โหลด/รัน YOLO เปิด `--roi yolo` เพื่อทดลองใช้โมเดลตรวจจุดเสนอกรอบบริเวณข้อความก่อนอ่านสี ส่วนเส้นทาง YOLO เดิมยังเก็บไว้สำหรับประเมินและฝึกโมเดล โดยเรียก `YOLOBrailleDetector(dot_color=None)` อย่างชัดเจน ไม่ใช่ค่าเริ่มต้นของกล้อง
+
+## ตัวอ่านเฉพาะสี
+
+[สาเหตุที่แก้ อัลกอริทึม ข้อจำกัด และผลทดสอบ](docs/COLORED_BRAILLE_ONLY_TH.md)
+
+รองรับเฉพาะ `--dot-color blue` และ `red` กด `C` ในหน้ากล้องเพื่อสลับสีระหว่างใช้งาน ระบบล้างผลสีเดิมและรอผลเฟรมใหม่ โดยไม่เปิดกล้องหรือโหลดโมเดลซ้ำ สีอื่นและจุดที่ไม่มีสีไม่ถูกนำไปอ่าน
+
+กล้องติดตามตำแหน่งกรอบด้วย optical flow เมื่อขยับเล็กน้อย หากติดตามไม่ได้หรือผลเกินอายุ 1 วินาที จะล้างข้อความยืนยันและรอเฟรมใหม่ กล้องยังทำงานต่อ ค่า sharpening เริ่มต้นเป็น `0` เพื่ออ่านขอบสีจากภาพเดิม
+
+สำหรับกล้องบนขาตั้ง ใช้ `--scan-roi X1 Y1 X2 Y2` กำหนดพื้นที่อ่านคงที่เป็นสัดส่วน 0–1 ของภาพกล้อง ตัดพื้นที่ก่อนตรวจสี/YOLO และจำกัด zoom ภายในกรอบนั้น ค่าเริ่มต้นยังอ่านทั้งภาพ ตัวอ่านแยกก้อนสีที่มีแกนจุดสองก้อนก่อนสร้าง Grid และตรวจมุมแต่ละแถบข้อความเมื่อมุมรวมจัดแถวไม่ได้
+
+[รีวิวกล้องบนขาตั้ง วิธีเลือก ROI ผลทดสอบ และวิธีเก็บภาพหนังสือเพื่อฝึก YOLO](docs/MOUNTED_CAMERA_REVIEW_TH.md)
+
+## งาน Dataset / YOLO
+
+สร้าง dataset เบรลล์ไทยสังเคราะห์ **3,000 ภาพ**: train 2,400 / validation 300 / test 300 อยู่ใน `datasets/thai_synthetic/seed_20260908/` พร้อม label จุดและข้อมูลเซลล์/บรรทัด ภาพฝึกไม่มีกรอบ debug ทับ
+
+**[รีวิวภาษาไทย สิ่งที่ทำ ผลตรวจ และวิธีฝึกต่อ](docs/SYNTHETIC_DATASET.md)**
+
+ข้อมูลที่สร้างในเครื่องถูกแยกจาก source code ด้วย `.gitignore` หากเริ่มจาก clone ใหม่ ให้สร้างด้วยคำสั่งนี้:
+
+```powershell
+.venv\Scripts\python.exe tools\training\generate_yolo_training.py
 ```
 
-### 2. วิธีเปิดใช้งาน Scanner 
+ตัวสร้างไม่เขียนทับ dataset เดิม การเพิ่มข้อมูลใช้ `--extend-from` และ seed ใหม่ โดยคง validation/test เดิมไว้ ดูตัวอย่างในเอกสารรีวิว
 
-#### วิธีที่ง่ายที่สุด (บน Windows):
-- **ดับเบิ้ลคลิก** `Start_Scanner.bat` หรือ `Start_Scanner_4K.bat` หรือ `Start_Scanner_FHD.bat`
+## ฝึก YOLO
 
-#### หรือรันผ่าน Terminal:
-```bash
-# 🇹🇭 เปิดกล้องสแกนภาษาไทย (4K UHD)
-python camera_reader.py --lang thai --color blue --res 4k
-
-# 🇬🇧 เปิดกล้องสแกนภาษาอังกฤษ (Full HD)
-python camera_reader.py --lang english --color blue --res fhd
+```powershell
+.venv\Scripts\python.exe tools\training\train_yolo.py --data datasets/thai_synthetic/seed_20260908/data.yaml --epochs 30 --batch 8 --imgsz 640 --device cpu --name thai_synthetic_round1
 ```
 
----
+เก็บโมเดลทดลองใน `runs/detect/<ชื่อรอบ>/weights/` โดยไม่เขียนทับ production ใช้ `--weights` สำหรับฝึกรอบใหม่หรือ `--resume` สำหรับงานที่หยุดกลางคัน ประเมิน candidate ด้วย `tools/diagnostics/benchmark_yolo_stream.py --model <best.pt>` โหมด `--roi yolo` เลือกโมเดลเสนอ ROI ด้วย `--model <best.pt>` ได้ ส่วน `--roi off` ไม่ใช้ weights
 
-###  คีย์ลัดและควบคุมขณะเปิดกล้อง (Live Stream Hotkeys):
+## ใช้งานกล้องและภาพเดี่ยว
 
-| ปุ่ม / อุปกรณ์ | การทำงาน |
-|---|---|
-| **`[V]` / `[F]`** | **สลับความละเอียดกล้อง (4K UHD <-> Full HD 1080p <-> HD 720p)** |
-| **`[E]`** | **ปรับระดับความคมชัด (OFF -> LOW -> MED -> HIGH -> ULTRA)** |
-| **`[Z]` / `[+]` / ล้อเมาส์ขึ้น** | **Zoom In** — ซูมขยายภาพ (+0.2x ถึง 4.0x) |
-| **`[X]` / `[-]` / ล้อเมาส์ลง** | **Zoom Out** — ซูมออก (-0.2x) |
-| **`[R]` / `[0]` / ดับเบิ้ลคลิก** | **Reset Zoom** — รีเซ็ตการซูมกลับ 1.0x |
-| **`[SPACE]`** | **Speak Now** — สั่งออกเสียงข้อความปัจจุบันทันที |
-| **`[C]`** | สลับสีจุดแต้ม (Blue $\rightarrow$ Red $\rightarrow$ Green $\rightarrow$ Black) |
-| **`[L]`** | สลับภาษา (Thai $\leftrightarrow$ English) |
-| **`[A]`** | เปิด/ปิดระบบออกเสียงอัตโนมัติ (Toggle Auto-Speak) |
-| **`[P]`** | บันทึกภาพ Snapshot ความละเอียดสูงลง `output/` |
-| **`[Q]` / `[ESC]`** | ปิดกล้อง / ออกจากโปรแกรม |
+ดับเบิลคลิก `main.bat` เพื่อเปิดเมนูเดียว: scanner, scanner พร้อม Piper offline หรือ Edge online,
+ตรวจกล้อง, ทดสอบภาพ/ภาพตัวอย่างเดิม และติดตั้ง dependencies ลง `.venv` แบบเลือกเอง
+ลากไฟล์ภาพมาวางบน `main.bat` ได้ หรือเรียกคำสั่งโดยตรง:
 
----
-
-### 3. คำสั่งทดสอบกล้อง & ความแม่นยำ
-
-```bash
-#  ทดสอบและเช็คความละเอียดสูงสุดของกล้อง
-python test_camera.py
-
-#  สร้างชุดภาพทดสอบ 39 ภาพ (ทั้งคำเดี่ยว สระ วรรณยุกต์ และประโยค)
-python generate_test.py
-
-#  รันแบบทดสอบความแม่นยำอัตโนมัติ (100% Passing Benchmark)
-python test_accuracy.py
+```powershell
+.\main.bat scan
+.\main.bat scan --res 1080p --camera 0
+.\main.bat piper
+.\main.bat edge
+.\main.bat camera-test
+.\main.bat image "path/to/image.png" --lang thai --no-show
+.\main.bat setup
 ```
 
----
+โหมด `scan` ไม่เปิดเสียง; เลือก `piper` เพื่อเปิดปุ่ม S อ่าน/อ่านซ้ำ และ B หยุดเสียง
+โดยต้องมี environment/โมเดลในเครื่องก่อน ไม่มีการดาวน์โหลดอัตโนมัติหรือ Cloud fallback
+ดู [Piper offline](docs/PIPER_OFFLINE_TTS_TH.md), [Edge online ไทย/อังกฤษและวิธีติดตั้งหลัง pull](docs/EDGE_TTS_TH.md) และ [ผล audit launcher](docs/MAIN_LAUNCHER_AUDIT_TH.md)
 
-## สถาปัตยกรรมระบบ (Pipeline Architecture)
+`main.bat` หาไฟล์โปรเจกต์จากตำแหน่งของตัวเอง จึงเรียกจากโฟลเดอร์อื่นได้
+path ภาพแบบ relative อ้างอิงโฟลเดอร์ที่เรียกคำสั่ง ส่วน scanner options ส่งต่อให้ CLI เดิม
+หาก dependencies ไม่ครบ จะแจ้งให้รัน `main.bat setup` โดยไม่ติดตั้งเอง
 
-```mermaid
-graph TD
-    A[กล้อง 4K/FHD Webcam หรือภาพถ่าย] --> B[MJPG Frame Stream & Sharpness Filter]
-    B --> C[Digital Zoom Cropping & Scaling]
-    C --> D[HSV Color Mask Segmentation]
-    D --> E[Morphological Cleanup & Contour Finding]
-    E --> F[2D Lattice & 2x3 Virtual Grid Fitting]
-    F --> G[Context-Aware Multi-Language Decoder]
-    G --> H[ภาพ Annotated พร้อม 2x3 Grid และคำแปล]
-    G --> I[Frame Stabilization & Text-to-Speech Engine]
+คำสั่ง Python เดิมยังใช้ได้สำหรับงานพัฒนา:
+
+```powershell
+.venv\Scripts\python.exe camera_reader.py --lang thai --res fhd --sharp 0 --dot-color blue
+.venv\Scripts\python.exe yolo_detector.py path/to/image.png --lang thai --dot-color blue --save --dump-stream
 ```
 
----
+กด `C` สลับน้ำเงิน/แดง, `P` บันทึก snapshot, `D` บันทึกภาพที่ตัวอ่านใช้จริงพร้อม trace รายเซลล์ และ `Q`/Esc ออก กล้องยังรองรับ zoom, sharpness และสลับความละเอียด `--dump-stream` สร้างภาพ crop สำหรับตรวจสอบและ JSON พร้อมสีของเฟรมนั้นและสถานะ ROI
 
-## แผนการพัฒนาถัดไป (Roadmap for Dragon Q6A Edge AI)
+ทดลองให้ YOLO เสนอ ROI ก่อนอ่านสี:
 
-1. **Hardware Integration:** ต่อกล้อง USB / MIPI เข้ากับบอร์ด Dragon Q6A
-2. **Real-time Camera Stream:** พัฒนาโหมดสแกนแบบ Real-time FPS สูง
-3. **NPU Optimization:** แปลงโมเดลเพื่อเร่งความเร็วบน NPU ชิป Edge AI
+```powershell
+.venv\Scripts\python.exe camera_reader.py --lang thai --res fhd --dot-color blue --roi yolo
+```
+
+โมเดลปัจจุบันตรวจ `braille_dot` จึงใช้กรอบรวมจุดพร้อมขอบเผื่อ ไม่ใช่โมเดลตรวจกรอบบรรทัด/ตัวอักษรโดยตรง ติดตาม ROI ระหว่างรอบ YOLO และค้นหาใหม่ทุกประมาณ 0.35 วินาทีหรือเมื่อ tracking หลุด ภายใน ROI อ่านเฉพาะจุดสีที่เลือก หาก YOLO หา ROI ไม่พบจะรอเฟรมใหม่ โหมดนี้ยังต้องเทียบกับ `--roi off` บนหนังสือจริง
+
+## Lexicon ช่วยจัดอันดับภาษาไทย
+
+ติดตั้ง dependencies จาก `requirements.txt` หรือ `uv sync --locked` เพื่อใช้ชุดคำทั่วไป
+ที่มากับ `pythainlp==5.3.3` ระบบโหลดชุดคำครั้งเดียวและไม่ดาวน์โหลดข้อมูลระหว่างอ่านกล้อง
+หากชุดคำใช้ไม่ได้ จะคงผลจาก structural parser พร้อมบันทึกคำเตือน
+
+- ตรวจโครงสร้างและ source cells ของทุก segmentation ก่อนให้คะแนน
+- จับคำที่ขอบพยางค์ภายในช่วงเดียวกัน ไม่จับข้ามช่องว่างหรือบรรทัด
+- คำที่ไม่มีในชุดคำยังเป็น candidate ได้ รวมถึงชื่อเฉพาะและคำใหม่
+- ใช้คำเป็นหลักฐานรองหลังตรวจ raw patterns, กฎเบรลล์ และการประกอบอักษร ไม่ทำให้คู่แข่งผิดเพียงเพราะไม่พบคำ
+- ยืนยันด้วย lexicon ได้เมื่อค้น candidate ครบ มีเพียงทางเดียวครอบคลุมคำครบ เป็นมาตรฐาน มีหลักฐาน raw cells ไร้คำเตือน ผ่านเกณฑ์ confidence ที่กำหนด และมีอย่างน้อยสองคำพร้อมคำที่ครอบคลุมหลายพยางค์ ทางเลือกอื่นยังเก็บเป็น valid/plausible ใน trace
+- หากมีหลายทางที่ครอบคลุมคำครบ หลักฐานไม่เพียงพอ หรือค้น candidate ไม่ครบภายในขอบเขต 128 ทาง
+  จะคง `NEEDS_REVIEW` และไม่ยืนยันข้อความนั้น
+
+`decode_thai_details(cells, lexicon=ชุดคำ)` ใช้ชุดคำของผู้เรียกได้;
+ส่ง `lexicon=set()` เพื่อปิดหลักฐาน lexicon โดยคง parser เดิม
+ข้อมูล debug เดิมอยู่ใน `raw_patterns`, `parser_trace`, `semantic_tokens` และ
+`structural_syllables`; ทางเลือกทั้งหมดกับคะแนนอยู่ใน `segmentation_runs` และ
+`lexicon_ranking` ส่วน `syllables` แสดงทางที่เลือกสำหรับ renderer
+
+## มาตรฐาน raw Braille และ compatibility ภาษาไทย
+
+เส้นทาง scanner ใช้กฎ raw ของ Liblouis Thai Grade 1 เป็นหลัก โดยแยกจาก semantic
+compatibility ของโปรเจกต์ ลำดับเลือกคือ `standard > compatibility > lexicon`
+และเก็บ candidate ที่ถูกปฏิเสธไว้ใน `segmentation_runs` พร้อมเหตุผลของแต่ละ mode
+
+กฎ raw ที่ตรวจสอบและเพิ่มในรอบนี้อยู่ใน `thai_raw_rules.py`: `15` แทนรูปเขียน `ัว`
+จึงห้ามนำตัวสะกดจากพยางค์ถัดไปมาทำให้ `ัว` กลายเป็น `ว` โดยไม่มีหลักฐานจาก raw
+ส่วนอัวที่ลดรูปแล้วใช้ `ว` (`2456`) ยังคงอ่านผ่าน parser เดิม ไม่ห้ามตัวสะกด `ร`
+และไม่ใช้รายชื่อคำมาตัดสิน ดูแหล่งตารางที่ตรึง revision ไว้ใน `RAW_RULES_SOURCE`
+
+การเปลี่ยนนี้เป็น **scanner subset ที่ตรวจสอบกฎอัวแล้ว** ไม่ใช่การกลับตาราง Liblouis
+ทุกกฎแบบสมบูรณ์ กฎ segmentation/สระอื่นที่มีอยู่ยังคงเดิมเพื่อรักษา regression ของ P1
+
+ค่าเริ่มต้นไม่รับ raw รูปปิดที่อาศัย semantic compatibility เพียงอย่างเดียว หากเป็นข้อมูล
+legacy ที่ใช้ `15` เป็นสระอัวแบบปิด ให้เปิด mode อย่างชัดเจน:
+
+```python
+from thai_decoder import decode_thai_details
+
+result = decode_thai_details(cells, compatibility=True)
+```
+
+`decode_cells()` และ `decode_cells_verbose()` รับ keyword เดียวกัน ส่วน `compose_tokens()`
+เป็น semantic adapter จึงคง compatibility สำหรับ token เดิมที่ไม่มี raw encoding
+เมื่อทั้งสอง mode ให้คำตอบที่ต่างกันและยัง valid ระบบแสดง standard ก่อน แต่คืน
+`NEEDS_REVIEW`; lexicon จัดอันดับได้เฉพาะภายในระดับ mode เดียวกัน ไม่สามารถชุบ
+candidate ที่ผิดโครงสร้างหรือทำให้ compatibility แซง standard ได้
+
+debug มี `standard_valid`, `standard_error`, `compatibility_valid`,
+`compatibility_error`, `accepted_mode` และ `acceptance_reason` โดยไม่แก้ raw cells,
+patterns, source cell IDs หรือกฎ confirmation/Vision/Grid
+
+## ตรวจสอบ
+
+```powershell
+.venv\Scripts\python.exe -m unittest discover -s tests -v
+.venv\Scripts\python.exe tools\training\validate_dataset.py datasets/thai_synthetic/seed_20260908
+.venv\Scripts\python.exe tools\diagnostics\benchmark_yolo_stream.py
+```
+
+ผลตรวจวันที่ 13 กันยายน 2026: ผ่าน **99 tests**, ทดลอง ROI ด้วยโมเดลจริงบนภาพสังเคราะห์น้ำเงิน/แดงตรงและเอียง 3° ผ่าน **4/4 กรณี** และ benchmark เส้นทาง YOLO เดิม **99/99** ผลเหล่านี้ไม่ใช่ตัวเลขความแม่นยำของหนังสือจริงหรือ FPS กล้อง/บอร์ด
+
+ยังต้องทดสอบกับภาพดิบจากกล้องจริงในสภาพแสงและการแต้มสีที่หลากหลาย พิกัด/รูปแบบสีใน tests ไม่ได้ใช้เป็นค่าตายตัวใน algorithm
+
+[การทำงานของ cell stream และข้อจำกัด](docs/YOLO_CELL_STREAM.md) · [ประวัติโค้ด CV ที่เลิกใช้](archive/legacy_cv/README.md)

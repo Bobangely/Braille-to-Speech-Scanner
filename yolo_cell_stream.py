@@ -1,0 +1,514 @@
+"""Shared Braille geometry, ordered cells, and the YOLO crop-reading path.
+
+YOLO weights detect dots; CellStream proposes and rereads individual crops.
+The painted-dot reader reuses geometry and slot assignment with color evidence.
+Coordinates and line IDs survive every stage.
+"""
+
+from itertools import islice
+import math
+
+import cv2
+import numpy as np
+from cell_geometry import grid_error, slot_points, validate_cell_grids
+
+
+class UnreadableBrailleFrame(ValueError):
+    """The image cannot provide a reliable cell grid; retry with a new frame."""
+
+
+def _clusters(values, tolerance):
+    """Bounded cluster span, avoiding transitive chains between rows."""
+    groups = []
+    for index in np.argsort(values):
+        if not groups or values[index] - values[groups[-1][0]] > tolerance:
+            groups.append([int(index)])
+        else:
+            groups[-1].append(int(index))
+    return groups
+
+
+def _spacing(points, diameters=None, *, nearest_out=None, axis_angle=None):
+    if len(points) < 2:
+        return None
+    nearest = []
+    basis = None
+    if axis_angle is not None:
+        cosine, sine = math.cos(axis_angle), math.sin(axis_angle)
+        basis = np.array([[cosine, -sine], [sine, cosine]])
+    for start in range(0, len(points), 128):
+        delta = points[start:start+128, None, :] - points[None, :, :]
+        measured = np.linalg.norm(delta, axis=2)
+        # วัดตามแกน Grid: คู่จุดทแยงมีระยะยุคลิดยาวกว่าระยะหนึ่งช่อง
+        distances = measured if basis is None else np.max(np.abs(delta @ basis), axis=2)
+        distances[measured < 1.0] = np.inf
+        if diameters is not None:
+            # Residual duplicate centres inside a dot cannot define grid pitch.
+            within_dot = .8*np.minimum(diameters[start:start+128, None], diameters[None, :])
+            distances[measured < within_dot] = np.inf
+        nearest.extend(distances.min(axis=1))
+    if nearest_out is not None:
+        nearest_out.extend(nearest)
+    finite = np.asarray(nearest)[np.isfinite(nearest)]
+    return float(np.percentile(finite, 25)) if len(finite) else None
+
+
+def _angle(points, spacing):
+    angles = []
+    for start in range(0, len(points), 128):
+        delta = points[None, :, :] - points[start:start+128, None, :]
+        dx, dy = delta[..., 0], delta[..., 1]
+        valid = (dx > .7*spacing) & (dx < 2.8*spacing) & (np.abs(dy) < .25*dx)
+        angles.extend(np.arctan2(dy[valid], dx[valid]))
+    return float(np.median(angles)) if angles else 0.0
+
+
+def _cell_pitch(column_centers, anchors, spacing):
+    if len(anchors) < 2:
+        fallback = 2.375 * spacing
+        if len(anchors) == 0 or len(column_centers) < 4:
+            return fallback
+        # anchor เดียววัด pitch ตรง ๆ ไม่ได้ ต้องให้คอลัมน์อื่นรองรับทุกตำแหน่ง
+        deltas = np.asarray(column_centers) - anchors[0]
+        candidates = {fallback}
+        for delta in np.abs(deltas):
+            for offset in (0, spacing, -spacing):
+                candidates.update((delta + offset) / divisor for divisor in range(1, 5)
+                                  if 1.8*spacing <= (delta + offset) / divisor <= 6*spacing)
+        supported = []
+        for pitch in sorted(candidates):
+            left_error = np.abs(deltas - np.round(deltas/pitch)*pitch)
+            right_delta = deltas - spacing
+            right_error = np.abs(right_delta - np.round(right_delta/pitch)*pitch)
+            residual = np.minimum(left_error, right_error) / spacing
+            if np.max(residual) <= .25:
+                supported.append((float(np.mean(residual**2)), pitch,
+                                  tuple(right_error < left_error)))
+        # หากระยะที่ยังเป็นไปได้กลับฝั่งคอลัมน์ต่างกัน ให้คงความไม่แน่นอนเดิม
+        if supported and len({phase for _, _, phase in supported}) == 1:
+            return min(supported, key=lambda item: (item[0], -item[1]))[1]
+        return fallback
+    differences = np.diff(anchors)
+    candidates = [2.375 * spacing]
+    for difference in differences:
+        candidates.extend(difference / divisor for divisor in range(1, 5)
+                          if 1.8 * spacing <= difference / divisor <= 6 * spacing)
+    def score(pitch):
+        offsets = (column_centers - anchors[0]) % pitch
+        residual = np.minimum(np.minimum(offsets, pitch-offsets), np.abs(offsets-spacing))
+        # A complete two-column cell anchors its LEFT column, not either column.
+        # Otherwise a fractional pitch can score well by treating another full
+        # cell's left column as a right column, flipping sparse cells by one dot.
+        anchor_delta = np.asarray(anchors) - anchors[0]
+        anchor_error = np.abs(anchor_delta - np.round(anchor_delta/pitch)*pitch)
+        return (float(np.mean(np.minimum(residual / spacing, 1)**2) +
+                      np.mean(np.minimum(anchor_error / spacing, 1)**2)), -pitch)
+    return min(candidates, key=score)
+
+
+def _line_rows(rows, centers, spacing):
+    """Separate incompatible row gaps and reject runs with no clear line phase."""
+    gaps = np.diff(centers)
+    nearby = gaps[(gaps >= .65*spacing) & (gaps <= 1.5*spacing)]
+    row_pitch = float(np.median(nearby)) if len(nearby) else spacing
+    # Clearly separated text bands must fit their own row centroids. A partial
+    # line elsewhere in the image cannot disable the three-row fit below.
+    breaks = np.flatnonzero(gaps > 3*spacing) + 1
+    if len(breaks):
+        lines = []
+        boundaries = [0, *breaks, len(rows)]
+        for start, end in zip(boundaries, boundaries[1:]):
+            band, _ = _line_rows(rows[start:end], centers[start:end], spacing)
+            lines.extend(band)
+        return lines, row_pitch
+    # A single observed three-row line can have uneven painted centroids.
+    # Limit this relaxation to that complete line: relaxing every inter-row
+    # gap would join sparse neighbouring lines and lose their phase.
+    if len(rows) == 3:
+        single_pitch = float((centers[-1] - centers[0]) / 2)
+        if (.65*spacing <= single_pitch <= 1.6*spacing and
+                np.all(np.abs(gaps / single_pitch - 1) <= .25)):
+            return [[(center, row) for row, center in zip(rows, centers)]], single_pitch
+    bands = []
+    for row, center in zip(rows, centers):
+        gap = (center-bands[-1][-1][0])/row_pitch if bands else None
+        if gap is None or gap > 2.15 or abs(gap-round(gap)) > .15:
+            bands.append([])
+        bands[-1].append((center, row))
+
+    lines = []
+    for band in bands:
+        extent = int(round((band[-1][0]-band[0][0])/row_pitch)) + 1
+        if extent > 3 and extent % 3:
+            raise UnreadableBrailleFrame('Ambiguous Braille line boundaries: include complete '
+                             'three-row cells or isolate a line in the camera ROI')
+        current = []
+        for item in band:
+            if current and item[0]-current[0][0] > 2.35*row_pitch:
+                lines.append(current)
+                current = []
+            current.append(item)
+        lines.append(current)
+    return lines, row_pitch
+
+
+def _row_clusters(values, spacing):
+    rows = []
+    for fragment in _clusters(values, .45*spacing):
+        combined = rows[-1]+fragment if rows else fragment
+        if (rows and np.median(values[fragment])-np.median(values[rows[-1]]) < .35*spacing
+                and np.ptp(values[combined]) <= .7*spacing):
+            rows[-1] = combined
+        else:
+            rows.append(fragment)
+    return rows
+
+
+def _band_angle(points, spacing, angle):
+    """Fit three parallel dot rows using long-baseline evidence from one band."""
+    cosine, sine = math.cos(angle), math.sin(angle)
+    uv = points @ np.array([[cosine, -sine], [sine, cosine]])
+    extent = np.ptp(uv[:, 1])
+    if len(points) < 6 or not 1.3*spacing <= extent <= 3.4*spacing:
+        return angle
+    x, y = uv[:, 0]-np.mean(uv[:, 0]), uv[:, 1]
+    row = np.clip(np.rint(2*(y-y.min())/extent), 0, 2)
+    for _ in range(4):
+        if len(np.unique(row)) != 3:
+            return angle
+        design = np.column_stack((np.ones(len(x)), x, row))
+        (offset, slope, pitch), _, rank, _ = np.linalg.lstsq(design, y, rcond=None)
+        if rank != 3 or not .65*spacing <= pitch <= 1.6*spacing:
+            return angle
+        updated = np.clip(np.rint((y-offset-slope*x)/pitch), 0, 2)
+        if np.array_equal(updated, row):
+            residual = np.abs(y-(offset+slope*x+pitch*row))
+            return angle+math.atan(slope) if residual.max() <= .38*spacing else angle
+        row = updated
+    return angle
+
+
+def _column_groups(columns, spacing):
+    """Prefer the measured dot pitch when adjacent candidate pairs overlap."""
+    groups, index = [], 0
+    while index < len(columns):
+        if index+1 < len(columns) and columns[index+1]-columns[index] <= 1.22*spacing:
+            gap = columns[index+1]-columns[index]
+            if (index+2 < len(columns) and columns[index+2]-columns[index+1] <= 1.22*spacing
+                    and abs(columns[index+2]-columns[index+1]-spacing) < abs(gap-spacing)):
+                groups.append([index])
+                index += 1
+                continue
+            groups.append([index, index+1])
+            index += 2
+        else:
+            groups.append([index])
+            index += 1
+    return groups
+
+
+def plan_cells(dots, image_shape, *, _basis=None):
+    """Split rows into lines of at most three rows BEFORE assigning any cell.
+
+    Line crops are clipped at separators, even when the inter-line gap is less
+    than the old 2.2-dot-spacing threshold. A source dot belongs to one line only.
+    """
+    if not dots:
+        return []
+    points = np.asarray([d['center'] for d in dots], dtype=float)
+    diameters = np.sqrt([max(0, dot.get('area', 0)) for dot in dots])
+    nearest = []
+    spacing = _spacing(points, diameters, nearest_out=nearest) if _basis is None else _basis[0]
+    if spacing is None or spacing < 2:
+        return []  # an isolated dot has no observable 2x3 reference grid
+    angle = _angle(points, spacing) if _basis is None else _basis[1]
+    cosine, sine = math.cos(angle), math.sin(angle)
+    rotation = np.array([[cosine, -sine], [sine, cosine]])
+    rectified = points @ rotation
+    if _basis is None:
+        spacing = _spacing(points, diameters, axis_angle=angle) or spacing
+    # A mounted camera does not make a curved page's lines parallel. Separate
+    # clearly distant text bands BEFORE fitting their individual angle/rows.
+    # Smaller gaps keep the existing joint line-phase checks for sparse lines.
+    order = np.argsort(rectified[:, 1])
+    breaks = np.flatnonzero(np.diff(rectified[order, 1]) > 3*spacing)+1
+    if len(breaks) and _basis is None:
+        cells, line_offset = [], 0
+        nearest = np.asarray(nearest)
+        for band in np.split(order, breaks):
+            # A separated text band has its own measured dot pitch. Reusing
+            # the page-wide pitch can split a smaller line into several lines
+            # before the cell grid is ever estimated.
+            band_points = points[band]
+            band_nearest = nearest[band]
+            band_nearest = band_nearest[np.isfinite(band_nearest)]
+            band_spacing = (float(np.percentile(band_nearest, 25))
+                            if len(band) > 1 and len(band_nearest) else spacing)
+            local_angle = _angle(band_points, band_spacing)
+            def fit(candidate):
+                values = band_points @ np.array([-math.sin(candidate), math.cos(candidate)])
+                groups = _row_clusters(values, band_spacing)
+                if len(groups) != 3:
+                    return float('inf')
+                centers = np.array([np.median(values[g]) for g in groups])
+                dy = (centers[-1]-centers[0])/2
+                if not .65*band_spacing <= dy <= 1.6*band_spacing or np.max(np.abs(np.diff(centers)/dy-1)) > .25:
+                    return float('inf')
+                return sum(np.sum((values[g]-c)**2) for g,c in zip(groups, centers))/len(values)
+            best_angle = angle
+            if not np.isfinite(fit(angle)):
+                candidates = [angle, local_angle, _band_angle(band_points, band_spacing, angle)]
+                best_angle = min(candidates, key=fit)
+            band_spacing = _spacing(band_points, diameters[band], axis_angle=best_angle) or band_spacing
+            local = plan_cells([dots[i] for i in band], image_shape, _basis=(band_spacing, best_angle))
+            for cell in local:
+                cell['source_dot_ids'] = [int(band[i]) for i in cell['source_dot_ids']]
+                cell['line_id'] += line_offset
+            cells.extend(local)
+            if local:
+                line_offset = local[-1]['line_id']+1
+        return cells
+    rows = _row_clusters(rectified[:, 1], spacing)
+    row_centers = [float(np.median(rectified[row, 1])) for row in rows]
+    lines, row_pitch = _line_rows(rows, row_centers, spacing)
+
+    cells = []
+    for line_id, line in enumerate(lines):
+        indices = [i for _, group in line for i in group]
+        observed_rows = [v for v, _ in line]
+        if len(line) == 3:
+            dy = (observed_rows[-1] - observed_rows[0]) / 2
+            expected_rows = [observed_rows[0] + i*dy for i in range(3)]
+        elif len(line) == 2:
+            gap = observed_rows[1]-observed_rows[0]
+            dy = gap/2 if gap > 1.5*row_pitch else gap
+            expected_rows = [observed_rows[0] + i*dy for i in range(3)]
+        else:
+            dy = row_pitch
+            expected_rows = [observed_rows[0] + i*dy for i in range(3)]
+        lower = expected_rows[0] - .45*dy
+        upper = expected_rows[-1] + .45*dy
+        if line_id:
+            lower = max(lower, (lines[line_id-1][-1][0]+observed_rows[0])/2)
+        if line_id+1 < len(lines):
+            upper = min(upper, (observed_rows[-1]+lines[line_id+1][0][0])/2)
+        local_x = rectified[indices, 0]
+        column_groups = _clusters(local_x, .45*spacing)
+        columns = np.asarray([np.median(local_x[group]) for group in column_groups])
+        groups = _column_groups(columns, spacing)
+        pair_widths = [columns[g[1]]-columns[g[0]] for g in groups if len(g) == 2]
+        # Nearest-dot distance can measure vertical pitch, not column pitch.
+        # Fit the horizontal scale from this line's observed complete pairs
+        # before deciding whether a sparse cell's two columns belong together.
+        if len(pair_widths) >= 2:
+            groups = _column_groups(columns, float(np.median(pair_widths)))
+            pair_widths = [columns[g[1]]-columns[g[0]] for g in groups if len(g) == 2]
+        dx = float(np.median(pair_widths)) if pair_widths else spacing
+        anchors = [float(columns[g[0]]) for g in groups if len(g) == 2]
+        pitch = _cell_pitch(columns, anchors, dx)
+
+        for line_cell_index, group in enumerate(groups):
+            column_values = columns[group]
+            column_ambiguous = False
+            if len(group) == 2:
+                left, right = map(float, column_values)
+            else:
+                x = float(column_values[0])
+                if anchors:
+                    anchor = min(anchors, key=lambda a: abs(a-x))
+                    def error(left):
+                        delta = anchor-left
+                        return abs(delta-round(delta/pitch)*pitch)
+                    errors = [error(x), error(x-dx)]
+                    column_ambiguous = abs(errors[0]-errors[1]) < .15*dx
+                    is_right = errors[1] < errors[0]
+                    # With only one anchor, a prefix at the beginning has no
+                    # measurable character pitch. Keep this uncertainty explicit.
+                    if len(anchors) == 1:
+                        column_ambiguous = True
+                else:
+                    is_right, column_ambiguous = False, True
+                left, right = (x-dx, x) if is_right else (x, x+dx)
+                # A sparse column's opposite slots must fit between neighbouring
+                # cells. Only switch phase when the other phase uniquely fits.
+                low = ((columns[groups[line_cell_index-1][-1]]+x)/2
+                       if line_cell_index else -np.inf)
+                high = ((x+columns[groups[line_cell_index+1][0]])/2
+                        if line_cell_index+1 < len(groups) else np.inf)
+                fits = [low <= a and b <= high for a, b in ((x, x+dx), (x-dx, x))]
+                if sum(fits) == 1:
+                    is_right = fits[1]
+                    left, right = (x-dx, x) if is_right else (x, x+dx)
+                    column_ambiguous = False
+            source_ids = [indices[i] for column in group for i in column_groups[column]]
+            slot_uv = np.array([(left if d < 3 else right, expected_rows[d % 3]) for d in range(6)])
+            source_slots = slot_uv @ rotation.T
+            overview_pattern = set()
+            for index in source_ids:
+                delta = (rectified[index]-slot_uv) / np.array([dx, dy])
+                nearest = int(np.argmin(np.linalg.norm(delta, axis=1)))
+                overview_pattern.add(nearest+1)
+            quad_uv = np.array([[left-.45*dx, lower], [right+.45*dx, lower],
+                                [right+.45*dx, upper], [left-.45*dx, upper]])
+            if line_cell_index:
+                separator = (columns[groups[line_cell_index-1][-1]] + column_values[0]) / 2
+                quad_uv[[0, 3], 0] = np.maximum(quad_uv[[0, 3], 0], separator)
+            if line_cell_index+1 < len(groups):
+                separator = (column_values[-1] + columns[groups[line_cell_index+1][0]]) / 2
+                quad_uv[[1, 2], 0] = np.minimum(quad_uv[[1, 2], 0], separator)
+            quad = quad_uv @ rotation.T
+            center = tuple(np.mean(source_slots, axis=0))
+            bbox = (max(0, int(np.floor(quad[:, 0].min()))), max(0, int(np.floor(quad[:, 1].min()))),
+                    min(image_shape[1], int(np.ceil(quad[:, 0].max()))),
+                    min(image_shape[0], int(np.ceil(quad[:, 1].max()))))
+            if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+                continue
+            cells.append(dict(dots=frozenset(overview_pattern), center=center,
+                x=center[0], y=center[1], line_id=line_id, line_cell_index=line_cell_index,
+                reading_x=float((left+right)/2), dot_spacing=dx, cell_pitch=pitch,
+                pitch_ambiguous=len(anchors) < 2,
+                column_ambiguous=column_ambiguous, row_ambiguous=(len(line) == 1 or (len(line) == 2 and observed_rows[-1]-observed_rows[0] < 1.5*row_pitch)),
+                source_dot_ids=source_ids, crop_quad=quad.tolist(),
+                grid=dict(expected_cols=[float(source_slots[1, 0]), float(source_slots[4, 0])],
+                          expected_rows=[float(np.mean(source_slots[[r, r+3], 1])) for r in range(3)],
+                          slots={d+1: tuple(p) for d, p in enumerate(source_slots)}, bbox=bbox)))
+    return validate_cell_grids(cells, image_shape)
+
+
+def crop_cell(image, cell, canvas_size=320):
+    """Warp the isolated ROI at a fixed dot scale; white padding prevents giant dots.
+
+    Returns the image for YOLO and its transform back to source-image coordinates.
+    """
+    quad = np.asarray(cell['crop_quad'], np.float32)
+    scale = 32.0 / cell['dot_spacing']
+    width = max(2, int(round(np.linalg.norm(quad[1]-quad[0])*scale)))
+    height = max(2, int(round(np.linalg.norm(quad[3]-quad[0])*scale)))
+    shrink = min(1.0, (canvas_size-8)/max(width, height))
+    width, height = max(2, round(width*shrink)), max(2, round(height*shrink))
+    x, y = (canvas_size-width)//2, (canvas_size-height)//2
+    destination = np.float32([[x, y], [x+width-1, y], [x+width-1, y+height-1], [x, y+height-1]])
+    transform = cv2.getPerspectiveTransform(quad, destination)
+    patch = cv2.warpPerspective(image, transform, (canvas_size, canvas_size),
+                               borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255))
+    # warpPerspective can sample outside the ROI; erase that context explicitly.
+    patch[:y] = 255
+    patch[y+height:] = 255
+    patch[:, :x] = 255
+    patch[:, x+width:] = 255
+    return patch, np.linalg.inv(transform)
+
+
+def read_cell(cell, crop_dots, inverse):
+    """Map isolated dot evidence through its transform to this cell's six slots."""
+    error = cell.get('geometry_error') or grid_error(cell)
+    if error:
+        return dict(cell, overview_dots=cell['dots'], dots=frozenset(), read_pattern=frozenset(),
+                    crop_status='invalid_grid', geometry_status='invalid', geometry_error=error,
+                    crop_diagnostics=dict(detections=0, matched_slots=0, outside_grid=0, duplicate_slots=0),
+                    read_dots=[], crop_disagreement=bool(cell['dots']))
+    slots = slot_points(cell)
+    accepted = {}
+    detections = outside_grid = duplicate_slots = 0
+    for dot in crop_dots:
+        detections += 1
+        source = cv2.perspectiveTransform(np.float32([[dot['center']]]), inverse)[0, 0]
+        distances = np.linalg.norm(slots-source, axis=1)
+        index = int(np.argmin(distances))
+        if distances[index] > .38*cell['dot_spacing']:
+            outside_grid += 1
+            continue
+        if index in accepted:
+            duplicate_slots += 1
+            if accepted[index]['confidence'] >= dot['confidence']:
+                continue
+        accepted[index] = dict(dot, center=tuple(map(float, source)),
+                               area=(cell['dot_spacing']*.5)**2, bbox=None)
+    result = dict(cell, overview_dots=cell['dots'], dots=frozenset(i+1 for i in accepted),
+                  read_pattern=frozenset(i+1 for i in accepted),
+                  crop_status='read' if accepted else 'empty',
+                  crop_diagnostics=dict(detections=detections, matched_slots=len(accepted),
+                      outside_grid=outside_grid, duplicate_slots=duplicate_slots),
+                  read_dots=list(accepted.values()))
+    result['crop_disagreement'] = result['dots'] != result['overview_dots']
+    return result
+
+
+class CellStream:
+    def __init__(self, predict_crops, batch_size=8, max_cells=256):
+        if not 1 <= batch_size <= 32 or max_cells < 1:
+            raise ValueError('crop batch must be 1..32; max_cells must be positive')
+        self.predict_crops, self.batch_size, self.max_cells = predict_crops, batch_size, max_cells
+
+    def iter_cells(self, image, overview_dots):
+        planned = plan_cells(overview_dots, image.shape)
+        if len(planned) > self.max_cells:
+            raise UnreadableBrailleFrame(f'{len(planned)} cell candidates exceed limit {self.max_cells}; narrow the camera ROI')
+        iterator = iter(planned)
+        while batch := list(islice(iterator, self.batch_size)):
+            valid = [grid_error(cell, image.shape) is None for cell in batch]
+            readable = [cell for cell, ok in zip(batch, valid) if ok]
+            crops = [crop_cell(image, cell) for cell in readable]
+            predictions = list(self.predict_crops([patch for patch, _ in crops])) if crops else []
+            if len(predictions) != len(readable):
+                raise RuntimeError('YOLO crop result count does not match submitted cells')
+            reads = iter(zip(predictions, crops))
+            for cell, ok in zip(batch, valid):
+                if not ok:
+                    yield read_cell(cell, [], np.eye(3))
+                else:
+                    dots, (_, inverse) = next(reads)
+                    yield read_cell(cell, dots, inverse)
+
+
+def pair_markers(cells, lang='thai'):
+    """One-cell lookahead: emit marker+body together, never across a line or gap."""
+    from config_thai import THAI_READING_MULTI_CELL
+    iterator = iter(cells)
+    current = next(iterator, None)
+    while current is not None:
+        following = next(iterator, None)
+        if following is None:
+            yield [current]
+            break
+        distance = following['reading_x']-current['reading_x']
+        adjacent = (current['line_id'] == following['line_id']
+                    and 0 < distance <= 1.5*max(current['cell_pitch'], following['cell_pitch']))
+        adjacent = adjacent and distance <= min(current.get('adjacency_limit', float('inf')),
+                                               following.get('adjacency_limit', float('inf')))
+        if (lang.lower() in ('thai', 'th') and adjacent
+                and not current.get('row_ambiguous') and not following.get('row_ambiguous')):
+            # Never blindly turn a genuine dot-3 vowel into prefix-6. This repair
+            # is restricted to a leading marker whose column phase is ambiguous.
+            if (current['dots'] == frozenset({3}) and current['column_ambiguous']
+                    and current['line_cell_index'] == 0
+                    and (frozenset({6}), following['dots']) in THAI_READING_MULTI_CELL):
+                current = dict(current, dots=frozenset({6}), marker_repair='leading_3_to_6')
+                slots = current['grid']['slots']
+                shift = np.asarray(slots[4])-slots[1]
+                adjusted = {key: tuple(np.asarray(point)-shift) for key, point in slots.items()}
+                current['grid'] = dict(current['grid'], slots=adjusted,
+                    expected_cols=[x-shift[0] for x in current['grid']['expected_cols']],
+                    expected_rows=[y-shift[1] for y in current['grid']['expected_rows']],
+                    bbox=tuple(max(0, int(round(value-shift[index % 2])))
+                               for index, value in enumerate(current['grid']['bbox'])))
+                current['x'] -= shift[0]
+                current['y'] -= shift[1]
+                current['center'] = (current['x'], current['y'])
+                current['reading_x'] -= current['dot_spacing']
+                # Once the leading prefix has a known phase, these two cells
+                # provide a pitch measurement where there was only one anchor.
+                if current.get('pitch_ambiguous') and following.get('pitch_ambiguous'):
+                    measured_pitch = following['reading_x']-current['reading_x']
+                    current['cell_pitch'] = measured_pitch
+                    following = dict(following, cell_pitch=measured_pitch)
+                # crop_quad and read_pattern retain the actual stage-2 input/read.
+            symbol = THAI_READING_MULTI_CELL.get((current['dots'], following['dots']))
+            if symbol:
+                current = dict(current, symbol=symbol, symbol_span=2)
+                following = dict(following, symbol_continuation=True)
+                yield [current, following]
+                current = next(iterator, None)
+                continue
+        yield [current]
+        current = following
