@@ -131,13 +131,23 @@ class IndexFingerSkeletonDetector:
     """
     ตรวจจับเฉพาะโครงกระดูกนิ้วชี้ (Landmark 5, 6, 7, 8) โดยตัดนิ้วอื่นออก
     รองรับทั้ง MediaPipe Tasks (v1.x+) และ MediaPipe Solutions (v0.10.x)
+
+    v2: ลด thresholds 0.5->0.3, num_hands=2, EMA smoothing, miss grace 5 frames
     """
+
+    SMOOTHING_ALPHA = 0.45
+    MISS_GRACE_FRAMES = 5
 
     def __init__(self, model_path=None):
         self.available = False
         self._detector_type = None
         self._landmarker = None
         self._hands_solution = None
+        self._smooth_tip = None
+        self._smooth_pts = None
+        self._miss_counter = 0
+        self._last_tip = None
+        self._last_pts = None
 
         default_model = Path(__file__).resolve().parent / 'models' / 'hand_landmarker.task'
         task_path = Path(model_path) if model_path else default_model
@@ -153,10 +163,10 @@ class IndexFingerSkeletonDetector:
                 options = vision.HandLandmarkerOptions(
                     base_options=base_options,
                     running_mode=vision.RunningMode.IMAGE,
-                    num_hands=1,
-                    min_hand_detection_confidence=0.5,
-                    min_hand_presence_confidence=0.5,
-                    min_tracking_confidence=0.5
+                    num_hands=2,
+                    min_hand_detection_confidence=0.3,
+                    min_hand_presence_confidence=0.3,
+                    min_tracking_confidence=0.3
                 )
                 self._landmarker = vision.HandLandmarker.create_from_options(options)
                 self._detector_type = 'tasks'
@@ -172,15 +182,46 @@ class IndexFingerSkeletonDetector:
                 if hasattr(mp, 'solutions') and hasattr(mp.solutions, 'hands'):
                     self._hands_solution = mp.solutions.hands.Hands(
                         static_image_mode=False,
-                        max_num_hands=1,
-                        min_detection_confidence=0.5,
-                        min_tracking_confidence=0.5
+                        max_num_hands=2,
+                        min_detection_confidence=0.3,
+                        min_tracking_confidence=0.3
                     )
                     self._detector_type = 'solutions'
                     self.available = True
                     logger.info("IndexFingerSkeletonDetector loaded via MediaPipe Solutions.")
             except Exception as e:
                 logger.warning("MediaPipe Solutions fallback failed: %s", e)
+
+
+    def _ema_smooth(self, new_tip, new_pts):
+        """Apply exponential moving average to reduce jitter."""
+        a = self.SMOOTHING_ALPHA
+        if self._smooth_tip is None:
+            self._smooth_tip = np.array(new_tip, dtype=float)
+            self._smooth_pts = [np.array(p, dtype=float) for p in new_pts] if new_pts else None
+        else:
+            self._smooth_tip = a * np.array(new_tip) + (1 - a) * self._smooth_tip
+            if new_pts and self._smooth_pts and len(new_pts) == len(self._smooth_pts):
+                self._smooth_pts = [a * np.array(p) + (1 - a) * sp
+                                    for p, sp in zip(new_pts, self._smooth_pts)]
+            elif new_pts:
+                self._smooth_pts = [np.array(p, dtype=float) for p in new_pts]
+        tip = (int(round(self._smooth_tip[0])), int(round(self._smooth_tip[1])))
+        pts = [(int(round(p[0])), int(round(p[1]))) for p in self._smooth_pts] if self._smooth_pts else new_pts
+        return tip, pts
+
+    def _pick_best_index_finger(self, all_hands, w, h):
+        """Pick the hand with the most extended index finger."""
+        best_hand = None
+        best_ext = -1
+        for hand in all_hands:
+            tip = hand[8]
+            mcp = hand[5]
+            ext = math.hypot((tip.x - mcp.x) * w, (tip.y - mcp.y) * h)
+            if ext > best_ext:
+                best_ext = ext
+                best_hand = hand
+        return best_hand
 
     def _refine_fingertip_contour(self, bgr_frame, tip_pt, index_pts):
         """
@@ -266,6 +307,8 @@ class IndexFingerSkeletonDetector:
     def detect_index_finger(self, bgr_frame):
         """
         ตรวจจับเฉพาะปลายนิ้วชี้ โดยล็อกพิกัดจุดสัมผัสให้อยู่บนตัวเล็บนิ้วชี้พอดี
+
+        v2: เพิ่ม multi-hand selection, EMA smoothing, miss grace period
         Returns:
             tip_pt: (x, y) พิกัดเป้าเล็งบนเล็บนิ้วชี้ หรือ None
             index_pts: [(x, y), ...] พิกัดข้อนิ้ว หรือ None
@@ -284,13 +327,14 @@ class IndexFingerSkeletonDetector:
                     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
                     result = self._landmarker.detect(mp_image)
                     if result.hand_landmarks:
-                        hand = result.hand_landmarks[0]
+                        # เลือกมือที่นิ้วชี้ยื่นมากที่สุด
+                        hand = self._pick_best_index_finger(result.hand_landmarks, w, h)
+                        if hand is None:
+                            hand = result.hand_landmarks[0]
                         index_pts = [
                             (int(hand[idx].x * w), int(hand[idx].y * h))
                             for idx in (5, 6, 7, 8)
                         ]
-                        # ล็อกจุดสัมผัสให้อยู่บนตัวเล็บนิ้วชี้พอดี (ช่วง 80% จาก Landmark 7 โคนเล็บ ไปยัง Landmark 8 ปลายนิ้ว)
-                        # ไม่ดันพิกัดเลยออกไปนอกนิ้ว เพื่อให้ตรงกับจุดที่เนื้อนิ้วสัมผัสกระดาษจริง 1:1
                         p7 = np.array(index_pts[2], dtype=float)
                         p8 = np.array(index_pts[3], dtype=float)
                         nail_center = p7 + 0.80 * (p8 - p7)
@@ -315,10 +359,27 @@ class IndexFingerSkeletonDetector:
                 except Exception as exc:
                     logger.error("Solutions inference error: %s", exc)
 
-        # Fallback: หาก MediaPipe ตรวจไม่ติด ให้ใช้ Contour ร่นพิกัดเข้ามาบนตัวเล็บ
-        if tip_pt is None:
-            tip_pt, index_pts = self._detect_contour_apex(bgr_frame)
+        # Apply EMA smoothing if MediaPipe returned a result
+        if tip_pt is not None:
+            tip_pt, index_pts = self._ema_smooth(tip_pt, index_pts)
+            self._last_tip = tip_pt
+            self._last_pts = index_pts
+            self._miss_counter = 0
+            return tip_pt, index_pts
 
+        # Miss grace: keep showing last known position for a few frames
+        if self._last_tip is not None and self._miss_counter < self.MISS_GRACE_FRAMES:
+            self._miss_counter += 1
+            return self._last_tip, self._last_pts
+
+        # Reset smoothing state after grace period expires
+        self._smooth_tip = None
+        self._smooth_pts = None
+        self._last_tip = None
+        self._last_pts = None
+
+        # Fallback: หาก MediaPipe ตรวจไม่ติด ให้ใช้ Contour ร่นพิกัดเข้ามาบนตัวเล็บ
+        tip_pt, index_pts = self._detect_contour_apex(bgr_frame)
         return tip_pt, index_pts
 
     def draw_skeleton(self, image, index_pts, tip_pt=None):
