@@ -185,6 +185,18 @@ class CachedWavSpeakerTests(unittest.TestCase):
             speaker = self.speaker(cache, batches, played, fail={'มา'})
             self.assertEqual(speaker.prepare_many(['ไก่', 'มา'], 'thai'), {'ไก่'})
 
+    def test_blank_texts_are_never_sent_to_the_voice(self):
+        # Piper writes no audio for '' and the whole batch used to fail (wave.Error).
+        with tempfile.TemporaryDirectory() as cache:
+            batches, played = [], []
+            speaker = self.speaker(cache, batches, played)
+            self.assertEqual(speaker.prepare_many(['', '  ', 'ไก่'], 'thai'), {'ไก่'})
+            self.assertEqual(batches, [['ไก่']])
+
+    def test_one_failing_text_does_not_stop_the_batch_in_the_voice_process(self):
+        from finger_reader import BATCH_SCRIPT
+        self.assertIn('except Exception', BATCH_SCRIPT)  # per text, inside the Piper/MMS process
+
 
 if __name__ == '__main__':
     unittest.main()

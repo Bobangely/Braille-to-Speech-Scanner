@@ -84,7 +84,7 @@ def _line_cells(points: np.ndarray, top: float, fmt: PageFormat, words: list[str
     """Cells of one line; with ``trusted`` False the rows are unsure, so nothing is named."""
     pitch, spacing = fmt.cell_pitch_mm, fmt.dot_spacing_mm
     origin = _column_origin(points[:, 0], pitch, spacing)
-    offset = points[:, 0] - origin
+    offset = points[:, 0] - _local_origins(points[:, 0], origin, pitch, spacing)
     index = np.round((offset - np.where(_is_right(offset, pitch, spacing), spacing, 0)) / pitch).astype(int)
     right = _is_right(offset, pitch, spacing)
     row = np.clip(np.round((points[:, 1] - top) / spacing), 0, 2).astype(int)
@@ -119,6 +119,27 @@ def _column_origin(xs: np.ndarray, pitch: float, spacing: float) -> float:
     return origin + np.floor((leftmost + spacing / 2) / pitch) * pitch
 
 
+def _local_origins(xs: np.ndarray, origin: float, pitch: float, spacing: float) -> np.ndarray:
+    """Cell-0 origin seen from each dot's neighbourhood (about 2.5 cells each side).
+
+    Word adds 'Expanded' only between characters, so the cells inside a 2-cell
+    letter sit closer and a printed line can drift by more than half a cell.
+    Walking left to right, each origin is taken within half a cell of the
+    previous one, so cell indices follow the drift instead of jumping a cell;
+    ties (a lone column) keep the phase closest to the previous one.
+    """
+    def error(near, candidate):
+        phase = np.mod(near - candidate, pitch)
+        return np.minimum.reduce([phase, np.abs(phase - spacing), pitch - phase]).sum()
+    result = np.empty(len(xs))
+    reference = origin
+    for i in np.argsort(xs):
+        near = xs[np.abs(xs - xs[i]) <= 2.5 * pitch]
+        candidates = [c - pitch * np.round((c - reference) / pitch) for n in near for c in (n, n - spacing)]
+        reference = result[i] = min(candidates, key=lambda c: error(near, c) + 1e-3 * abs(c - reference))
+    return result
+
+
 def _is_right(offset: np.ndarray, pitch: float, spacing: float) -> np.ndarray:
     phase = np.mod(offset, pitch)
     return np.abs(phase - spacing) < np.minimum(phase, pitch - phase)
@@ -140,6 +161,8 @@ def _decode_words(slots: list[list], words: list[str]) -> None:
                  for i, s in enumerate(group)]
         unreadable = False
         for token in decode_cells_verbose(cells, 'thai'):
+            if token.get('consumed'):
+                continue  # a prefix cell already named by its letter's token
             name = None if token.get('warning') else symbol_name(token['char'])
             unreadable |= name is None
             for s in group[token['cell_start']:token['cell_end'] + 1]:

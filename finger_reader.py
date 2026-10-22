@@ -117,7 +117,7 @@ class CachedWavSpeaker:
         self.model, self.backend = Path(model), backend
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.python = python_executable or sys.executable
+        self.python = str(Path(python_executable).resolve()) if python_executable else sys.executable
         self._synthesize = synthesize or self._synthesize_in_tts_env
         self._play = play or _winsound_play
 
@@ -127,6 +127,7 @@ class CachedWavSpeaker:
 
     def prepare_many(self, texts, lang: str = 'thai') -> set[str]:
         """Synthesize the uncached texts in one batch; return the texts ready to play."""
+        texts = [t for t in texts if t.strip()]  # Piper writes no audio for blank text
         missing = [(t, self._path(t)) for t in dict.fromkeys(texts) if not self._path(t).is_file()]
         if missing:
             try:
@@ -150,16 +151,27 @@ class CachedWavSpeaker:
         # One process, one model load: synthesize_wav caches the loaded voice per model.
         payload = json.dumps(dict(model=str(model), backend=self.backend,
                                   jobs=[[text, str(path)] for text, path in jobs]))
-        code = ('import json, os, sys; sys.path.insert(0, %r); from piper_tts import synthesize_wav\n'
-                'j = json.load(sys.stdin)\n'
-                'for text, out in j["jobs"]:\n'
-                '    tmp = out + ".tmp.wav"\n'
-                '    synthesize_wav(j["model"], text, tmp, backend=j["backend"])\n'
-                '    os.replace(tmp, out)\n' % str(ROOT))
-        done = subprocess.run([self.python, '-X', 'utf8', '-c', code], input=payload.encode('utf-8'),
-                              capture_output=True)
+        done = subprocess.run([self.python, '-X', 'utf8', '-c', BATCH_SCRIPT % str(ROOT)],
+                              input=payload.encode('utf-8'), capture_output=True)
         if done.returncode:
             raise RuntimeError(done.stderr.decode('utf-8', 'replace')[-500:])
+        if done.stderr.strip():  # texts that failed one by one; the rest are cached
+            log.warning('speech synthesis skipped: %s', done.stderr.decode('utf-8', 'replace')[-500:])
+
+
+# Runs inside the Piper/MMS environment: one model load, one failed text never stops the rest.
+BATCH_SCRIPT = '''import json, os, sys
+sys.path.insert(0, %r)
+from piper_tts import synthesize_wav
+job = json.load(sys.stdin)
+for text, out in job["jobs"]:
+    tmp = out + ".tmp.wav"
+    try:
+        synthesize_wav(job["model"], text, tmp, backend=job["backend"])
+        os.replace(tmp, out)
+    except Exception as error:
+        print(repr(text), error, file=sys.stderr)
+'''
 
 
 def _winsound_play(path: Path | None) -> None:

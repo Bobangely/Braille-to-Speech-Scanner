@@ -24,7 +24,49 @@ def read(lines, angle=0):
     return read_page(frame, calib, FMT)
 
 
+def word_like_page(text, drift_mm=0.49):
+    """A colored line laid out like Word: 'Expanded' only between characters.
+
+    The cells inside a 2-cell letter sit drift_mm closer than the slate pitch,
+    and every later cell inherits the shortfall.
+    """
+    import cv2
+    page = render_page(FMT, px_per_mm=PX, lines=[[]])
+    origin_x, origin_y = FMT.line_origins_mm[0]
+    x, radius = origin_x, round(FMT.dot_diameter_mm / 2 * PX)
+    for char in text:
+        cells = text_to_braille_cells(char, 'thai') if char.strip() else [None]
+        for index, cell in enumerate(cells):
+            for dot in cell or ():
+                cx = x + (dot > 3) * FMT.dot_spacing_mm
+                cy = origin_y + (dot - 1) % 3 * FMT.dot_spacing_mm
+                cv2.circle(page, (round(cx * PX), round(cy * PX)), radius, (255, 0, 0), -1, cv2.LINE_AA)
+            x += FMT.cell_pitch_mm - (drift_mm if index < len(cells) - 1 else 0)
+    frame, _ = camera_view(page, rotated_corners(0), size=(1280, 960), background=200)
+    calib = calibrate(frame, FMT)
+    assert calib.ok, calib.reason
+    return read_page(frame, calib, FMT)
+
+
 class ReadPageTests(unittest.TestCase):
+    def test_two_cell_letter_names_both_of_its_cells(self):
+        # The decoder adds a consumed '' token for the prefix cell; it must not replace the name.
+        cells = read(page_lines(('ฃ ค',))).lines[0].cells
+        self.assertEqual([c.name for c in cells], ['ขอขวด', 'ขอขวด', None, 'คอควาย'])
+
+    def test_word_layout_drift_inside_a_line_is_followed(self):
+        text = 'ก ข ฃ ค ฅ ฆ ง จ ฉ ช ซ'  # three 2-cell letters: 1.5 mm shortfall by the end
+        page = word_like_page(text)
+        expected = [frozenset(c or ()) for c in text_to_braille_cells(text, 'thai')]
+        self.assertEqual([c.dots for c in page.lines[0].cells], expected)
+        self.assertNotIn('ไม่ทราบ', page.words)
+
+    def test_drift_beyond_half_a_cell_keeps_every_space(self):
+        # Seven 2-cell letters; the printed page drifted ~5 mm over the line (no Replace, slight shrink).
+        text = 'ฌ ญ ฎ ฏ ฐ ฑ ฒ ณ ด'
+        page = word_like_page(text, drift_mm=0.75)
+        self.assertEqual(page.words, tuple(text.split()))
+
     def assert_page(self, page, lines, words):
         self.assertEqual(len(page.lines), len(lines))
         for line, expected in zip(page.lines, lines):
