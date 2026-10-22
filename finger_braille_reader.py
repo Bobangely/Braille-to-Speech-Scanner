@@ -76,7 +76,12 @@ class NonBlockingSpeechQueue:
         if not text:
             return
         if interrupt:
-            # ล้างคิวที่ค้างเพื่อพูดตัวอักษรปัจจุบันทันที
+            # ตัดเสียงเดิมที่กำลังพูดค้างอยู่ทันทีเพื่อให้เสียงคำใหม่เล่นแบบ Real-time
+            if self._external_tts is not None and hasattr(self._external_tts, 'stop'):
+                try:
+                    self._external_tts.stop()
+                except Exception:
+                    pass
             while not self._queue.empty():
                 try:
                     self._queue.get_nowait()
@@ -89,32 +94,41 @@ class NonBlockingSpeechQueue:
 
     def _worker_loop(self):
         engine = None
+        has_real_thai_voice = False
         try:
             import pyttsx3
-            engine = pyttsx3.init()
-            engine.setProperty('rate', 160)
-            engine.setProperty('volume', 1.0)
-            voices = engine.getProperty('voices')
+            eng = pyttsx3.init()
+            eng.setProperty('rate', 170)
+            eng.setProperty('volume', 1.0)
+            voices = eng.getProperty('voices')
             for v in voices:
                 v_name = v.name.lower()
-                if any(k in v_name for k in ('thai', 'pattara', 'th-th')):
-                    engine.setProperty('voice', v.id)
+                if any(k in v_name for k in ('thai', 'pattara', 'th-th', 'th_th')):
+                    eng.setProperty('voice', v.id)
+                    engine = eng
+                    has_real_thai_voice = True
                     break
         except Exception as exc:
             logger.warning("pyttsx3 engine initialization fallback: %s", exc)
 
         while not self._stop_event.is_set():
             try:
-                text = self._queue.get(timeout=0.2)
+                text = self._queue.get(timeout=0.1)
             except queue.Empty:
                 continue
 
             try:
-                if engine is not None:
+                # 1. ใช้ออฟไลน์ Piper TTS เป็นลำดับแรกเพื่อการออกเสียงภาษาไทยที่ถูกต้องและตอบสนองทันที
+                if self._external_tts is not None:
+                    self._external_tts.speak(text, 'thai')
+                # 2. ใช้ pyttsx3 เฉพาะเมื่อมีเสียงไทยแท้จริงติดตั้งในระบบเท่านั้น
+                elif engine is not None and has_real_thai_voice:
                     engine.say(text)
                     engine.runAndWait()
-                elif self._external_tts is not None:
-                    self._external_tts.speak(text, 'thai')
+                # 3. Fallback สำหรับตัวอักษรละติน/อังกฤษ
+                elif engine is not None and any(ord(c) < 128 for c in text):
+                    engine.say(text)
+                    engine.runAndWait()
             except Exception as e:
                 logger.error("Speech playback error: %s", e)
 
@@ -164,9 +178,9 @@ class IndexFingerSkeletonDetector:
                     base_options=base_options,
                     running_mode=vision.RunningMode.IMAGE,
                     num_hands=2,
-                    min_hand_detection_confidence=0.3,
-                    min_hand_presence_confidence=0.3,
-                    min_tracking_confidence=0.3
+                    min_hand_detection_confidence=0.25,
+                    min_hand_presence_confidence=0.25,
+                    min_tracking_confidence=0.25
                 )
                 self._landmarker = vision.HandLandmarker.create_from_options(options)
                 self._detector_type = 'tasks'
@@ -183,8 +197,8 @@ class IndexFingerSkeletonDetector:
                     self._hands_solution = mp.solutions.hands.Hands(
                         static_image_mode=False,
                         max_num_hands=2,
-                        min_detection_confidence=0.3,
-                        min_tracking_confidence=0.3
+                        min_detection_confidence=0.25,
+                        min_tracking_confidence=0.25
                     )
                     self._detector_type = 'solutions'
                     self.available = True
@@ -272,8 +286,8 @@ class IndexFingerSkeletonDetector:
 
     def _detect_contour_apex(self, bgr_frame):
         """
-        Fallback ตรวจจับยอดปลายนิ้ว/ปลายเล็บโดยตรงจากรูปทรงของนิ้ว (Contour Apex)
-        เมื่อมุมกล้องมุมบนทำให้มองไม่เห็นข้อต่อนิ้วและ MediaPipe ตรวจไม่ติด
+        Fallback ตรวจจับปลายนิ้วชี้แบบ Direction-Aware เมื่อ MediaPipe ตรวจไม่ติด
+        คำนวณทิศทางการยื่นของแขน/ข้อมือ (จากล่าง ขึ้นบน หรือจากข้าง) หาปลายนิ้วได้อย่างถูกต้อง
         """
         h, w = bgr_frame.shape[:2]
         ycrcb = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2YCrCb)
@@ -287,21 +301,42 @@ class IndexFingerSkeletonDetector:
             return None, None
 
         c = max(contours, key=cv2.contourArea)
-        if cv2.contourArea(c) < 500:
+        if cv2.contourArea(c) < 350:
             return None, None
 
-        # หาจุดปลายสุดที่ยื่นลงด้านล่าง แล้วร่นกลับเข้ามาให้อยู่บนตัวเล็บ ไม่หลุดออกนอกนิ้ว
-        bottom_pt = tuple(c[c[:, :, 1].argmax()][0])
         M = cv2.moments(c)
-        if M['m00'] > 0:
-            cx = M['m10'] / M['m00']
-            cy = M['m01'] / M['m00']
-            # ร่นจุดแตะเข้ามาบนตัวเล็บ 15% เข้าหาศูนย์กลางเนื้อนิ้ว
-            nail_x = bottom_pt[0] * 0.85 + cx * 0.15
-            nail_y = bottom_pt[1] * 0.85 + cy * 0.15
-            apex = (int(round(nail_x)), int(round(nail_y)))
+        if M['m00'] == 0:
+            return None, None
+
+        cx = M['m10'] / M['m00']
+        cy = M['m01'] / M['m00']
+
+        # วิเคราะห์ทิศทางที่แขนยื่นเข้ามาจากขอบภาพ (ล่าง, บน, ซ้าย หรือ ขวา)
+        d_top = cy
+        d_bottom = h - cy
+        d_left = cx
+        d_right = w - cx
+        min_border = min(d_top, d_bottom, d_left, d_right)
+
+        pts = c.reshape(-1, 2)
+        if min_border == d_bottom:
+            # แขนยื่นจากด้านล่าง (มุมมองปกติของการอ่านโต๊ะ) -> ปลายนิ้วคือจุดที่อยู่บนสุด (Y ต่ำสุด)
+            tip_idx = int(np.argmin(pts[:, 1]))
+        elif min_border == d_top:
+            # แขนยื่นจากด้านบน -> ปลายนิ้วคือจุดที่อยู่ล่างสุด (Y สูงสุด)
+            tip_idx = int(np.argmax(pts[:, 1]))
+        elif min_border == d_right:
+            # แขนยื่นจากด้านขวา -> ปลายนิ้วคือจุดที่อยู่ซ้ายสุด (X ต่ำสุด)
+            tip_idx = int(np.argmin(pts[:, 0]))
         else:
-            apex = (int(bottom_pt[0]), max(0, int(bottom_pt[1] - 8)))
+            # แขนยื่นจากด้านซ้าย -> ปลายนิ้วคือจุดที่อยู่ขวาสุด (X สูงสุด)
+            tip_idx = int(np.argmax(pts[:, 0]))
+
+        extreme_pt = pts[tip_idx]
+        # ร่นจุดเป้าเล็งลงบนตัวเล็บ 15% เข้าหาศูนย์กลางเนื้อนิ้ว
+        nail_x = extreme_pt[0] * 0.85 + cx * 0.15
+        nail_y = extreme_pt[1] * 0.85 + cy * 0.15
+        apex = (int(round(nail_x)), int(round(nail_y)))
         return apex, [apex]
 
     def detect_index_finger(self, bgr_frame):
@@ -406,7 +441,7 @@ class FingerBrailleTouchReader:
     รองรับทั้งการอ่านรวมคำ (Word Mode) และอ่านสะกดทีละตัว (Character Mode)
     """
 
-    def __init__(self, external_tts=None, dwell_threshold=3, touch_radius=40, mode='word'):
+    def __init__(self, external_tts=None, dwell_threshold=1, touch_radius=26, mode='word'):
         self.detector = IndexFingerSkeletonDetector()
         self.speaker = NonBlockingSpeechQueue(fallback_tts=external_tts)
         self.dwell_threshold = dwell_threshold  # จำนวนเฟรมที่ต้องแช่เพื่อยืนยันการแตะ
@@ -551,18 +586,19 @@ class FingerBrailleTouchReader:
             return ENGLISH_NAMES[char.lower()]
         return char
 
-    def process(self, frame):
+    def process(self, display_frame, clean_frame=None):
         """
-        ประมวลผลต่อเฟรม:
-        1. หาปลายนิ้วชี้
-        2. เช็คการแตะ Cell
-        3. แสดงผล UI (Skeleton + Halo + Tooltip)
-        4. สั่งออกเสียงเมื่อแตะตัวใหม่
+        ประมวลผลต่อเฟรมแบบความเร็วสูง Zero-Latency:
+        1. หาปลายนิ้วชี้จาก clean_frame (ภาพบริสุทธิ์ไม่มีเส้น UI มารบกวน MediaPipe)
+        2. เช็คการแตะ Cell ด้วย Instant Response (ขยับเข้าคำใหม่พูดทันที)
+        3. แสดงผล UI (Skeleton + Halo + Tooltip) บน display_frame
+        4. สั่งออกเสียงทันทีผ่าน Background Voice Queue
         """
         if not self.enabled:
-            return frame, None
+            return display_frame, None
 
-        tip_pt, index_pts = self.detector.detect_index_finger(frame)
+        detect_source = clean_frame if clean_frame is not None else display_frame
+        tip_pt, index_pts = self.detector.detect_index_finger(detect_source)
         self.is_hand_present = (tip_pt is not None)
         touched_cell = None
 
@@ -573,12 +609,12 @@ class FingerBrailleTouchReader:
         else:
             badge_text = f"GRID: SCANNING ({len(self.cached_cells)} cells)" if self.cached_cells else "GRID: SCANNING..."
             badge_color = (0, 210, 255)
-        cv2.putText(frame, badge_text, (15, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (20, 20, 20), 2, cv2.LINE_AA)
-        cv2.putText(frame, badge_text, (15, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.44, badge_color, 1, cv2.LINE_AA)
+        cv2.putText(display_frame, badge_text, (15, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (20, 20, 20), 2, cv2.LINE_AA)
+        cv2.putText(display_frame, badge_text, (15, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.44, badge_color, 1, cv2.LINE_AA)
 
         if tip_pt is not None:
             # วาดกระดูกนิ้วชี้และเป้าเล็งปลายเล็บ
-            self.detector.draw_skeleton(frame, index_pts, tip_pt)
+            self.detector.draw_skeleton(display_frame, index_pts, tip_pt)
             cell_idx, cell_info = self.find_cell_at_point(tip_pt)
 
             if cell_idx != -1 and cell_info:
@@ -587,8 +623,8 @@ class FingerBrailleTouchReader:
                 char = cell_info['char']
 
                 # ไฮไลต์ Cell ที่กำลังแตะด้วยกรอบสีเหลืองทองและ Halo
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 230, 255), 3)
-                cv2.circle(frame, cell_info['center'], 18, (0, 230, 255), 2)
+                cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 230, 255), 3)
+                cv2.circle(display_frame, cell_info['center'], 18, (0, 230, 255), 2)
 
                 word = cell_info.get('word', char)
                 word_id = cell_info.get('word_id', cell_idx)
@@ -608,16 +644,16 @@ class FingerBrailleTouchReader:
                         spoken_text = word
                         label = f"คำ: {word}"
 
-                tooltip_x = max(10, min(frame.shape[1] - 240, tip_pt[0] - 50))
+                tooltip_x = max(10, min(display_frame.shape[1] - 240, tip_pt[0] - 50))
                 tooltip_y = max(40, tip_pt[1] - 30)
 
                 # พื้นหลังกล่องข้อความ Tooltip
                 (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
-                cv2.rectangle(frame, (tooltip_x - 5, tooltip_y - th - 8),
+                cv2.rectangle(display_frame, (tooltip_x - 5, tooltip_y - th - 8),
                               (tooltip_x + tw + 5, tooltip_y + 6), (20, 20, 20), -1)
-                cv2.rectangle(frame, (tooltip_x - 5, tooltip_y - th - 8),
+                cv2.rectangle(display_frame, (tooltip_x - 5, tooltip_y - th - 8),
                               (tooltip_x + tw + 5, tooltip_y + 6), (0, 230, 255), 1)
-                cv2.putText(frame, label, (tooltip_x, tooltip_y),
+                cv2.putText(display_frame, label, (tooltip_x, tooltip_y),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
 
                 # Dwell Detection
@@ -650,7 +686,7 @@ class FingerBrailleTouchReader:
             self.dwell_counter = 0
             self.current_candidate_idx = -1
 
-        return frame, touched_cell
+        return display_frame, touched_cell
 
     def close(self):
         if self.speaker:
