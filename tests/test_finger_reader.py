@@ -279,6 +279,13 @@ class HybridSpeakerTests(unittest.TestCase):
         speaker.speak('กอไก่'), speaker.speak('ไก่')
         self.assertEqual((online.spoken, piper.spoken), (['กอไก่'], ['ไก่']))
 
+    def test_without_fixed_set_every_text_tries_the_online_voice_first(self):
+        from finger_reader import HybridSpeaker
+        online, piper = self.Fake({'ไก่'}), self.Fake({'นก'})
+        speaker = HybridSpeaker(online, piper, fixed=None)
+        self.assertEqual(speaker.prepare_many(['ไก่', 'นก']), {'ไก่', 'นก'})
+        self.assertEqual((online.prepared, piper.prepared), ([['ไก่', 'นก']], [['นก']]))
+
     def test_piper_stands_in_when_the_online_voice_has_no_audio(self):
         from finger_reader import HybridSpeaker
         online, piper = self.Fake(()), self.Fake({'กอไก่'})
