@@ -58,6 +58,8 @@ class SpeechQueue:
         event = events[-1]
         if isinstance(event, EnterCell):
             text = event.name or UNKNOWN
+        elif symbol_name(event.text) != event.text:
+            return  # a one-symbol word: its name was spoken when the finger entered it
         elif self.ready(event.text):
             text = event.text
         else:

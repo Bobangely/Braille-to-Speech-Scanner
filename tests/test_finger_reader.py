@@ -252,6 +252,42 @@ class ReadingZoneTests(unittest.TestCase):
         self.assertNotIn(list(ZONE_BGR['reading']), left)
 
 
+class HybridSpeakerTests(unittest.TestCase):
+    """Fixed phrases come from the clear online voice's cache; everything else from Piper."""
+
+    class Fake:
+        def __init__(self, can):
+            self.can, self.prepared, self.spoken, self.stopped = set(can), [], [], 0
+
+        def prepare_many(self, texts, lang='thai'):
+            self.prepared.append(list(texts))
+            return {t for t in texts if t in self.can}
+
+        def speak(self, text, lang='thai'):
+            self.spoken.append(text)
+            return True
+
+        def stop(self):
+            self.stopped += 1
+
+    def test_fixed_phrases_use_the_online_voice_and_words_use_piper(self):
+        from finger_reader import HybridSpeaker
+        online, piper = self.Fake({'กอไก่'}), self.Fake({'กอไก่', 'ไก่'})
+        speaker = HybridSpeaker(online, piper, fixed={'กอไก่'})
+        self.assertEqual(speaker.prepare_many(['กอไก่', 'ไก่']), {'กอไก่', 'ไก่'})
+        self.assertEqual((online.prepared, piper.prepared), ([['กอไก่']], [['ไก่']]))
+        speaker.speak('กอไก่'), speaker.speak('ไก่')
+        self.assertEqual((online.spoken, piper.spoken), (['กอไก่'], ['ไก่']))
+
+    def test_piper_stands_in_when_the_online_voice_has_no_audio(self):
+        from finger_reader import HybridSpeaker
+        online, piper = self.Fake(()), self.Fake({'กอไก่'})
+        speaker = HybridSpeaker(online, piper, fixed={'กอไก่'})
+        self.assertEqual(speaker.prepare_many(['กอไก่']), {'กอไก่'})
+        speaker.speak('กอไก่')
+        self.assertEqual((online.spoken, piper.spoken), ([], ['กอไก่']))
+
+
 class CachedWavSpeakerTests(unittest.TestCase):
     def test_missing_tts_model_fails_at_startup(self):
         with tempfile.TemporaryDirectory() as cache:
@@ -295,6 +331,37 @@ class CachedWavSpeakerTests(unittest.TestCase):
             with self.assertLogs('finger_reader', 'WARNING'):
                 self.assertFalse(speaker.speak('ไม่เคยเตรียม', 'thai'))
             self.assertEqual((batches, played), ([], []))
+
+    def test_names_are_sent_to_tts_respelled_but_played_by_name(self):
+        with tempfile.TemporaryDirectory() as cache:
+            batches, played = [], []
+            speaker = self.speaker(cache, batches, played)
+            self.assertEqual(speaker.prepare_many(['งองู', 'ไก่ งองู'], 'thai'), {'งองู', 'ไก่ งองู'})
+            self.assertEqual(batches, [['งอ งู', 'ไก่ งอ งู']])
+            self.assertTrue(speaker.speak('งองู', 'thai'))
+
+    def test_edge_voice_gets_names_as_written(self):
+        with tempfile.TemporaryDirectory() as cache:
+            batches = []
+
+            def synthesize(model, jobs):
+                batches.append([text for text, _ in jobs])
+
+            CachedWavSpeaker(None, Path(cache), backend='edge', synthesize=synthesize).prepare_many(['งองู'])
+            self.assertEqual(batches, [['งองู']])  # respelling is for Piper only
+
+    def test_leading_silence_is_trimmed_after_synthesis(self):
+        import wave
+        from finger_reader import trim_leading_silence
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'a.wav'
+            samples = np.concatenate([np.zeros(16000), np.full(8000, 9000), np.zeros(4000)]).astype(np.int16)
+            with wave.open(str(path), 'wb') as out:
+                out.setnchannels(1), out.setsampwidth(2), out.setframerate(16000)
+                out.writeframes(samples.tobytes())
+            trim_leading_silence(path, keep_s=0.02)
+            with wave.open(str(path)) as trimmed:
+                self.assertEqual(trimmed.getnframes(), 320 + 8000 + 4000)  # 1 s of silence -> 20 ms
 
     def test_failed_texts_are_not_reported_ready(self):
         with tempfile.TemporaryDirectory() as cache:

@@ -51,6 +51,21 @@ SYMBOL_NAMES = {
 }
 
 
+# What the Piper voice is given for names it mispronounces (heard by the team);
+# names stay as they are everywhere else. Spaces split syllables the voice runs together.
+TTS_SPELLING = {
+    'งองู': 'งอ งู', 'ชอช้าง': 'ชอ ช้าง', 'ชอเฌอ': 'ชอ เชอ', 'ถอฐาน': 'ถอ สัน ถาน',
+    'ทอมณโฑ': 'ทอ นาง มน โท', 'รอเรือ': 'รอ เรือ', 'หอหีบ': 'หอ หีบ', 'อออ่าง': 'ออ อ่าง',
+    'ฮอนกฮูก': 'ฮอ นก ฮูก', 'ไม้เอก': 'ไม้ เอก', 'ไม้โท': 'ไม้ โท', 'ไม้จัตวา': 'ไม้ จัด ตา วา',
+    **{name: 'สะ ละ ' + name[3:] for name in SYMBOL_NAMES.values() if name.startswith('สระ')},
+}
+
+
+def tts_spelling(text):
+    """Text to synthesize for ``text``: every known name in it respelled for the voice."""
+    return ' '.join(TTS_SPELLING.get(part, part) for part in text.split(' '))
+
+
 def symbol_name(text):
     """Spoken name of one decoded Braille symbol; unknown text is spoken as is."""
     return SYMBOL_NAMES.get(text) or THAI_CONSONANT_NAMES.get(text, text)

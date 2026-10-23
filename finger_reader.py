@@ -18,13 +18,14 @@ import logging
 import subprocess
 import sys
 import time
+import wave
 from pathlib import Path
 
 from finger_state import EnterCell, FingerState
 from page_calibration import DEFAULT_FORMAT, CalibrationTracker, PageFormat, page_format
 from page_map import PageLearner, new_ink_dots, read_page as read_colored_page
 from speech_queue import UNKNOWN, SpeechQueue
-from thai_speech import SYMBOL_NAMES, THAI_CONSONANT_NAMES
+from thai_speech import SYMBOL_NAMES, THAI_CONSONANT_NAMES, tts_spelling
 
 ROOT = Path(__file__).resolve().parent
 log = logging.getLogger(__name__)
@@ -136,9 +137,10 @@ class CachedWavSpeaker:
 
     def __init__(self, model: Path, cache_dir: Path, python_executable: str | None = None,
                  backend: str = 'piper', synthesize=None, play=None):
-        if not Path(model).exists():
+        if backend != 'edge' and not Path(model).exists():  # Edge is an online voice: no model file
             raise FileNotFoundError(f'Thai speech model not found: {model}')
-        self.model, self.backend = Path(model), backend
+        self.model, self.backend = Path(model or ''), backend
+        self.spell = tts_spelling if backend == 'piper' else str  # respellings were tuned on Piper
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.python = str(Path(python_executable).resolve()) if python_executable else sys.executable
@@ -146,7 +148,8 @@ class CachedWavSpeaker:
         self._play = play or _winsound_play
 
     def _path(self, text: str) -> Path:
-        key = hashlib.sha1(f'{self.backend}|{self.model}|{text}'.encode('utf-8')).hexdigest()
+        # Keyed by what is synthesized, so a new respelling makes new audio.
+        key = hashlib.sha1(f'{self.backend}|{self.model}|{self.spell(text)}'.encode('utf-8')).hexdigest()
         return self.cache_dir / f'{key}.wav'
 
     def prepare_many(self, texts, lang: str = 'thai') -> set[str]:
@@ -155,9 +158,15 @@ class CachedWavSpeaker:
         missing = [(t, self._path(t)) for t in dict.fromkeys(texts) if not self._path(t).is_file()]
         if missing:
             try:
-                self._synthesize(self.model, missing)
+                self._synthesize(self.model, [(self.spell(t), path) for t, path in missing])
             except Exception as error:
                 log.warning('speech synthesis failed: %s', error)
+            for _, path in missing:
+                if path.is_file():
+                    try:
+                        trim_leading_silence(path)
+                    except (OSError, EOFError, wave.Error) as error:  # not a PCM WAV: play it untrimmed
+                        log.warning('cannot trim %s: %s', path.name, error)
         return {t for t in texts if self._path(t).is_file()}
 
     def speak(self, text: str, lang: str = 'thai') -> bool:
@@ -181,6 +190,45 @@ class CachedWavSpeaker:
             raise RuntimeError(done.stderr.decode('utf-8', 'replace')[-500:])
         if done.stderr.strip():  # texts that failed one by one; the rest are cached
             log.warning('speech synthesis skipped: %s', done.stderr.decode('utf-8', 'replace')[-500:])
+
+
+class HybridSpeaker:
+    """Fixed phrases (symbol names, messages) in a clear online voice, cached once;
+    page words in Piper. A fixed phrase without online audio falls back to Piper."""
+
+    def __init__(self, online, piper, fixed):
+        self.online, self.piper, self.fixed = online, piper, set(fixed)
+        self._online_ready: set[str] = set()
+
+    def prepare_many(self, texts, lang: str = 'thai') -> set[str]:
+        texts = list(texts)
+        self._online_ready |= self.online.prepare_many([t for t in texts if t in self.fixed], lang)
+        rest = [t for t in texts if t not in self._online_ready]
+        return {t for t in texts if t in self._online_ready} | self.piper.prepare_many(rest, lang)
+
+    def speak(self, text: str, lang: str = 'thai') -> bool:
+        return (self.online if text in self._online_ready else self.piper).speak(text, lang)
+
+    def stop(self) -> None:
+        self.piper.stop()  # one shared player: stopping either stops playback
+
+
+def trim_leading_silence(path: Path, keep_s: float = 0.02, threshold: float = 0.05) -> None:
+    """Cut the voice's silent lead-in (~0.25 s, up to 1 s) so playback starts with the sound."""
+    import numpy as np
+
+    with wave.open(str(path)) as source:
+        params, frames = source.getparams(), source.readframes(source.getnframes())
+    if params.sampwidth != 2:
+        return
+    samples = np.frombuffer(frames, np.int16).reshape(-1, params.nchannels)
+    level = np.abs(samples.astype(np.int32)).max(axis=1)
+    loud = np.nonzero(level > threshold * max(1, level.max()))[0]
+    start = max(0, int(loud[0]) - round(keep_s * params.framerate)) if len(loud) else 0
+    if start:
+        with wave.open(str(path), 'wb') as out:
+            out.setparams(params)
+            out.writeframes(samples[start:].tobytes())
 
 
 WORD_BGR = ((0, 140, 255), (255, 120, 0), (180, 0, 220), (0, 170, 0), (0, 0, 220), (200, 160, 0))
@@ -312,6 +360,11 @@ def main() -> int:
     parser.add_argument('--tts-thai-backend', choices=['piper', 'mms'], default='piper')
     parser.add_argument('--tts-python', help='Python executable of the Piper/MMS environment')
     parser.add_argument('--cache', type=Path, default=ROOT / 'output' / 'finger_speech')
+    parser.add_argument('--symbol-voice', choices=['piper', 'edge'], default='piper',
+                        help='edge: symbol names and messages in the online Edge voice (internet only the '
+                             'first time; cached after), page words still in Piper')
+    parser.add_argument('--edge-python', help='Python executable of the edge-tts environment')
+    parser.add_argument('--symbol-cache', type=Path, default=ROOT / 'output' / 'symbol_voice_edge')
     parser.add_argument('--log-latency', type=Path, help='CSV of per-event timings in seconds')
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--marker-size-mm', type=float, help='printed marker side, as in the book template')
@@ -322,6 +375,9 @@ def main() -> int:
     fmt = page_format(args.marker_size_mm)
 
     speaker = CachedWavSpeaker(args.tts_thai_model, args.cache, args.tts_python, args.tts_thai_backend)
+    if args.symbol_voice == 'edge':
+        online = CachedWavSpeaker(None, args.symbol_cache, args.edge_python, 'edge')
+        speaker = HybridSpeaker(online, speaker, fixed=symbol_texts())
     print('preparing fixed phrases...')
     missing = [t for t in symbol_texts() if t not in speaker.prepare_many(symbol_texts())]
     if missing:  # fail at startup, never silently while reading

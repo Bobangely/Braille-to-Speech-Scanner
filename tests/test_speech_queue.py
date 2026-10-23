@@ -57,6 +57,13 @@ class SpeechQueueTests(unittest.TestCase):
         self.queue.handle([EnterCell(0, 0, None)])
         self.assertEqual(self.speaker.calls[-1], ('speak', 'ไม่ทราบ'))
 
+    def test_one_symbol_word_is_not_repeated_after_its_name(self):
+        # 'ก ข ค': each letter is a word; its name was spoken on entry, so leaving it stays quiet.
+        self.queue.prepare_page(page(words=('ก', 'ไก่')))
+        self.queue.handle([EnterCell(0, 0, 'กอไก่')])
+        self.queue.handle([FinishWord(0, 'ก')])
+        self.assertEqual(self.speaker.calls, ['stop', ('speak', 'กอไก่')])
+
     def test_unprepared_word_is_spelled(self):
         with self.assertLogs('speech_queue', 'WARNING'):
             self.queue.handle([FinishWord(0, 'ไก่')])
