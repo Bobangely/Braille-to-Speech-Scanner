@@ -441,7 +441,7 @@ class FingerBrailleTouchReader:
     รองรับทั้งการอ่านรวมคำ (Word Mode) และอ่านสะกดทีละตัว (Character Mode)
     """
 
-    def __init__(self, external_tts=None, dwell_threshold=1, touch_radius=26, mode='word'):
+    def __init__(self, external_tts=None, dwell_threshold=8, touch_radius=26, mode='word'):
         self.detector = IndexFingerSkeletonDetector()
         self.speaker = NonBlockingSpeechQueue(fallback_tts=external_tts)
         self.dwell_threshold = dwell_threshold  # จำนวนเฟรมที่ต้องแช่เพื่อยืนยันการแตะ
@@ -452,6 +452,8 @@ class FingerBrailleTouchReader:
         self.grid_locked = False        # สถานะแช่แข็งพิกัด (Freeze Grid) เมื่อหน้ากระดาษสแกนสมบูรณ์แล้ว
         self.is_hand_present = False    # ติดตามว่ามีมือ/นิ้วอยู่ในกรอบกล้องหรือไม่
         self.current_candidate_idx = -1
+        self.current_candidate_id = None
+        self.no_touch_counter = 0
         self.dwell_counter = 0
         self.last_spoken_cell_idx = -1
         self.last_spoken_char = ""
@@ -586,6 +588,13 @@ class FingerBrailleTouchReader:
             return ENGLISH_NAMES[char.lower()]
         return char
 
+    def _check_reset_last_spoken(self):
+        """เมื่อยกนิ้วออกเกิน 5 เฟรม ให้รีเซ็ตประวัติเพื่อให้แตะคำเดิมซ้ำได้"""
+        self.no_touch_counter = getattr(self, 'no_touch_counter', 0) + 1
+        if self.no_touch_counter > 5:
+            self.last_spoken_word_id = -1
+            self.last_spoken_cell_idx = -1
+
     def process(self, display_frame, clean_frame=None):
         """
         ประมวลผลต่อเฟรมแบบความเร็วสูง Zero-Latency:
@@ -618,26 +627,46 @@ class FingerBrailleTouchReader:
             cell_idx, cell_info = self.find_cell_at_point(tip_pt)
 
             if cell_idx != -1 and cell_info:
+                self.no_touch_counter = 0
                 touched_cell = cell_info
                 x1, y1, x2, y2 = cell_info['bbox']
                 char = cell_info['char']
 
-                # ไฮไลต์ Cell ที่กำลังแตะด้วยกรอบสีเหลืองทองและ Halo
-                cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 230, 255), 3)
-                cv2.circle(display_frame, cell_info['center'], 18, (0, 230, 255), 2)
-
                 word = cell_info.get('word', char)
                 word_id = cell_info.get('word_id', cell_idx)
+
+                # Dwell Detection: นับเวลาแช่นิ้วบนคำ (word mode) หรือเซลล์ (char mode)
+                candidate_id = word_id if self.speech_mode == 'word' else cell_idx
+                if candidate_id == getattr(self, 'current_candidate_id', None):
+                    self.dwell_counter += 1
+                else:
+                    self.current_candidate_id = candidate_id
+                    self.current_candidate_idx = cell_idx
+                    self.dwell_counter = 1
+
+                # Visual Dwell Indicator: วาดกรอบและวงแหวนแสดงความคืบหน้าการแช่นิ้ว (~0.25-0.3s)
+                dwell_ratio = min(1.0, self.dwell_counter / max(1, self.dwell_threshold))
+                is_confirmed_dwell = (self.dwell_counter >= self.dwell_threshold)
+
+                # สีกรอบและ Halo เปลี่ยนตามสถานะ (ขณะแช่ = ส้ม/ทอง, เมื่อแช่ครบ = เขียวนีออน)
+                border_color = (0, 255, 120) if is_confirmed_dwell else (0, 200, 255)
+                cv2.rectangle(display_frame, (x1, y1), (x2, y2), border_color, 3 if is_confirmed_dwell else 2)
+
+                # วงกลมชาร์จรอบจุดกึ่งกลางเซลล์ ขยายตามความคืบหน้าการแช่
+                ring_radius = int(14 + 8 * dwell_ratio)
+                cv2.circle(display_frame, cell_info['center'], ring_radius, border_color, 2)
 
                 # กำหนดข้อความออกเสียงและ Tooltip ตาม speech_mode
                 if self.speech_mode == 'word':
                     spoken_text = word
-                    label = f"คำ: {word} [{char}]"
+                    prefix = "คำ" if is_confirmed_dwell else f"กำลังแตะ ({int(dwell_ratio*100)}%)"
+                    label = f"{prefix}: {word} [{char}]"
                 elif self.speech_mode == 'char':
                     spoken_text = self.get_spoken_name(char) or char
-                    label = f"[{char}] {spoken_text}"
+                    prefix = "สะกด" if is_confirmed_dwell else f"กำลังแตะ ({int(dwell_ratio*100)}%)"
+                    label = f"{prefix}: [{char}] {spoken_text}"
                 else:  # 'smart' (รูด = อ่านเป็นคำ / แช่ค้าง = สะกดทีละตัว)
-                    if self.dwell_counter > 15:
+                    if self.dwell_counter > 20:
                         spoken_text = self.get_spoken_name(char) or char
                         label = f"สะกด: [{char}] {spoken_text}"
                     else:
@@ -652,39 +681,44 @@ class FingerBrailleTouchReader:
                 cv2.rectangle(display_frame, (tooltip_x - 5, tooltip_y - th - 8),
                               (tooltip_x + tw + 5, tooltip_y + 6), (20, 20, 20), -1)
                 cv2.rectangle(display_frame, (tooltip_x - 5, tooltip_y - th - 8),
-                              (tooltip_x + tw + 5, tooltip_y + 6), (0, 230, 255), 1)
+                              (tooltip_x + tw + 5, tooltip_y + 6), border_color, 1)
                 cv2.putText(display_frame, label, (tooltip_x, tooltip_y),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
 
-                # Dwell Detection
-                if cell_idx == self.current_candidate_idx:
-                    self.dwell_counter += 1
-                else:
-                    self.current_candidate_idx = cell_idx
-                    self.dwell_counter = 1
-
-                # สั่งออกเสียงตามโหมด (อ่านเป็นคำ หรือ อ่านสะกดทีละตัว)
-                if self.dwell_counter >= self.dwell_threshold:
+                # สั่งออกเสียงเมื่อแช่นิ้วค้างครบ dwell_threshold (~0.25-0.3 วินาที)
+                if is_confirmed_dwell:
                     if self.speech_mode == 'word':
-                        # โหมดอ่านรวมคำ: พูดเมื่อนิ้วเลื่อนเข้าสู่กลุ่มคำใหม่ (ไม่พูดย้ำในคำเดิม)
                         if word_id != getattr(self, 'last_spoken_word_id', -1):
                             self.last_spoken_word_id = word_id
                             self.last_spoken_cell_idx = cell_idx
                             if spoken_text and spoken_text.strip():
                                 self.speaker.speak(spoken_text, interrupt=True)
-                    else:
-                        # โหมดสะกดรายตัว: พูดเมื่อนิ้วข้ามไปยังเซลล์ใหม่
+                    elif self.speech_mode == 'char':
                         if cell_idx != self.last_spoken_cell_idx:
                             self.last_spoken_cell_idx = cell_idx
                             self.last_spoken_char = char
                             if spoken_text and spoken_text.strip():
                                 self.speaker.speak(spoken_text, interrupt=True)
+                    else:  # 'smart'
+                        if word_id != getattr(self, 'last_spoken_word_id', -1) and self.dwell_counter == self.dwell_threshold:
+                            self.last_spoken_word_id = word_id
+                            self.last_spoken_cell_idx = cell_idx
+                            if spoken_text and spoken_text.strip():
+                                self.speaker.speak(spoken_text, interrupt=True)
+                        elif self.dwell_counter == 20:
+                            char_spoken = self.get_spoken_name(char) or char
+                            if char_spoken:
+                                self.speaker.speak(char_spoken, interrupt=True)
             else:
                 self.dwell_counter = 0
                 self.current_candidate_idx = -1
+                self.current_candidate_id = None
+                self._check_reset_last_spoken()
         else:
             self.dwell_counter = 0
             self.current_candidate_idx = -1
+            self.current_candidate_id = None
+            self._check_reset_last_spoken()
 
         return display_frame, touched_cell
 

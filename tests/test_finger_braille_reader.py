@@ -99,6 +99,28 @@ class TestFingerBrailleReader(unittest.TestCase):
         self.assertEqual(out_frame.shape, (480, 640, 3))
         self.assertIsNone(touched)
 
+    def test_dwell_threshold_prevents_accidental_swipes(self):
+        from unittest.mock import Mock
+        self.reader.speaker.speak = Mock()
+        cells = [{'center': (100, 100), 'width': 30, 'height': 50, 'dots': [1]}]
+        verbose = [{'char': 'ก'}]
+        self.reader.update_grid_cache(cells, verbose, decoded_text="กา")
+
+        # Mock index finger hovering directly over cell center
+        self.reader.detector.detect_index_finger = Mock(
+            return_value=((100, 100), [(100, 100), (100, 110), (100, 120), (100, 130)])
+        )
+
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        # Frames 1 through 7 (under dwell_threshold of 8) must NOT trigger speech
+        for _ in range(7):
+            self.reader.process(frame)
+            self.reader.speaker.speak.assert_not_called()
+
+        # Frame 8 (reaches dwell_threshold of 8) MUST trigger speech
+        self.reader.process(frame)
+        self.reader.speaker.speak.assert_called_once_with('กา', interrupt=True)
+
 
 if __name__ == '__main__':
     unittest.main()
