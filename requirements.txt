@@ -8,3 +8,4 @@ gTTS>=2.5.0
 ultralytics>=8.0.0
 PyYAML>=6.0
 pythainlp==5.3.3
+mediapipe>=0.10.0

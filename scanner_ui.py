@@ -48,7 +48,7 @@ class ScannerUI:
     def _label(self, draw, xy, text, size=15, color=TEXT, bold=False):
         draw.text(xy, text, font=self._font(size, bold), fill=color)
 
-    def _layout(self, extra_controls=False):
+    def _layout(self, extra_controls=0):
         w, h = self.size
         self.scale = min(1.25, w / 1050, h / 720)
         s = self.scale
@@ -59,11 +59,11 @@ class ScannerUI:
             sidebar = round(256*s)
             left = w - m - sidebar
             self.preview_card = (m, top, left-gap, bottom)
-            split = bottom - round((248+31*extra_controls)*s)
+            split = bottom - round((248+31*int(extra_controls))*s)
             self.result_card = (left, top, w-m, split-gap)
             self.control_card = (left, split, w-m, bottom)
         else:
-            split = max(top + round(160*s), bottom - round((250+31*extra_controls)*s))
+            split = max(top + round(160*s), bottom - round((250+31*int(extra_controls))*s))
             self.preview_card = (m, top, w-m, split-gap)
             middle = round(w*.54)
             self.result_card = (m, split, middle-gap//2, bottom)
@@ -119,7 +119,8 @@ class ScannerUI:
         self.buttons.append((box, key))
 
     def _build_body(self, state):
-        self._layout(state.get('tts_enabled', False))
+        extra_rows = (2 if state.get('tts_enabled') else 1)
+        self._layout(extra_rows)
         s = self.scale
         image = Image.new('RGB', self.size, BG)
         draw = ImageDraw.Draw(image)
@@ -187,11 +188,18 @@ class ScannerUI:
         self._label(draw, (x+10*s, y+10*s), 'CONTROLS', 12, MUTED, True)
         color = state.get('color', 'blue').capitalize()
         language = 'Thai' if state.get('lang') == 'thai' else 'English'
+        finger_on = state.get('finger_enabled', False)
+        mode = state.get('finger_mode', 'word').upper()
+        mode_btn = f'Touch: {mode} [M]'
+
         controls = [(f'{color}  [C]', 'c'), (f'{language}  [L]', 'l'),
                     (f"{state.get('resolution_mode', 'Resolution')}  [V]", 'v'),
+                    ('Touch: ON [F]' if finger_on else 'Touch: OFF [F]', 'f'),
+                    (mode_btn, 'm'),
+                    ('Details  [H]', 'h'),
                     ('Zoom -  [X]', 'x'), ('Zoom +  [Z]', 'z'),
                     ('Reset zoom  [R]', 'r'), ('Save image  [P]', 'p'),
-                    ('Diagnostic  [D]', 'd'), ('Details  [H]', 'h')]
+                    ('Diagnostic  [D]', 'd')]
         if state.get('tts_enabled'):
             controls += [('Read / repeat [S]', 's'), ('Stop voice [B]', 'b')]
         gap, left, bw = 6*s, x+10*s, (right-x-26*s)/2
@@ -199,8 +207,11 @@ class ScannerUI:
             controls = [control for control in controls if control[1] != 'v']
         for i, (label, key) in enumerate(controls):
             bx, by = left+(i % 2)*(bw+gap), y+(34+(i//2)*31)*s
-            self._button(draw, (bx, by, bx+bw, by+26*s), label, ord(key), key == 'h' and state.get('details', False))
-        footer_y = 222 if state.get('tts_enabled') else 191
+            is_active = ((key == 'h' and state.get('details', False))
+                         or (key == 'f' and finger_on)
+                         or (key == 'm' and finger_on))
+            self._button(draw, (bx, by, bx+bw, by+26*s), label, ord(key), is_active)
+        footer_y = 253 if state.get('tts_enabled') else 222
         footer = state.get('tts_status', 'Ready') if state.get('tts_enabled') else 'Wheel: zoom / click: pan'
         self._label(draw, (left, y+footer_y*s), footer, 11, MUTED)
         self._button(draw, (left, bottom-34*s, right-10*s, bottom-8*s), 'Close scanner  [Q / Esc]', ord('q'))

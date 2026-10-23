@@ -31,6 +31,7 @@ from colored_braille import DOT_COLORS
 from live_preview import LivePreview
 from line_confirmation import LineConfirmation, reading_lines
 from decoder import decode_cells, decode_cells_verbose
+from finger_braille_reader import FingerBrailleTouchReader
 
 logger = logging.getLogger(__name__)
 
@@ -646,7 +647,7 @@ class RealTimeBrailleScanner:
                 raise ValueError('Camera dimensions must be positive')
             self.target_width, self.target_height = int(width), int(height)
         else:
-            preset = ('4k' if res_preset in (None, 'auto') else res_preset).lower()
+            preset = ('1080p' if res_preset in (None, 'auto') else res_preset).lower()
             if preset not in RESOLUTION_PRESETS:
                 raise ValueError(f'Unknown camera resolution: {res_preset}')
             self.target_width, self.target_height = RESOLUTION_PRESETS[preset]
@@ -708,11 +709,15 @@ class RealTimeBrailleScanner:
         self.display_fps = 0.0
         self.ai_fps = 0.0
         self._prev_frame_time = time.time()
+        self.finger_reader = FingerBrailleTouchReader(external_tts=self._speech)
+        self._last_touched_info = None
 
 
     def _reset_confirmation(self):
         self.history.clear()
         self._line_confirmation.reset()
+        if hasattr(self, 'finger_reader'):
+            self.finger_reader.unlock_grid()
 
 
     def cycle_dot_color(self):
@@ -881,7 +886,9 @@ class RealTimeBrailleScanner:
             confirmed=len(self.history) if is_locked or current_text else 0,
             required=self.stability_threshold,
             tts_enabled=self._speech is not None,
-            tts_status=self._speech.status if self._speech is not None else '')
+            tts_status=self._speech.status if self._speech is not None else '',
+            finger_enabled=getattr(self.finger_reader, 'enabled', False),
+            finger_mode=getattr(self.finger_reader, 'speech_mode', 'word'))
         return self._ui.compose(preview, state)
 
     def _draw_top_hud(self, image, current_text, is_locked):
@@ -957,15 +964,17 @@ class RealTimeBrailleScanner:
             self._confirmed_context = context
             self._reset_confirmation()
             self._last_stability_result_id = 0
-        if frame_id != self._last_submitted_frame_id or context != self._last_submitted_context:
-            self.ai_worker.submit_frame(enhanced_frame, lang=self.lang,
-                context=context, frame_id=frame_id, dot_color=self.dot_color)
-            self._last_submitted_frame_id, self._last_submitted_context = frame_id, context
+        yolo_paused = bool(getattr(self.finger_reader, 'grid_locked', False) and len(getattr(self.finger_reader, 'cached_cells', [])) > 0)
+        if not yolo_paused:
+            if frame_id != self._last_submitted_frame_id or context != self._last_submitted_context:
+                self.ai_worker.submit_frame(enhanced_frame, lang=self.lang,
+                    context=context, frame_id=frame_id, dot_color=self.dot_color)
+                self._last_submitted_frame_id, self._last_submitted_context = frame_id, context
         result = self.ai_worker.get_latest_results(include_frame=True)
-        self.ai_fps = result['ai_fps']
-        slow = result.get('busy_seconds', 0) >= 5
-        stale = result.get('result_age', 0) > 1.0
-        if (result.get('context') != context or result['lang'] != self.lang or
+        self.ai_fps = result['ai_fps'] if not yolo_paused else 0.0
+        slow = (result.get('busy_seconds', 0) >= 5) and not yolo_paused
+        stale = (result.get('result_age', 0) > 1.0) and not yolo_paused
+        if not yolo_paused and (result.get('context') != context or result['lang'] != self.lang or
                 result['result_id'] == self._rejected_result_id or slow or stale):
             result = dict(result, result_id=-1, cells=[], dots=[], decoded_text='',
                           verbose_results=[], line_results=[], error=None, status='waiting', reason=None)
@@ -1001,7 +1010,7 @@ class RealTimeBrailleScanner:
         try:
             self._preview.details = self.show_details
             annotated = self._preview.render(enhanced_frame, self.detector, preview_result, self.lang)
-            if not self._preview.motion_valid:
+            if not self._preview.motion_valid and not yolo_paused:
                 self._reset_confirmation()
                 preview_result = dict(preview_result, line_confirmation=[])
                 is_locked = False
@@ -1020,7 +1029,37 @@ class RealTimeBrailleScanner:
                 # Publish only after both confirmation and preview motion checks.
                 # Transient failed reads must not erase the previous confirmed text.
                 self._confirmed_text = decoded_text
-            annotated = self._compose_dashboard(annotated[:self._preview_image_size[1]],
+            camera_view = annotated[:self._preview_image_size[1]]
+            if hasattr(self, 'finger_reader') and self.finger_reader.enabled:
+                sx = self._preview_image_size[0] / max(1, enhanced_frame.shape[1])
+                sy = self._preview_image_size[1] / max(1, enhanced_frame.shape[0])
+                cells_list = result.get('cells', [])
+
+                # Phase 1: สแกนเก็บพิกัดลง Cache จนกว่าข้อความทั้งหน้าจะนิ่ง
+                if cells_list and not self.finger_reader.grid_locked and not self.finger_reader.is_hand_present:
+                    self.finger_reader.update_grid_cache(
+                        cells_list,
+                        result.get('verbose_results', []),
+                        scale_x=sx,
+                        scale_y=sy,
+                        decoded_text=decoded_text
+                    )
+                    # เมื่อยืนยันแล้วว่าสแกนติดครบทั้งหน้า ให้ Freeze Grid และ Pause YOLO ทันที
+                    if is_locked and len(self.finger_reader.cached_cells) > 0:
+                        self.finger_reader.lock_grid()
+                        yolo_paused = True
+
+                # Phase 2: รันเฉพาะ MediaPipe ตรวจจับนิ้วชี้ 100% CPU แบบ Zero-Latency
+                if self.finger_reader.grid_locked or self.finger_reader.is_hand_present:
+                    clean_preview = cv2.resize(enhanced_frame, (camera_view.shape[1], camera_view.shape[0]))
+                    camera_view, self._last_touched_info = self.finger_reader.process(
+                        camera_view, clean_frame=clean_preview
+                    )
+                else:
+                    self._last_touched_info = None
+            else:
+                self._last_touched_info = None
+            annotated = self._compose_dashboard(camera_view,
                 preview_result, decoded_text, is_locked)
             self._draw_top_hud(annotated, decoded_text if is_locked else '', is_locked)
         except Exception:
@@ -1030,7 +1069,9 @@ class RealTimeBrailleScanner:
             self._preview = LivePreview(max_width=1280, dashboard=True)
             raise
         status = result.get('status')
-        if slow:
+        if yolo_paused:
+            message = f'TOUCH READY - YOLO paused ({len(self.finger_reader.cached_cells)} cells, press R for new page)'
+        elif slow:
             message = 'AI BUSY - waiting for inference; camera remains live'
         elif stale or not self._preview.motion_valid:
             message = 'TRACKING - waiting for a fresh readable frame'
@@ -1046,6 +1087,10 @@ class RealTimeBrailleScanner:
             message = f'CONFIRMING - {len(self.history)}/{self.stability_threshold} matching results'
         else:
             message = ''
+        if getattr(self, '_last_touched_info', None):
+            _c = self._last_touched_info.get('char', '')
+            _name = self.finger_reader.get_spoken_name(_c) if hasattr(self, 'finger_reader') else ''
+            message = f"TOUCH: [{_c}] {_name}" if _name else f"TOUCH: [{_c}]"
         if message:
             self._draw_notice(annotated, message)
         return annotated, enhanced_frame
@@ -1086,7 +1131,21 @@ class RealTimeBrailleScanner:
             self._ui.scroll(-1 if key == ord('[') else 1)
         elif key in (ord('c'), ord('C')):
             self.cycle_dot_color()
-        elif key in (ord('v'), ord('V'), ord('f'), ord('F')):
+        elif key in (ord('f'), ord('F'), ord('t'), ord('T')):
+            if hasattr(self, 'finger_reader'):
+                self.finger_reader.enabled = not self.finger_reader.enabled
+                if not self.finger_reader.enabled:
+                    self.finger_reader.unlock_grid()
+                elif len(self.finger_reader.cached_cells) > 0:
+                    self.finger_reader.lock_grid()
+                mode_str = "เปิด (ON)" if self.finger_reader.enabled else "ปิด (OFF)"
+                print(f"  👉 สลับโหมดตรวจจับนิ้วชี้สัมผัสอ่าน: {mode_str} [F]")
+        elif key in (ord('m'), ord('M')):
+            if hasattr(self, 'finger_reader'):
+                mode_name = self.finger_reader.toggle_mode()
+                thai_desc = {'word': 'อ่านรวมเป็นคำ', 'char': 'สะกดทีละตัวอักษร', 'smart': 'อัจฉริยะ (รูด=อ่านคำ / แช่=สะกด)'}.get(mode_name, mode_name)
+                print(f"  🔊 รูปแบบการออกเสียงนิ้วสัมผัส [M]: {thai_desc}")
+        elif key in (ord('v'), ord('V')):
             if len(self.available_resolutions) > 1:
                 self.cycle_resolution()
                 self._context_generation += 1
@@ -1096,6 +1155,8 @@ class RealTimeBrailleScanner:
             self.zoom_out()
         elif key in (ord('r'), ord('R'), ord('0')):
             self.reset_zoom()
+            if hasattr(self, 'finger_reader'):
+                self.finger_reader.unlock_grid()
         elif key in (ord('l'), ord('L')):
             if self._speech is not None:
                 self._speech.stop()
@@ -1182,8 +1243,7 @@ class RealTimeBrailleScanner:
         try:
             self.camera = ThreadedCameraCapture(camera_id=self.camera_id,
             target_width=self.target_width, target_height=self.target_height, target_fps=60,
-            preferred_resolution=None if self._auto_resolution else
-            (self.target_width, self.target_height))
+            preferred_resolution=(self.target_width, self.target_height))
             if not self.camera.is_opened():
                 print(f"[ERR] ไม่สามารถเปิดกล้อง ID: {self.camera_id}; ตรวจสอบการเชื่อมต่อหรือ --camera")
                 return
@@ -1255,7 +1315,7 @@ class RealTimeBrailleScanner:
                     action_error = 'ACTION FAILED - camera remains live; see console'
         finally:
             self._window_name = None
-            for owner, method in ((self._speech, 'stop'), (self.ai_worker, 'stop'), (self.camera, 'release')):
+            for owner, method in ((self._speech, 'stop'), (self.ai_worker, 'stop'), (self.camera, 'release'), (getattr(self, 'finger_reader', None), 'close')):
                 if owner is not None:
                     try:
                         getattr(owner, method)()
