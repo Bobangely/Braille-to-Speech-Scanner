@@ -46,24 +46,28 @@ class FingerReader:
         self._learner = PageLearner(required_maps)
         self._finger: FingerState | None = None
         self.calibration = self.tip = None  # last frame's, for the preview
+        self._hand_seen_s = float('-inf')
 
     def step(self, frame, now_s: float) -> str:
         self.last_events = []
         calibration, changed = self.calibrator.update(frame, now_s)
         tip = self.tracker.update(frame, round(now_s * 1000))
         self.calibration, self.tip = calibration, tip
+        if self.tracker.hand_present:
+            self._hand_seen_s = now_s
         if calibration is None:
-            self._set('waiting_page')
+            self._set('waiting_page', 'no corner markers')
             self._tell(PLACE_PAGE)
         elif changed or self.status == 'waiting_page':
-            self._set('learning')
+            self._set('learning', 'page markers moved' if changed else 'markers found')
         if self.status == 'learning':
             self._learn(frame, calibration, now_s)
         elif self.status == 'reading':
             point = calibration.to_page([tip])[0] if tip is not None else None
             self.last_events = self._finger.update(None if point is None else tuple(point), now_s)
             self.speech.handle(self.last_events)
-            if not self.tracker.hand_present and now_s - self._checked_s >= RECHECK_S:
+            # MediaPipe misses a covering hand for a frame now and then: recheck only after a full hand-free second.
+            if now_s - self._hand_seen_s >= RECHECK_S and now_s - self._checked_s >= RECHECK_S:
                 self._recheck(frame, calibration, now_s)
         return self.status
 
@@ -73,7 +77,7 @@ class FingerReader:
         same = page_signature(self.read_page(frame, calibration, self.fmt)) == self._signature
         self._mismatches = 0 if same else self._mismatches + 1
         if self._mismatches >= self.required_maps:
-            self._set('learning')
+            self._set('learning', 'page content changed')
 
     @property
     def page(self):
@@ -96,13 +100,14 @@ class FingerReader:
         if page is None:
             return
         self.speech.prepare_page(page)
-        self._set('reading')
+        self._set('reading', f'{len(page.lines)} lines learned')
         self._finger = FingerState(page)
         self._signature, self._checked_s, self._mismatches = page_signature(page), now_s, 0
         self._tell(f'พร้อม {len(page.lines)} บรรทัด')
 
-    def _set(self, status: str) -> None:
+    def _set(self, status: str, reason: str) -> None:
         if status != self.status:
+            log.info('%s -> %s: %s', self.status, status, reason)
             self.status, self._told, self._finger = status, None, None
             self._learner = PageLearner(self.required_maps)
 
@@ -265,8 +270,10 @@ def main() -> int:
     from fingertip import FingertipTracker
     from tools.diagnostics.hand_landmarker_spike import _open_camera, draw_hand_skeletons
 
-    if hasattr(sys.stdout, 'reconfigure'):
-        sys.stdout.reconfigure(encoding='utf-8')
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8')
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)s: %(message)s', datefmt='%H:%M:%S')
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--camera', type=int, default=0)
     parser.add_argument('--tts-thai-model', type=Path, required=True)

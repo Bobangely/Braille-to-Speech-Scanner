@@ -121,6 +121,31 @@ class FingerReaderTests(unittest.TestCase):
         self.assertEqual([self.reader.step(FRAME, 1.0 + i * 0.1) for i in range(30)], ['reading'] * 30)
         self.assertLessEqual(len(self.reads) - reads, 4)  # about once a second, not every frame
 
+    def test_hand_detection_dropouts_do_not_relearn_the_page(self):
+        # MediaPipe misses the hand for a frame now and then while it still covers the dots.
+        self.learn()
+        self.lines_on_page = 2  # what a hand-covered page reads like
+        statuses = []
+        for i in range(60):  # 6 s at 10 frames/s, one missed detection every second
+            self.tracker.hand_present = i % 10 != 9
+            statuses.append(self.reader.step(FRAME, 1.0 + i * 0.1))
+        self.assertEqual(set(statuses), {'reading'})
+
+    def test_reading_can_start_on_any_line(self):
+        # A reader may come back to line 2 without starting from the first letter.
+        self.learn()
+        self.tracker.hand_present, self.tracker.tip = True, (13, 55)  # line 2's raised band is 50-60 mm
+        self.reader.step(FRAME, 1.0)
+        self.reader.step(FRAME, 1.2)
+        self.assertEqual(self.reader.last_events, [EnterCell(1, 0, 'สระไอ')])
+
+    def test_relearning_says_why(self):
+        self.learn()
+        self.calibrator.result = (Calibration(), True)
+        with self.assertLogs('finger_reader', 'INFO') as logs:
+            self.reader.step(FRAME, 2.0)
+        self.assertIn('markers moved', ' '.join(logs.output))
+
     def test_no_recheck_while_a_hand_is_reading(self):
         self.learn()
         reads = len(self.reads)
