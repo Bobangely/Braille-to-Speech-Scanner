@@ -14,7 +14,7 @@ from pathlib import Path
 import cv2
 
 TIP_LANDMARKS = (8,)
-PAD_FRACTION = 0.5  # reading point: this far from the tip toward the first joint (the pad under the nail)
+PAD_FRACTION = 0.25  # reading point from the tip toward the first joint; 0.5 fell below the raised line
 DEFAULT_MODEL = Path(__file__).resolve().parent / "models" / "hand_landmarker.task"
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
@@ -100,7 +100,7 @@ class FingertipTracker:
         self.pad_fraction = pad_fraction
         self.grace_ms = grace_ms  # keep the lock through short detection drop-outs
         self._seen_ms = 0
-        self.hand_present = False
+        self.hand_present, self.hand_landmarks = False, []
 
     def update(self, frame_bgr, now_ms: int) -> tuple[int, int] | None:
         import mediapipe as mp
@@ -108,6 +108,7 @@ class FingertipTracker:
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         result = self._detector.detect_for_video(
             mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb), max(1, int(now_ms)))
+        self.hand_landmarks = result.hand_landmarks  # for the skeleton preview
         self.hand_present = bool(result.hand_landmarks)
         height, width = frame_bgr.shape[:2]
         candidates = labelled_fingertips(result, width, height, self.pad_fraction)

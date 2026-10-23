@@ -38,7 +38,8 @@ class FingertipTrackerTests(unittest.TestCase):
     def test_reading_point_is_the_pad_not_the_nail(self):
         # Braille is felt with the pad, between the tip (8) and the first joint (7) seen from above.
         finger = hand(index_tip=(0.5, 0.25), index_dip=(0.5, 0.35))
-        self.assertEqual(fingertip_pixels([finger], 640, 480), [(0, 8, 320, 144)])  # halfway by default
+        # A quarter of the way by default: halfway fell below the raised line on the real page.
+        self.assertEqual(fingertip_pixels([finger], 640, 480), [(0, 8, 320, 132)])
         self.assertEqual(fingertip_pixels([finger], 640, 480, pad_fraction=0.0), [(0, 8, 320, 120)])
 
     def test_tracker_reports_the_pad(self):
@@ -46,6 +47,12 @@ class FingertipTrackerTests(unittest.TestCase):
         tracker = FingertipTracker(detector=FakeDetector([finger]), pad_fraction=0.25)
         tracker.update(FRAME, 1)
         self.assertEqual(tracker.update(FRAME, 300), (320, 132))
+
+    def test_tracker_keeps_the_hands_for_the_skeleton_preview(self):
+        finger = hand()
+        tracker = FingertipTracker(detector=FakeDetector([finger]))
+        tracker.update(FRAME, 1)
+        self.assertEqual(tracker.hand_landmarks, [finger])
 
     def test_still_middle_finger_is_never_locked(self):
         moving_index = [[hand(index_tip=(0.1 * k, 0.25), middle_tip=(0.5, 0.5))] for k in range(1, 9)]

@@ -263,7 +263,7 @@ def main() -> int:
     import cv2
 
     from fingertip import FingertipTracker
-    from tools.diagnostics.hand_landmarker_spike import _open_camera
+    from tools.diagnostics.hand_landmarker_spike import _open_camera, draw_hand_skeletons
 
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
@@ -276,7 +276,7 @@ def main() -> int:
     parser.add_argument('--log-latency', type=Path, help='CSV of per-event timings in seconds')
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--marker-size-mm', type=float, help='printed marker side, as in the book template')
-    parser.add_argument('--pad-fraction', type=float, default=0.5,
+    parser.add_argument('--pad-fraction', type=float, default=0.25,
                         help='reading point from the fingertip toward the first joint: 0 = nail tip, 1 = joint')
     args = parser.parse_args()
     fmt = page_format(args.marker_size_mm)
@@ -310,6 +310,7 @@ def main() -> int:
                 latency.writerow([repr(reader.last_events[-1]), f'{reader.entered_s:.4f}', f'{done_s:.4f}',
                                   f'{done_s - reader.entered_s:.4f}'])
             if not args.headless:
+                draw_hand_skeletons(frame, reader.tracker.hand_landmarks)  # under the reading point
                 if reader.page is not None and reader.calibration is not None:
                     draw_overlay(frame, reader.page, reader.calibration, reader.tip, reader.active_cell)
                 cv2.putText(frame, status, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 200, 255), 3)
