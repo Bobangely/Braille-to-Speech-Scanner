@@ -113,6 +113,21 @@ class MountedReaderTests(unittest.TestCase):
         self.assertFalse(debug['grid_pending'])
         self.assertEqual(decode_cells(cells, 'thai'), 'กญา')
 
+    def test_fixed_roi_preview_keeps_full_frame_and_dims_outside(self):
+        scanner = RealTimeBrailleScanner(scan_roi=(.1, .2, .6, .7))
+        frame = np.full((100, 200, 3), 200, np.uint8)
+        annotated_roi = np.full((50, 100, 3), 255, np.uint8)
+
+        preview = scanner._compose_scan_roi_preview(
+            frame,
+            annotated_roi,
+            (20, 20, 120, 70),
+        )
+
+        self.assertEqual(preview.shape, frame.shape)
+        self.assertLess(int(preview[5, 5, 0]), int(frame[5, 5, 0]))
+        np.testing.assert_array_equal(preview[40, 70], annotated_roi[20, 50])
+
     def test_invalid_fixed_roi_fails_before_starting_camera_or_model(self):
         for roi in ((0, 0, 0, 1), (0, .8, 1, .2), (-.1, 0, 1, 1),
                     (0, 0, 1.1, 1), (0, 0, float('nan'), 1), (0, 1)):

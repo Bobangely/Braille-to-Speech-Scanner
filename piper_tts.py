@@ -149,6 +149,9 @@ class PiperSpeech:
                 logging.getLogger(__name__).warning('Speech files still in use; will retry cleanup: %s', workspace.name)
 
 
+_LOADED_VOICES = {}  # (voice class, model path) -> loaded voice, per process
+
+
 def synthesize_wav(model, text, output, backend='piper', voice=None):
     """Return PCM WAV and timings; Edge requires an internet connection."""
     started = time.perf_counter()
@@ -160,12 +163,19 @@ def synthesize_wav(model, text, output, backend='piper', voice=None):
     elif backend == 'mms':
         import torch
         from transformers import AutoTokenizer, VitsModel
-        tokenizer = AutoTokenizer.from_pretrained(str(model), local_files_only=True)
-        voice = VitsModel.from_pretrained(str(model), local_files_only=True).eval()
+        key = (id(VitsModel), str(model))
+        if key not in _LOADED_VOICES:
+            _LOADED_VOICES[key] = (AutoTokenizer.from_pretrained(str(model), local_files_only=True),
+                                   VitsModel.from_pretrained(str(model), local_files_only=True).eval())
+        tokenizer, voice = _LOADED_VOICES[key]
     elif backend == 'piper':
         from piper import PiperVoice
         # shortcut: โหลดโมเดลใหม่ต่อการกดหนึ่งครั้ง วัด latency บนบอร์ดก่อนเพิ่ม worker ค้างไว้
-        voice = PiperVoice.load(str(model), use_cuda=False)
+        # ภายใน process เดียวกันโหลดครั้งเดียว: ตัวอ่านตามนิ้วสังเคราะห์ทั้งหน้าใน process เดียว
+        key = (id(PiperVoice), str(model))
+        if key not in _LOADED_VOICES:
+            _LOADED_VOICES[key] = PiperVoice.load(str(model), use_cuda=False)
+        voice = _LOADED_VOICES[key]
     else:
         raise ValueError(f'Unsupported offline backend: {backend}')
     loaded = time.perf_counter()

@@ -39,3 +39,33 @@ def expand_thai_speech_units(text):
             return match[0]
         return THAI_CONSONANT_NAMES[match[0]]
     return _LESSON_NUMBER.sub(_lesson_number, _LETTERS.sub(consonant, text))
+
+
+# Names spoken for one symbol under the fingertip; consonants use THAI_CONSONANT_NAMES.
+SYMBOL_NAMES = {
+    '่': 'ไม้เอก', '้': 'ไม้โท', '๊': 'ไม้ตรี', '๋': 'ไม้จัตวา', '์': 'ไม้ทัณฑฆาต',
+    '็': 'ไม้ไต่คู้', 'ะ': 'สระอะ', 'ั': 'ไม้หันอากาศ', 'า': 'สระอา', 'ำ': 'สระอำ',
+    'ิ': 'สระอิ', 'ี': 'สระอี', 'ึ': 'สระอึ', 'ื': 'สระอือ', 'ุ': 'สระอุ', 'ู': 'สระอู',
+    'เ': 'สระเอ', 'แ': 'สระแอ', 'โ': 'สระโอ', 'ใ': 'สระใอ', 'ไ': 'สระไอ',
+    'เ◌อ': 'สระเออ', 'เ◌า': 'สระเอา', 'เ◌ีย': 'สระเอีย', 'เ◌ือ': 'สระเอือ', '◌ัว': 'สระอัว',
+}
+
+
+# What the Piper voice is given for names it mispronounces (heard by the team);
+# names stay as they are everywhere else. Spaces split syllables the voice runs together.
+TTS_SPELLING = {
+    'งองู': 'งอ งู', 'ชอช้าง': 'ชอ ช้าง', 'ชอเฌอ': 'ชอ เชอ', 'ถอฐาน': 'ถอ สัน ถาน',
+    'ทอมณโฑ': 'ทอ นาง มน โท', 'รอเรือ': 'รอ เรือ', 'หอหีบ': 'หอ หีบ', 'อออ่าง': 'ออ อ่าง',
+    'ฮอนกฮูก': 'ฮอ นก ฮูก', 'ไม้เอก': 'ไม้ เอก', 'ไม้โท': 'ไม้ โท', 'ไม้จัตวา': 'ไม้ จัด ตา วา',
+    **{name: 'สะ ละ ' + name[3:] for name in SYMBOL_NAMES.values() if name.startswith('สระ')},
+}
+
+
+def tts_spelling(text):
+    """Text to synthesize for ``text``: every known name in it respelled for the voice."""
+    return ' '.join(TTS_SPELLING.get(part, part) for part in text.split(' '))
+
+
+def symbol_name(text):
+    """Spoken name of one decoded Braille symbol; unknown text is spoken as is."""
+    return SYMBOL_NAMES.get(text) or THAI_CONSONANT_NAMES.get(text, text)
