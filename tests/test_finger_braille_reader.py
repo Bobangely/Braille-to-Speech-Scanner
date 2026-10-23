@@ -112,12 +112,12 @@ class TestFingerBrailleReader(unittest.TestCase):
         )
 
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        # Frames 1 through 7 (under dwell_threshold of 8) must NOT trigger speech
-        for _ in range(7):
+        # Frames under dwell_threshold must NOT trigger speech
+        for _ in range(self.reader.dwell_threshold - 1):
             self.reader.process(frame)
             self.reader.speaker.speak.assert_not_called()
 
-        # Frame 8 (reaches dwell_threshold of 8) MUST trigger speech
+        # Reaching dwell_threshold MUST trigger speech
         self.reader.process(frame)
         self.reader.speaker.speak.assert_called_once_with('กา', interrupt=True)
 
@@ -162,6 +162,47 @@ class TestFingerBrailleReader(unittest.TestCase):
             call('กอไก่', interrupt=True),
             call('สระอา', interrupt=True)
         ])
+
+    def test_grid_bbox_exact_matching(self):
+        cells = [{
+            'center': (100, 100),
+            'grid': {'bbox': (85, 75, 115, 125)}
+        }]
+        verbose = [{'char': 'ก'}]
+        self.reader.update_grid_cache(cells, verbose, scale_x=1.5, scale_y=2.0)
+        cached = self.reader.cached_cells[0]
+        # x1 = 85 * 1.5 = 127.5 -> 128, y1 = 75 * 2.0 = 150
+        # x2 = 115 * 1.5 = 172.5 -> 172, y2 = 125 * 2.0 = 250
+        self.assertEqual(cached['bbox'], (128, 150, 172, 250))
+        self.assertEqual(cached['center'], ((128 + 172) // 2, (150 + 250) // 2))
+
+    def test_miss_grace_preserves_dwell_counter(self):
+        from unittest.mock import Mock
+        self.reader.speaker.speak = Mock()
+        cells = [{'center': (100, 100), 'grid': {'bbox': (80, 80, 120, 120)}}]
+        verbose = [{'char': 'ก'}]
+        self.reader.update_grid_cache(cells, verbose, decoded_text="ก")
+
+        touch_mock = ((100, 100), [(100, 100)] * 4)
+        miss_mock = ((500, 500), [(500, 500)] * 4)  # outside
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        # 3 frames touch
+        self.reader.detector.detect_index_finger = Mock(return_value=touch_mock)
+        for _ in range(3):
+            self.reader.process(frame)
+        self.assertEqual(self.reader.dwell_counter, 3)
+
+        # 1 frame jitter / miss -> grace period keeps it active!
+        self.reader.detector.detect_index_finger = Mock(return_value=miss_mock)
+        self.reader.process(frame)
+        self.assertEqual(self.reader.dwell_counter, 4)
+
+        # Return to touch -> completes to dwell_threshold (6)
+        self.reader.detector.detect_index_finger = Mock(return_value=touch_mock)
+        self.reader.process(frame)
+        self.reader.process(frame)
+        self.reader.speaker.speak.assert_called_once_with('ก', interrupt=True)
 
 
 if __name__ == '__main__':

@@ -1008,7 +1008,7 @@ class RealTimeBrailleScanner:
                 cells_list = result.get('cells', [])
 
                 # Phase 1: สแกนเก็บพิกัดลง Cache จนกว่าข้อความทั้งหน้าจะนิ่ง
-                if cells_list and not self.finger_reader.grid_locked and not self.finger_reader.is_hand_present:
+                if cells_list and not self.finger_reader.grid_locked:
                     self.finger_reader.update_grid_cache(
                         cells_list,
                         result.get('verbose_results', []),
@@ -1021,14 +1021,11 @@ class RealTimeBrailleScanner:
                         self.finger_reader.lock_grid()
                         yolo_paused = True
 
-                # Phase 2: รันเฉพาะ MediaPipe ตรวจจับนิ้วชี้ 100% CPU แบบ Zero-Latency
-                if self.finger_reader.grid_locked or self.finger_reader.is_hand_present:
-                    clean_preview = cv2.resize(enhanced_frame, (camera_view.shape[1], camera_view.shape[0]))
-                    camera_view, self._last_touched_info = self.finger_reader.process(
-                        camera_view, clean_frame=clean_preview
-                    )
-                else:
-                    self._last_touched_info = None
+                # Phase 2: รันตรวจจับนิ้วชี้อย่างต่อเนื่อง
+                clean_preview = cv2.resize(enhanced_frame, (camera_view.shape[1], camera_view.shape[0]))
+                camera_view, self._last_touched_info = self.finger_reader.process(
+                    camera_view, clean_frame=clean_preview
+                )
             else:
                 self._last_touched_info = None
             annotated = self._compose_dashboard(camera_view,

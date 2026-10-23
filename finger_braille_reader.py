@@ -441,11 +441,11 @@ class FingerBrailleTouchReader:
     รองรับทั้งการอ่านรวมคำ (Word Mode) และอ่านสะกดทีละตัว (Character Mode)
     """
 
-    def __init__(self, external_tts=None, dwell_threshold=8, touch_radius=26, mode='word'):
+    def __init__(self, external_tts=None, dwell_threshold=6, touch_radius=26, mode='word'):
         self.detector = IndexFingerSkeletonDetector()
         self.speaker = NonBlockingSpeechQueue(fallback_tts=external_tts)
-        self.dwell_threshold = dwell_threshold  # จำนวนเฟรมที่ต้องแช่เพื่อยืนยันการแตะ
-        self.touch_radius = 26                  # รัศมีแตะกระชับพอดีเซลล์ ไม่เหลื่อมเซลล์ข้างเคียง
+        self.dwell_threshold = dwell_threshold  # จำนวนเฟรมที่ต้องแช่นิ้วค้างเพื่อยืนยัน (~0.2s ที่ 30 FPS)
+        self.touch_radius = touch_radius        # รัศมีแตะกระชับพอดีเซลล์
         self.speech_mode = mode                 # 'word' (อ่านเป็นคำ), 'char' (อ่านสะกดทีละตัว), 'smart'
 
         self.cached_cells = []          # ข้อมูลตำแหน่ง Cell และตัวอักษรที่จำไว้
@@ -459,6 +459,8 @@ class FingerBrailleTouchReader:
         self.dwell_counter = 0
         self.cell_dwell_counter = 0
         self.cell_spelled = False
+        self.miss_grace_counter = 0
+        self.last_active_cell_info = None
         self.last_spoken_cell_idx = -1
         self.last_spoken_word_id = -1
         self.last_spoken_char = ""
@@ -482,9 +484,8 @@ class FingerBrailleTouchReader:
 
     def update_grid_cache(self, cells, verbose_results, scale_x=1.0, scale_y=1.0, decoded_text="", force=False):
         """
-        บันทึกพิกัดและตัวอักษรของแต่ละ Cell ลงใน Cache เมื่อระบบสแกนได้ผลลัพธ์
-        พร้อมจัดกลุ่มเซลล์เป็นคำ (Word Grouping) จาก decoded_text
-        จะไม่เขียนทับหาก Grid ถูกล็อก หรือมีมือวางอยู่บนกระดาษ
+        บันทึกพิกัดและตัวอักษรของแต่ละ Cell ลงใน Cache โดยล็อคขนาด Bounding Box ให้เท่ากับกรอบของตัวเบรลล์ (grid['bbox']) 100%
+        จะไม่เขียนทับหาก Grid ถูกล็อกแล้ว
         """
         if not cells:
             return
@@ -520,20 +521,37 @@ class FingerBrailleTouchReader:
             if not center or center == (0, 0):
                 continue
 
-            cx = center[0] * scale_x
-            cy = center[1] * scale_y
-
             token = verbose_results[idx] if idx < len(verbose_results) else {}
             char = token.get('char', '')
             dots = cell.get('dots', [])
 
-            # คำนวณ Bounding Box ของ Cell ในพิกัด preview
-            width = cell.get('width', 36) * scale_x
-            height = cell.get('height', 52) * scale_y
-            x1 = int(cx - width / 2)
-            y1 = int(cy - height / 2)
-            x2 = int(cx + width / 2)
-            y2 = int(cy + height / 2)
+            # ล็อค Bounding Box ให้เท่ากับกรอบของ Cell ที่ทำไว้กับตัวเบรลล์ (grid['bbox'])
+            grid = cell.get('grid')
+            if grid and grid.get('bbox'):
+                gx1, gy1, gx2, gy2 = grid['bbox']
+                x1 = int(round(gx1 * scale_x))
+                y1 = int(round(gy1 * scale_y))
+                x2 = int(round(gx2 * scale_x))
+                y2 = int(round(gy2 * scale_y))
+                cx = int(round((x1 + x2) / 2))
+                cy = int(round((y1 + y2) / 2))
+            elif cell.get('bbox'):
+                bx1, by1, bx2, by2 = cell['bbox']
+                x1 = int(round(bx1 * scale_x))
+                y1 = int(round(by1 * scale_y))
+                x2 = int(round(bx2 * scale_x))
+                y2 = int(round(by2 * scale_y))
+                cx = int(round((x1 + x2) / 2))
+                cy = int(round((y1 + y2) / 2))
+            else:
+                cx = int(round(center[0] * scale_x))
+                cy = int(round(center[1] * scale_y))
+                width = int(round(cell.get('width', 36) * scale_x))
+                height = int(round(cell.get('height', 52) * scale_y))
+                x1 = cx - width // 2
+                y1 = cy - height // 2
+                x2 = cx + width // 2
+                y2 = cy + height // 2
 
             assigned_word = word_by_cell.get(idx, char)
             assigned_word_id = word_id_by_cell.get(idx, idx)
@@ -544,7 +562,7 @@ class FingerBrailleTouchReader:
                 'word': assigned_word,
                 'word_id': assigned_word_id,
                 'dots': dots,
-                'center': (int(cx), int(cy)),
+                'center': (cx, cy),
                 'bbox': (x1, y1, x2, y2),
                 'track_id': cell.get('track_id', idx + 1)
             })
@@ -553,7 +571,7 @@ class FingerBrailleTouchReader:
             self.cached_cells = updated
 
     def find_cell_at_point(self, pt):
-        """ค้นหาว่าจุด (x, y) ของปลายนิ้วตรงกับ Cell ไหนมากที่สุด โดยกำจัดปัญหา overlap"""
+        """ค้นหาว่าจุด (x, y) ของปลายนิ้วตรงกับ Cell ไหน โดยล็อคเข้ากรอบเซลล์ตัวเบรลล์เป็นหลัก"""
         if pt is None or not self.cached_cells:
             return -1, None
 
@@ -567,14 +585,18 @@ class FingerBrailleTouchReader:
             cx, cy = item['center']
             dist = math.hypot(tx - cx, ty - cy)
 
-            # เช็คว่าอยู่ในกล่องเซลล์จริงหรือไม่ (เผื่อขอบแค่ 3px ป้องกันทับเซลล์ติดกัน)
-            in_box = (x1 - 3 <= tx <= x2 + 3) and (y1 - 3 <= ty <= y2 + 3)
-            effective_dist = dist * 0.65 if in_box else dist
+            # เช็คว่าอยู่ในกรอบเซลล์ของตัวเบรลล์จริง (เพิ่มระยะผ่อนปรนขอบ 4px)
+            in_box = (x1 - 4 <= tx <= x2 + 4) and (y1 - 4 <= ty <= y2 + 4)
 
-            if effective_dist < min_dist:
-                min_dist = effective_dist
-                best_idx = idx
-                best_in_box = in_box
+            if in_box:
+                if not best_in_box or dist < min_dist:
+                    min_dist = dist
+                    best_idx = idx
+                    best_in_box = True
+            elif not best_in_box:
+                if dist < min_dist:
+                    min_dist = dist
+                    best_idx = idx
 
         if best_idx != -1 and (best_in_box or min_dist <= self.touch_radius):
             return best_idx, self.cached_cells[best_idx]
@@ -632,6 +654,15 @@ class FingerBrailleTouchReader:
             # วาดกระดูกนิ้วชี้และเป้าเล็งปลายเล็บ
             self.detector.draw_skeleton(display_frame, index_pts, tip_pt)
             cell_idx, cell_info = self.find_cell_at_point(tip_pt)
+
+            # Miss Grace Period (ผ่อนผัน 3 เฟรม ป้องกัน MediaPipe Landmark สั่น/หลุด 1 เฟรม ทำให้ตัวนับรีเซ็ต)
+            if cell_idx == -1 and getattr(self, 'miss_grace_counter', 0) < 3 and getattr(self, 'last_active_cell_info', None) is not None:
+                self.miss_grace_counter += 1
+                cell_info = self.last_active_cell_info
+                cell_idx = cell_info['id']
+            elif cell_idx != -1:
+                self.miss_grace_counter = 0
+                self.last_active_cell_info = cell_info
 
             if cell_idx != -1 and cell_info:
                 self.no_touch_counter = 0
@@ -730,6 +761,8 @@ class FingerBrailleTouchReader:
                 self.cell_spelled = False
                 self.current_word_id = None
                 self.current_cell_idx = -1
+                self.last_active_cell_info = None
+                self.miss_grace_counter = 0
                 self._check_reset_last_spoken()
         else:
             self.dwell_counter = 0
@@ -737,6 +770,8 @@ class FingerBrailleTouchReader:
             self.cell_spelled = False
             self.current_word_id = None
             self.current_cell_idx = -1
+            self.last_active_cell_info = None
+            self.miss_grace_counter = 0
             self._check_reset_last_spoken()
 
         return display_frame, touched_cell
