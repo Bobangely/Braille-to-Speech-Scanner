@@ -228,6 +228,29 @@ def draw_overlay(image, page, calibration, tip, active) -> None:
         _thai_bar(image, f'กำลังอ่าน: {cell.name or UNKNOWN}    คำ: {word}')
 
 
+ZONE_BGR = {'reading': (0, 200, 0), 'learning': (0, 200, 255)}  # no frame without markers
+
+
+def draw_reading_zone(image, calibration, status: str, fmt=DEFAULT_FORMAT, dash_px: int = 14) -> None:
+    """Dashed frame through the markers' outer corners, labelled, coloured by reader status (dev view)."""
+    import cv2
+    import numpy as np
+
+    m = fmt.margin_mm
+    corners = calibration.to_image([[m, m], [fmt.width_mm - m, m],
+                                    [fmt.width_mm - m, fmt.height_mm - m], [m, fmt.height_mm - m]])
+    colour = ZONE_BGR.get(status, (200, 200, 200))
+    for start, end in zip(corners, np.roll(corners, -1, axis=0)):
+        length = float(np.hypot(*(end - start)))
+        for t in np.arange(0.0, length, 2 * dash_px):
+            a = start + (end - start) * t / length
+            b = start + (end - start) * min(t + dash_px, length) / length
+            cv2.line(image, tuple(np.round(a).astype(int)), tuple(np.round(b).astype(int)), colour, 2, cv2.LINE_AA)
+    x, y = np.round(corners[0]).astype(int)
+    cv2.putText(image, f'READING ZONE: {status}', (int(x), max(15, int(y) - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, colour, 2, cv2.LINE_AA)
+
+
 def _thai_bar(image, text: str) -> None:
     """Dark bar with Thai text at the bottom (OpenCV fonts have no Thai glyphs)."""
     import numpy as np
@@ -333,6 +356,8 @@ def main() -> int:
                                   f'{done_s - reader.entered_s:.4f}'])
             if not args.headless:
                 draw_hand_skeletons(frame, reader.tracker.hand_landmarks)  # under the reading point
+                if reader.calibration is not None:
+                    draw_reading_zone(frame, reader.calibration, status, fmt)
                 if reader.page is not None and reader.calibration is not None:
                     draw_overlay(frame, reader.page, reader.calibration, reader.tip, reader.active_cell)
                 cv2.putText(frame, status, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 200, 255), 3)

@@ -227,6 +227,31 @@ class OverlayTests(unittest.TestCase):
         self.assertFalse(np.array_equal(self.frame[-30:], before[-30:]))  # text drawn in the bottom bar
 
 
+class ReadingZoneTests(unittest.TestCase):
+    """The dev preview frames the page through the markers' outer corners, coloured by status."""
+
+    def setUp(self):
+        self.frame = np.full((160 * OverlayTests.PX, 220 * OverlayTests.PX, 3), 255, np.uint8)
+
+    def px(self, x_mm, y_mm):
+        return self.frame[round(y_mm * OverlayTests.PX), round(x_mm * OverlayTests.PX)].tolist()
+
+    def test_dashed_frame_runs_through_the_outer_marker_corners(self):
+        from finger_reader import ZONE_BGR, draw_reading_zone
+        draw_reading_zone(self.frame, OverlayTests.Calibration(), 'reading')
+        top = [self.px(x, 10.0) for x in np.arange(10.0, 200.0, 0.25)]
+        self.assertIn(list(ZONE_BGR['reading']), top)  # TL marker corner (10, 10) to TR (200, 10)
+        self.assertIn([255, 255, 255], top)  # gaps: the line is dashed
+        self.assertEqual(self.px(105.0, 74.0), [255, 255, 255])  # inside the page stays untouched
+
+    def test_colour_follows_the_reader_status(self):
+        from finger_reader import ZONE_BGR, draw_reading_zone
+        draw_reading_zone(self.frame, OverlayTests.Calibration(), 'learning')
+        left = [self.px(10.0, y) for y in np.arange(20.0, 130.0, 0.25)]
+        self.assertIn(list(ZONE_BGR['learning']), left)
+        self.assertNotIn(list(ZONE_BGR['reading']), left)
+
+
 class CachedWavSpeakerTests(unittest.TestCase):
     def test_missing_tts_model_fails_at_startup(self):
         with tempfile.TemporaryDirectory() as cache:
