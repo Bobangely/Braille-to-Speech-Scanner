@@ -38,8 +38,8 @@ class BookTemplateTests(unittest.TestCase):
         cls.temp.cleanup()
 
     def test_expanded_spacing_formula(self):
-        self.assertAlmostEqual(expanded_pt(6.2), 1.37, delta=0.01)
-        self.assertAlmostEqual(expanded_pt(165 / 27), 1.12, delta=0.01)
+        self.assertAlmostEqual(expanded_pt(6.21), 0.05, delta=0.01)  # 32.5 pt: the font's cell is nearly the pitch
+        self.assertAlmostEqual(expanded_pt(6.2, font_pt=30), 1.37, delta=0.01)
 
     def test_line_spacing_is_exact_slate_row_pitch(self):
         self.assertAlmostEqual(line_spacing_pt(10), 28.35, delta=0.01)
@@ -70,16 +70,16 @@ class BookTemplateTests(unittest.TestCase):
     def test_colored_style_uses_braille_font_and_slate_spacing(self):
         style = self.doc.styles[COLOR_STYLE]
         self.assertEqual(style.font.name, 'SOV_braille_only')
-        self.assertEqual(style.font.size.pt, 30)
+        self.assertEqual(style.font.size.pt, 32.5)
         spacing = style.element.rPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}spacing')
-        self.assertEqual(int(spacing.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')), 28)  # 1.4 pt
+        self.assertEqual(int(spacing.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')), 1)  # 0.05 pt
         self.assertAlmostEqual(style.paragraph_format.line_spacing.pt, 28.35, delta=0.05)
 
     def test_colored_style_is_lowered_into_the_exact_line(self):
-        # 30 pt dots are taller than a 10 mm exact line; Word clips row 1 unless lowered.
+        # 32.5 pt dots are taller than a 10 mm exact line; Word clips row 1 unless lowered.
         position = self.doc.styles[COLOR_STYLE].element.rPr.find(
             '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}position')
-        self.assertEqual(int(position.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')), -4)
+        self.assertEqual(int(position.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val')), -6)  # 3 pt in half-points
 
     def test_marker_size_is_configurable(self):
         from dataclasses import replace
@@ -159,8 +159,8 @@ class BookFromTextTests(unittest.TestCase):
         self.assertEqual(colored[:2], ['ไก่ มา', 'ดี'])
         self.assertEqual(len(colored), 2 * FMT.line_pairs)
 
-    def test_wide_letters_get_expanded_spacing_per_cell(self):
-        # Word adds 'Expanded' once per character, so a 2-cell letter needs it twice to keep the slate pitch.
+    def test_wide_letters_need_no_extra_spacing(self):
+        # The font's cell is the slate pitch: a 2-cell letter is already two cells wide.
         w = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
         with tempfile.TemporaryDirectory() as temp:
             doc = Document(str(make_template(Path(temp) / 'b.docx', FMT.cell_pitch_mm, 10, lines=['ก ฃ ค'])))
@@ -169,8 +169,7 @@ class BookFromTextTests(unittest.TestCase):
         for run in paragraph.runs:
             node = run._r.rPr.find(w + 'spacing') if run._r.rPr is not None else None
             spacing[run.text] = None if node is None else int(node.get(w + 'val'))
-        self.assertEqual(spacing['ฃ'], 56)  # 2 × 1.4 pt in twentieths
-        self.assertEqual([value for text, value in spacing.items() if 'ก' in text], [None])  # style's 1.4 pt
+        self.assertEqual(spacing, {'ก ฃ ค': None})  # one run in the style's spacing
 
     def test_back_side_carries_the_guide_picture(self):
         with tempfile.TemporaryDirectory() as temp:

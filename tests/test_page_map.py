@@ -62,9 +62,10 @@ class ReadPageTests(unittest.TestCase):
         self.assertNotIn('ไม่ทราบ', page.words)
 
     def test_drift_beyond_half_a_cell_keeps_every_space(self):
-        # Seven 2-cell letters; the printed page drifted ~5 mm over the line (no Replace, slight shrink).
+        # Seven 2-cell letters each 0.5 mm short (a 30 pt page without Replace): 3.5 mm over the line.
+        # 32.5 pt pages are ~0.04 mm short per letter; dots 2.52 mm apart fail beyond ~0.55 mm per letter.
         text = 'ฌ ญ ฎ ฏ ฐ ฑ ฒ ณ ด'
-        page = word_like_page(text, drift_mm=0.75)
+        page = word_like_page(text, drift_mm=0.5)
         self.assertEqual(page.words, tuple(text.split()))
 
     def assert_page(self, page, lines, words):

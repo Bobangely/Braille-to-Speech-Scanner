@@ -32,10 +32,10 @@ from page_calibration import CORNERS, DEFAULT_FORMAT, PageFormat, page_format  #
 from tools.export_markers import export_markers  # noqa: E402
 
 FONT = 'SOV_braille_only'
-FONT_PT = 30
+FONT_PT = 32.5
 FULL_CELL = 'ฮ'  # SOV_braille_only draws it as all six dots, one cell wide
-PITCH_TEST_VALUES = (0.6, 0.8, 1.0, 1.1, 1.2, 1.4, 1.6)
-LOWERED_PT = 2  # the exact 10 mm line is shorter than 30 pt: lower the dots so row 1 is not clipped
+PITCH_TEST_VALUES = (0.0, 0.05, 0.1, 0.15)
+LOWERED_PT = 3  # the exact 10 mm line is shorter than 32.5 pt: lowered 3 pt kept row 1 whole on paper
 PT_MM = 25.4 / 72
 COLOR_STYLE = 'Braille สี'
 RAISED_STYLE = 'บรรทัดนูน'
@@ -141,25 +141,12 @@ def make_template(out: Path, cell_pitch_mm: float, line_pitch_mm: float,
 
 
 def _add_braille_text(paragraph, text: str, cell_pitch_mm: float) -> None:
-    """Add the text so every Braille cell lands on the slate pitch.
+    """Add the text as one run in the style's spacing.
 
-    Word adds 'Expanded' once per character, but a wide letter (ฃ = 2 cells)
-    needs it once per cell. Runs of one-cell characters keep the style's spacing.
+    At 32.5 pt the font's own cell is the slate pitch, so wide letters, vowels and
+    tone marks need no extra spacing (Word adds 'Expanded' per cluster, not per cell).
     """
-    expanded = expanded_pt(cell_pitch_mm)
-    plain = ''
-    for char in text:
-        cells = len(text_to_braille_cells(char, 'thai')) if char.strip() else 1
-        if cells == 1:
-            plain += char
-            continue
-        if plain:
-            paragraph.add_run(plain)
-            plain = ''
-        run = paragraph.add_run(char)
-        run._r.get_or_add_rPr().append(parse_xml(f'<w:spacing {nsdecls("w")} w:val="{round(cells * expanded * 20)}"/>'))
-    if plain:
-        paragraph.add_run(plain)
+    paragraph.add_run(text)
 
 
 def _side(doc, count: int, gap_mm: float, rows: int, last: bool) -> list:
@@ -252,7 +239,7 @@ def _add_styles(doc, cell_pitch_mm: float, line_pitch_mm: float) -> None:
     style.font.name, style.font.size, style.font.color.rgb = FONT, Pt(FONT_PT), DOT_BLUE
     rpr = style.element.get_or_add_rPr()
     rpr.rFonts.set(qn('w:cs'), FONT)  # Thai text is complex script in Word
-    rpr.append(parse_xml(f'<w:szCs {nsdecls("w")} w:val="{FONT_PT * 2}"/>'))
+    rpr.append(parse_xml(f'<w:szCs {nsdecls("w")} w:val="{round(FONT_PT * 2)}"/>'))
     rpr.append(parse_xml(f'<w:spacing {nsdecls("w")} w:val="{round(expanded_pt(cell_pitch_mm) * 20)}"/>'))
     rpr.append(parse_xml(f'<w:position {nsdecls("w")} w:val="{-LOWERED_PT * 2}"/>'))  # half-points
 
