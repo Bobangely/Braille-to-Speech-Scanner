@@ -48,6 +48,7 @@ class FingerReader:
         self._finger: FingerState | None = None
         self.calibration = self.tip = None  # last frame's, for the preview
         self._hand_seen_s = float('-inf')
+        self._verify = False  # page moved: recheck every hand-free frame until sure
 
     def step(self, frame, now_s: float) -> str:
         self.last_events = []
@@ -59,8 +60,13 @@ class FingerReader:
         if calibration is None:
             self._set('waiting_page', 'no corner markers')
             self._tell(PLACE_PAGE)
-        elif changed or self.status == 'waiting_page':
-            self._set('learning', 'page markers moved' if changed else 'markers found')
+        elif self.status == 'waiting_page':
+            self._set('learning', 'markers found')
+        elif changed and self.status == 'reading':
+            # The hand dragged the sheet: the map is in page mm, so keep reading, but make sure
+            # it is still the same sheet before trusting it again.
+            log.info('page moved; checking it is the same page')
+            self._verify = True
         if self.status == 'learning':
             self._learn(frame, calibration, now_s)
         elif self.status == 'reading':
@@ -68,7 +74,7 @@ class FingerReader:
             self.last_events = self._finger.update(None if point is None else tuple(point), now_s)
             self.speech.handle(self.last_events)
             # MediaPipe misses a covering hand for a frame now and then: recheck only after a full hand-free second.
-            if now_s - self._hand_seen_s >= RECHECK_S and now_s - self._checked_s >= RECHECK_S:
+            if now_s - self._hand_seen_s >= RECHECK_S and (self._verify or now_s - self._checked_s >= RECHECK_S):
                 self._recheck(frame, calibration, now_s)
         return self.status
 
@@ -78,6 +84,7 @@ class FingerReader:
         # Only new ink means a new page: a hand MediaPipe failed to see still only hides dots.
         same = new_ink_dots(self.read_page(frame, calibration, self.fmt), self._finger.page, self.fmt) < NEW_INK_DOTS
         self._mismatches = 0 if same else self._mismatches + 1
+        self._verify = self._verify and not same
         if self._mismatches >= self.required_maps:
             self._set('learning', 'page content changed')
 
@@ -104,7 +111,7 @@ class FingerReader:
         self.speech.prepare_page(page)
         self._set('reading', f'{len(page.lines)} lines learned')
         self._finger = FingerState(page)
-        self._checked_s, self._mismatches = now_s, 0
+        self._checked_s, self._mismatches, self._verify = now_s, 0, False
         self._tell(f'พร้อม {len(page.lines)} บรรทัด')
 
     def _set(self, status: str, reason: str) -> None:

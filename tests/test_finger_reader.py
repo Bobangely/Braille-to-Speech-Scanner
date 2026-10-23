@@ -97,13 +97,23 @@ class FingerReaderTests(unittest.TestCase):
         self.assertEqual(self.reader.last_events, [EnterCell(0, 0, 'สระไอ')])
         self.assertAlmostEqual(self.reader.entered_s, 1.0)  # latency is measured from here
 
-    def test_page_change_returns_to_learning(self):
+    def test_moved_page_keeps_reading(self):
+        # The hand drags an unfixed sheet: the map is in page mm, so the new calibration is enough.
         self.learn()
         self.calibrator.result = (Calibration(), True)
-        self.assertEqual(self.reader.step(FRAME, 2.0), 'learning')
-        self.tracker.tip = (13, 25)
+        self.assertEqual(self.reader.step(FRAME, 2.0), 'reading')
+        self.tracker.hand_present, self.tracker.tip = True, (13, 25)
         self.reader.step(FRAME, 2.1)
-        self.assertEqual(self.reader.last_events, [])
+        self.reader.step(FRAME, 2.3)
+        self.assertEqual(self.reader.last_events, [EnterCell(0, 0, 'สระไอ')])
+
+    def test_moved_page_with_new_ink_is_learned_again_at_once(self):
+        # A different sheet put down in another place: recheck immediately instead of waiting a second.
+        self.learn()
+        self.dots_on_page = {2, 3, 4}
+        self.calibrator.result = (Calibration(), True)
+        statuses = [self.reader.step(FRAME, 0.5 + i * 0.05) for i in range(3)]
+        self.assertEqual(statuses[-1], 'learning')
 
     def test_page_flipped_in_place_is_learned_again(self):
         # Spiral book: the next sheet lands on the same markers, so calibration cannot tell.
@@ -147,10 +157,10 @@ class FingerReaderTests(unittest.TestCase):
 
     def test_relearning_says_why(self):
         self.learn()
-        self.calibrator.result = (Calibration(), True)
+        self.calibrator.result = (None, True)
         with self.assertLogs('finger_reader', 'INFO') as logs:
             self.reader.step(FRAME, 2.0)
-        self.assertIn('markers moved', ' '.join(logs.output))
+        self.assertIn('no corner markers', ' '.join(logs.output))
 
     def test_no_recheck_while_a_hand_is_reading(self):
         self.learn()
