@@ -34,6 +34,11 @@ class FingerState:
         self.entered_s: float | None = None  # when the finger reached the last spoken cell
         self._pending: set[tuple[int, int]] = set()  # (line_id, word) entered, not yet finished
 
+    @property
+    def active_cell(self) -> tuple[LinePair, CellSlot] | None:
+        """The cell whose symbol was spoken last, while the finger stays on it."""
+        return self._active
+
     def _locate(self, x, y):
         """Return ('cell', line, cell), ('past', line) or None."""
         band = next((l for l in self.page.lines if l.raised_y1_mm <= y <= l.raised_y2_mm), None)

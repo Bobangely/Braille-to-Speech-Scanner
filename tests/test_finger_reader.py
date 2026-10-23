@@ -134,6 +134,57 @@ class FingerReaderTests(unittest.TestCase):
         self.calibrator.result = (None, True)
         self.assertEqual(self.reader.step(FRAME, 2.0), 'waiting_page')
 
+    def test_reader_exposes_what_the_preview_draws(self):
+        self.learn()
+        self.tracker.hand_present, self.tracker.tip = True, (13, 25)
+        self.reader.step(FRAME, 1.0)
+        self.reader.step(FRAME, 1.2)
+        self.assertEqual(self.reader.tip, (13, 25))
+        line, cell = self.reader.active_cell
+        self.assertEqual((line.line_id, cell.index), (0, 0))
+        self.assertIs(self.reader.page, self.reader._finger.page)
+
+
+class OverlayTests(unittest.TestCase):
+    """The live preview outlines every cell and word, and marks the finger's cell."""
+
+    PX = 4  # fake calibration: 4 px per mm
+
+    class Calibration:
+        def to_image(self, points):
+            return np.asarray(points, dtype=float).reshape(-1, 2) * OverlayTests.PX
+
+    def setUp(self):
+        cells = (CellSlot(0, 10.0, 16.0, frozenset({1}), 'สระไอ', 0), CellSlot(1, 16.0, 22.0, frozenset({1, 2}), 'กอไก่', 0),
+                 CellSlot(2, 22.0, 28.0, frozenset(), None, None), CellSlot(3, 28.0, 34.0, frozenset({1, 3, 4}), 'มอม้า', 1))
+        self.page = PageMap((LinePair(0, 40.0, 50.0, cells),), ('ไก่', 'ม'))
+        self.frame = np.full((300, 200, 3), 255, np.uint8)
+
+    def px(self, x_mm, y_mm):
+        return self.frame[round(y_mm * self.PX), round(x_mm * self.PX)].tolist()
+
+    def test_finger_cell_is_filled_green_on_the_raised_line(self):
+        from finger_reader import ACTIVE_BGR, draw_overlay
+        line = self.page.lines[0]
+        draw_overlay(self.frame, self.page, self.Calibration(), (13 * self.PX, 45 * self.PX), (line, line.cells[1]))
+        b, g, r = self.px(19.0, 45.0)  # middle of the raised cell under กอไก่
+        self.assertGreater(g, 150)
+        self.assertLess(r, 200)
+        self.assertEqual(self.px(25.0, 45.0), [255, 255, 255])  # the empty cell is not outlined or filled
+
+    def test_each_word_gets_its_own_outline_colour(self):
+        from finger_reader import WORD_BGR, draw_overlay
+        draw_overlay(self.frame, self.page, self.Calibration(), None, None)
+        self.assertEqual(self.px(10.0, 45.0), list(WORD_BGR[0]))  # left edge of word 0
+        self.assertEqual(self.px(34.0, 45.0), list(WORD_BGR[1]))  # right edge of word 1
+
+    def test_status_bar_names_the_symbol_and_word(self):
+        from finger_reader import draw_overlay
+        line = self.page.lines[0]
+        before = self.frame.copy()
+        draw_overlay(self.frame, self.page, self.Calibration(), None, (line, line.cells[1]))
+        self.assertFalse(np.array_equal(self.frame[-30:], before[-30:]))  # text drawn in the bottom bar
+
 
 class CachedWavSpeakerTests(unittest.TestCase):
     def test_missing_tts_model_fails_at_startup(self):

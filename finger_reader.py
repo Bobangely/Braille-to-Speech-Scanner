@@ -45,11 +45,13 @@ class FingerReader:
         self._told: str | None = None
         self._learner = PageLearner(required_maps)
         self._finger: FingerState | None = None
+        self.calibration = self.tip = None  # last frame's, for the preview
 
     def step(self, frame, now_s: float) -> str:
         self.last_events = []
         calibration, changed = self.calibrator.update(frame, now_s)
         tip = self.tracker.update(frame, round(now_s * 1000))
+        self.calibration, self.tip = calibration, tip
         if calibration is None:
             self._set('waiting_page')
             self._tell(PLACE_PAGE)
@@ -72,6 +74,14 @@ class FingerReader:
         self._mismatches = 0 if same else self._mismatches + 1
         if self._mismatches >= self.required_maps:
             self._set('learning')
+
+    @property
+    def page(self):
+        return self._finger.page if self._finger else None
+
+    @property
+    def active_cell(self):
+        return self._finger.active_cell if self._finger else None
 
     @property
     def entered_s(self) -> float | None:
@@ -159,6 +169,66 @@ class CachedWavSpeaker:
             log.warning('speech synthesis skipped: %s', done.stderr.decode('utf-8', 'replace')[-500:])
 
 
+WORD_BGR = ((0, 140, 255), (255, 120, 0), (180, 0, 220), (0, 170, 0), (0, 0, 220), (200, 160, 0))
+CELL_BGR = (170, 170, 170)
+ACTIVE_BGR = (0, 200, 0)
+THAI_FONT = Path('C:/Windows/Fonts/tahoma.ttf')
+
+
+def draw_overlay(image, page, calibration, tip, active) -> None:
+    """Outline every cell and word of the page, fill the finger's raised cell, label it.
+
+    Rectangles are in page mm and projected through the calibration, so they
+    follow the paper's tilt. The colored cell sits above its raised cell.
+    """
+    import cv2
+    import numpy as np
+
+    def box(x1, y1, x2, y2):
+        corners = calibration.to_image([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
+        return [np.round(corners).astype(np.int32)]
+
+    for line in page.lines:
+        colored_top = line.raised_y1_mm - 2 * DEFAULT_FORMAT.dot_spacing_mm - 2.5
+        words: dict[int, list] = {}
+        for cell in line.cells:
+            if cell.word_index is None:
+                continue
+            words.setdefault(cell.word_index, []).append(cell)
+            for y1, y2 in ((colored_top, line.raised_y1_mm), (line.raised_y1_mm, line.raised_y2_mm)):
+                cv2.polylines(image, box(cell.x1_mm, y1, cell.x2_mm, y2), True, CELL_BGR, 1)
+        for word, cells in words.items():
+            cv2.polylines(image, box(cells[0].x1_mm, colored_top, cells[-1].x2_mm, line.raised_y2_mm),
+                          True, WORD_BGR[word % len(WORD_BGR)], 2)
+    if active is not None:
+        line, cell = active
+        fill = image.copy()
+        cv2.fillPoly(fill, box(cell.x1_mm, line.raised_y1_mm, cell.x2_mm, line.raised_y2_mm), ACTIVE_BGR)
+        cv2.addWeighted(fill, 0.5, image, 0.5, 0, dst=image)
+    if tip is not None:
+        cv2.circle(image, tuple(map(int, tip)), 9, (0, 0, 0), -1)
+        cv2.circle(image, tuple(map(int, tip)), 6, ACTIVE_BGR, -1)
+    if active is not None:
+        cell = active[1]
+        word = page.words[cell.word_index] if cell.word_index is not None else ''
+        _thai_bar(image, f'กำลังอ่าน: {cell.name or UNKNOWN}    คำ: {word}')
+
+
+def _thai_bar(image, text: str) -> None:
+    """Dark bar with Thai text at the bottom (OpenCV fonts have no Thai glyphs)."""
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageFont
+
+    height = max(24, image.shape[0] // 18)
+    bar = Image.fromarray(np.full((height, image.shape[1], 3), 30, np.uint8))
+    try:
+        font = ImageFont.truetype(str(THAI_FONT), int(height * 0.7))
+    except OSError:
+        font = ImageFont.load_default()  # shortcut: no Thai glyphs without Tahoma; fine off Windows tests
+    ImageDraw.Draw(bar).text((10, height * 0.1), text, font=font, fill=(255, 255, 255))
+    image[-height:] = np.asarray(bar)
+
+
 # Runs inside the Piper/MMS environment: one model load, one failed text never stops the rest.
 BATCH_SCRIPT = '''import json, os, sys
 sys.path.insert(0, %r)
@@ -237,6 +307,8 @@ def main() -> int:
                 latency.writerow([repr(reader.last_events[-1]), f'{reader.entered_s:.4f}', f'{done_s:.4f}',
                                   f'{done_s - reader.entered_s:.4f}'])
             if not args.headless:
+                if reader.page is not None and reader.calibration is not None:
+                    draw_overlay(frame, reader.page, reader.calibration, reader.tip, reader.active_cell)
                 cv2.putText(frame, status, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 200, 255), 3)
                 cv2.imshow('finger reader', cv2.resize(frame, (1280, 720)))
                 if cv2.waitKey(1) & 0xFF in (ord('q'), 27):
