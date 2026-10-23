@@ -13,8 +13,8 @@ from speech_queue import SpeechQueue
 FRAME = np.zeros((10, 10, 3), np.uint8)
 
 
-def page(lines=3):
-    cells = (CellSlot(0, 10.0, 16.0, frozenset({1, 5, 6}), 'สระไอ', 0),)
+def page(lines=3, dots=frozenset({1, 5, 6})):
+    cells = (CellSlot(0, 10.0, 16.0, frozenset(dots), 'สระไอ', 0),)
     return PageMap(tuple(LinePair(i, 20.0 + 30 * i, 30.0 + 30 * i, cells) for i in range(lines)), ('ไ',))
 
 
@@ -60,11 +60,11 @@ class FingerReaderTests(unittest.TestCase):
     def setUp(self):
         self.calibrator, self.tracker, self.speaker = FakeCalibrator(), FakeTracker(), RecordingSpeaker()
         self.reads = []
-        self.lines_on_page = 3
+        self.lines_on_page, self.dots_on_page = 3, {1, 5, 6}
 
         def read_page(frame, calibration, fmt):
             self.reads.append(frame)
-            return page(self.lines_on_page)
+            return page(self.lines_on_page, self.dots_on_page)
 
         self.reader = FingerReader(self.tracker, self.calibrator, SpeechQueue(self.speaker),
                                    read_page=read_page, required_maps=3)
@@ -108,7 +108,7 @@ class FingerReaderTests(unittest.TestCase):
     def test_page_flipped_in_place_is_learned_again(self):
         # Spiral book: the next sheet lands on the same markers, so calibration cannot tell.
         self.learn()
-        self.lines_on_page = 2
+        self.lines_on_page, self.dots_on_page = 2, {2, 3, 4}  # new ink where the old page had none
         # Rechecked once a second after learning (t=0.2): three differing reads, then relearn.
         statuses = [self.reader.step(FRAME, 1.0 + i) for i in range(4)]
         self.assertEqual(statuses, ['reading', 'reading', 'reading', 'learning'])
@@ -120,6 +120,12 @@ class FingerReaderTests(unittest.TestCase):
         reads = len(self.reads)
         self.assertEqual([self.reader.step(FRAME, 1.0 + i * 0.1) for i in range(30)], ['reading'] * 30)
         self.assertLessEqual(len(self.reads) - reads, 4)  # about once a second, not every frame
+
+    def test_covered_page_without_a_detected_hand_is_not_a_new_page(self):
+        # MediaPipe can lose a hand that still covers the page for seconds; a hand only hides dots.
+        self.learn()
+        self.lines_on_page, self.dots_on_page = 2, {1}
+        self.assertEqual({self.reader.step(FRAME, 1.0 + i) for i in range(6)}, {'reading'})
 
     def test_hand_detection_dropouts_do_not_relearn_the_page(self):
         # MediaPipe misses the hand for a frame now and then while it still covers the dots.

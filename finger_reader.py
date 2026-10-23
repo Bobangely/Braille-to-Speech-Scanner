@@ -22,7 +22,7 @@ from pathlib import Path
 
 from finger_state import EnterCell, FingerState
 from page_calibration import DEFAULT_FORMAT, CalibrationTracker, PageFormat, page_format
-from page_map import PageLearner, page_signature, read_page as read_colored_page
+from page_map import PageLearner, new_ink_dots, read_page as read_colored_page
 from speech_queue import UNKNOWN, SpeechQueue
 from thai_speech import SYMBOL_NAMES, THAI_CONSONANT_NAMES
 
@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 PLACE_PAGE = 'วางหน้าให้เห็นมุมครบ'
 LIFT_HAND = 'ยกมือออกก่อน'
 RECHECK_S = 1.0  # re-read the colored lines this often while no hand is in view
+NEW_INK_DOTS = 3  # dots where the learned page had paper, before the page counts as changed
 
 
 class FingerReader:
@@ -74,7 +75,8 @@ class FingerReader:
     def _recheck(self, frame, calibration, now_s: float) -> None:
         """A spiral-book page turned onto the same markers changes only its dots."""
         self._checked_s = now_s
-        same = page_signature(self.read_page(frame, calibration, self.fmt)) == self._signature
+        # Only new ink means a new page: a hand MediaPipe failed to see still only hides dots.
+        same = new_ink_dots(self.read_page(frame, calibration, self.fmt), self._finger.page, self.fmt) < NEW_INK_DOTS
         self._mismatches = 0 if same else self._mismatches + 1
         if self._mismatches >= self.required_maps:
             self._set('learning', 'page content changed')
@@ -102,7 +104,7 @@ class FingerReader:
         self.speech.prepare_page(page)
         self._set('reading', f'{len(page.lines)} lines learned')
         self._finger = FingerState(page)
-        self._signature, self._checked_s, self._mismatches = page_signature(page), now_s, 0
+        self._checked_s, self._mismatches = now_s, 0
         self._tell(f'พร้อม {len(page.lines)} บรรทัด')
 
     def _set(self, status: str, reason: str) -> None:
@@ -285,6 +287,7 @@ def main() -> int:
     parser.add_argument('--marker-size-mm', type=float, help='printed marker side, as in the book template')
     parser.add_argument('--pad-fraction', type=float, default=0.25,
                         help='reading point from the fingertip toward the first joint: 0 = nail tip, 1 = joint')
+    parser.add_argument('--debug-dir', type=Path, help='save the camera frame each time the status changes')
     args = parser.parse_args()
     fmt = page_format(args.marker_size_mm)
 
@@ -311,8 +314,12 @@ def main() -> int:
             if not ok or frame is None:
                 break
             frame_s = time.perf_counter() - started
+            previous = reader.status
             status = reader.step(frame, frame_s)
             done_s = time.perf_counter() - started
+            if args.debug_dir and status != previous:
+                args.debug_dir.mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(str(args.debug_dir / f'{time.strftime("%H%M%S")}_{previous}_to_{status}.jpg'), frame)
             if latency is not None and reader.last_events and isinstance(reader.last_events[-1], EnterCell):
                 latency.writerow([repr(reader.last_events[-1]), f'{reader.entered_s:.4f}', f'{done_s:.4f}',
                                   f'{done_s - reader.entered_s:.4f}'])

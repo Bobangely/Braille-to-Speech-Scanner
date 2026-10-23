@@ -35,7 +35,7 @@ def read_page(image, calibration: PageCalibration, fmt: PageFormat = DEFAULT_FOR
         cells = _line_cells(points[members], first_y if top is None else top, fmt, words,
                             trusted=top is not None)
         lines.append(LinePair(line_id, bottom, band_end, cells))
-    return PageMap(tuple(lines), tuple(words))
+    return PageMap(tuple(lines), tuple(words), tuple(map(tuple, points.tolist())))
 
 
 def _line_tops(points: np.ndarray, rows, spacing: float) -> list[float | None]:
@@ -170,6 +170,29 @@ def _decode_words(slots: list[list], words: list[str]) -> None:
         for s in group:
             s[5] = len(words)
         words.append(UNKNOWN_WORD if unreadable else decode_cells(cells, 'thai'))
+
+
+def new_ink_dots(read: PageMap, learned: PageMap, fmt: PageFormat = DEFAULT_FORMAT, tolerance_mm: float = 1.2) -> int:
+    """Dots of ``read`` with no dot of ``learned`` nearby.
+
+    A hand or a shadow only hides dots, so a covered page has none; a different
+    page shows ink where the learned one had paper.
+    """
+    known = _dot_points_mm(learned, fmt)
+    if not len(known):
+        return len(_dot_points_mm(read, fmt))
+    return sum(np.min(np.hypot(*(known - point).T)) > tolerance_mm for point in _dot_points_mm(read, fmt))
+
+
+def _dot_points_mm(page: PageMap, fmt: PageFormat) -> np.ndarray:
+    """Measured dot centres (mm); rebuilt from the cells for a map made without them."""
+    if page.dots_mm:
+        return np.array(page.dots_mm, dtype=float)
+    spacing, pad = fmt.dot_spacing_mm, (fmt.cell_pitch_mm - fmt.dot_spacing_mm) / 2
+    points = [(cell.x1_mm + pad + (dot > 3) * spacing,
+               line.raised_y1_mm - _BAND_GAP_MM - 2 * spacing + (dot - 1) % 3 * spacing)
+              for line in page.lines for cell in line.cells for dot in cell.dots]
+    return np.array(points, dtype=float).reshape(-1, 2)
 
 
 def page_signature(page_map: PageMap):

@@ -23,3 +23,4 @@ class LinePair:
 class PageMap:
     lines: tuple[LinePair, ...]
     words: tuple[str, ...]  # words[word_index] is the word text
+    dots_mm: tuple[tuple[float, float], ...] = ()  # measured colored dots, to tell a covered page from a new one
