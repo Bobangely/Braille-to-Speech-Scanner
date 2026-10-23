@@ -303,6 +303,7 @@ def main() -> int:
         raise RuntimeError(f'Cannot open camera {args.camera}')
     latency = None
     if args.log_latency:
+        args.log_latency.parent.mkdir(parents=True, exist_ok=True)
         log_file = args.log_latency.open('w', newline='', encoding='utf-8')
         latency = csv.writer(log_file)
         # entered_s: frame where the fingertip first reached the cell; played_s: playback started.
