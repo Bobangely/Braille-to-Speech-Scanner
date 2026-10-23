@@ -121,6 +121,48 @@ class TestFingerBrailleReader(unittest.TestCase):
         self.reader.process(frame)
         self.reader.speaker.speak.assert_called_once_with('กา', interrupt=True)
 
+    def test_hold_finger_dwell_spells_character_in_word_mode(self):
+        from unittest.mock import Mock, call
+        self.reader.speaker.speak = Mock()
+        cells = [
+            {'center': (100, 100), 'width': 30, 'height': 50, 'dots': [1]},
+            {'center': (140, 100), 'width': 30, 'height': 50, 'dots': [1, 6]}
+        ]
+        verbose = [{'char': 'ก'}, {'char': 'า'}]
+        self.reader.update_grid_cache(cells, verbose, decoded_text="กา")
+
+        # 1. Hover on Cell 0 ('ก')
+        self.reader.detector.detect_index_finger = Mock(
+            return_value=((100, 100), [(100, 100)] * 4)
+        )
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        # Process up to frame 8: should speak the word 'กา'
+        for _ in range(8):
+            self.reader.process(frame)
+        self.assertEqual(self.reader.speaker.speak.call_args_list, [call('กา', interrupt=True)])
+
+        # 2. Continue holding on Cell 0 ('ก') up to frame 18: should spell 'กอไก่'
+        for _ in range(10):
+            self.reader.process(frame)
+        self.assertEqual(self.reader.speaker.speak.call_args_list, [
+            call('กา', interrupt=True),
+            call('กอไก่', interrupt=True)
+        ])
+
+        # 3. Slide to Cell 1 ('า') in the same word
+        self.reader.detector.detect_index_finger = Mock(
+            return_value=((140, 100), [(140, 100)] * 4)
+        )
+        # Should not re-read word 'กา', but holding for 18 frames should spell 'สระอา'
+        for _ in range(18):
+            self.reader.process(frame)
+        self.assertEqual(self.reader.speaker.speak.call_args_list, [
+            call('กา', interrupt=True),
+            call('กอไก่', interrupt=True),
+            call('สระอา', interrupt=True)
+        ])
+
 
 if __name__ == '__main__':
     unittest.main()
