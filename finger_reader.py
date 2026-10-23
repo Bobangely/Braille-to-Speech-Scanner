@@ -276,6 +276,8 @@ def main() -> int:
     parser.add_argument('--log-latency', type=Path, help='CSV of per-event timings in seconds')
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--marker-size-mm', type=float, help='printed marker side, as in the book template')
+    parser.add_argument('--pad-fraction', type=float, default=0.5,
+                        help='reading point from the fingertip toward the first joint: 0 = nail tip, 1 = joint')
     args = parser.parse_args()
     fmt = page_format(args.marker_size_mm)
 
@@ -284,7 +286,8 @@ def main() -> int:
     missing = [t for t in symbol_texts() if t not in speaker.prepare_many(symbol_texts())]
     if missing:  # fail at startup, never silently while reading
         raise RuntimeError(f'Thai voice cannot synthesize {len(missing)} phrases, e.g. {missing[:3]}')
-    reader = FingerReader(FingertipTracker(), CalibrationTracker(fmt), SpeechQueue(speaker), fmt)
+    reader = FingerReader(FingertipTracker(pad_fraction=args.pad_fraction), CalibrationTracker(fmt),
+                          SpeechQueue(speaker), fmt)
     capture = _open_camera(args.camera, 1920, 1080, 30)
     if not capture.isOpened():
         raise RuntimeError(f'Cannot open camera {args.camera}')
