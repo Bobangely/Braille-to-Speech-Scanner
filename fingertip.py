@@ -1,6 +1,7 @@
 """Fingertip tracking for the finger reader (MediaPipe Hand Landmarker).
 
-Only the index (landmark 8) and middle (landmark 12) fingertips can read.
+Only the index fingertip (landmark 8) reads: braille is read with the index finger,
+and also tracking the middle finger made the lock flip between the two.
 The first one that stays still for the dwell becomes the reading finger and
 is followed until it disappears.
 """
@@ -12,7 +13,7 @@ from pathlib import Path
 
 import cv2
 
-TIP_LANDMARKS = (8, 12)
+TIP_LANDMARKS = (8,)
 DEFAULT_MODEL = Path(__file__).resolve().parent / "models" / "hand_landmarker.task"
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
@@ -21,7 +22,7 @@ MODEL_URL = (
 
 
 def fingertip_pixels(hand_landmarks, width: int, height: int) -> list[tuple[int, int, int, int]]:
-    """Map index and middle fingertips to clamped frame pixels."""
+    """Map the reading fingertips to clamped frame pixels."""
     points = []
     for hand_index, landmarks in enumerate(hand_landmarks):
         for landmark_index in TIP_LANDMARKS:
@@ -73,7 +74,7 @@ class ActiveFingertipLock:
 
 
 def labelled_fingertips(result, width: int, height: int) -> list[tuple[str, int, int, int]]:
-    """(hand label, landmark, x, y) for every index/middle fingertip in a detection."""
+    """(hand label, landmark, x, y) for every reading fingertip in a detection."""
     candidates = []
     for hand_index, landmark_index, x, y in fingertip_pixels(result.hand_landmarks, width, height):
         handedness = result.handedness[hand_index]

@@ -29,8 +29,14 @@ class FakeDetector:
 
 
 class FingertipTrackerTests(unittest.TestCase):
-    def test_fingertip_pixels_maps_index_and_middle(self):
-        self.assertEqual(fingertip_pixels([hand()], 640, 480), [(0, 8, 320, 120), (0, 12, 576, 432)])
+    def test_only_the_index_fingertip_reads(self):
+        # Braille is read with the index finger; the middle finger made the lock flip between them.
+        self.assertEqual(fingertip_pixels([hand()], 640, 480), [(0, 8, 320, 120)])
+
+    def test_still_middle_finger_is_never_locked(self):
+        moving_index = [[hand(index_tip=(0.1 * k, 0.25), middle_tip=(0.5, 0.5))] for k in range(1, 9)]
+        tracker = FingertipTracker(detector=FakeDetector(*moving_index))
+        self.assertEqual([tracker.update(FRAME, 100 * k) for k in range(8)], [None] * 8)
 
     def test_tracker_returns_none_without_hands(self):
         tracker = FingertipTracker(detector=FakeDetector([]))
