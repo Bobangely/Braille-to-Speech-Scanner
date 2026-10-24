@@ -62,6 +62,88 @@ ENGLISH_NAMES = {
 }
 
 
+class PersistentPiperClient:
+    """Thread-safe client to communicate with persistent_piper_worker daemon."""
+
+    def __init__(self, model_path, python_exe):
+        self.model_path = str(model_path)
+        self.python_exe = str(python_exe)
+        self._lock = threading.Lock()
+        self._proc = None
+        self._start_process()
+
+    def _start_process(self):
+        worker_script = str(Path(__file__).parent / 'tools' / 'persistent_piper_worker.py')
+        flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        self._proc = subprocess.Popen(
+            [self.python_exe, worker_script, self.model_path],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            creationflags=flags
+        )
+        ready = self._proc.stdout.readline().strip()
+        if "READY" not in ready:
+            raise RuntimeError(f"Piper worker failed to start: {ready}")
+
+    def speak(self, text):
+        with self._lock:
+            if self._proc is None or self._proc.poll() is not None:
+                self._start_process()
+            try:
+                self._proc.stdin.write(json.dumps({'cmd': 'speak', 'text': text}) + '\n')
+                self._proc.stdin.flush()
+                resp = json.loads(self._proc.stdout.readline())
+                return resp.get('status') == 'playing'
+            except Exception:
+                return False
+
+    def precache(self, words):
+        words_list = [w for w in words if w and w.strip()]
+        if not words_list:
+            return
+        def _bg():
+            with self._lock:
+                if self._proc is None or self._proc.poll() is not None:
+                    try:
+                        self._start_process()
+                    except Exception:
+                        return
+                try:
+                    self._proc.stdin.write(json.dumps({'cmd': 'precache', 'words': words_list}) + '\n')
+                    self._proc.stdin.flush()
+                    self._proc.stdout.readline()
+                except Exception:
+                    pass
+        threading.Thread(target=_bg, daemon=True).start()
+
+    def stop(self):
+        with self._lock:
+            if self._proc is not None and self._proc.poll() is None:
+                try:
+                    self._proc.stdin.write(json.dumps({'cmd': 'stop'}) + '\n')
+                    self._proc.stdin.flush()
+                    self._proc.stdout.readline()
+                except Exception:
+                    pass
+
+    def close(self):
+        with self._lock:
+            if self._proc is not None:
+                try:
+                    self._proc.stdin.write(json.dumps({'cmd': 'quit'}) + '\n')
+                    self._proc.stdin.flush()
+                    self._proc.wait(timeout=1)
+                except Exception:
+                    try:
+                        self._proc.terminate()
+                    except Exception:
+                        pass
+                self._proc = None
+
+
 class NonBlockingSpeechQueue:
     """Non-blocking background thread for real-time instant character speech."""
 
@@ -69,14 +151,29 @@ class NonBlockingSpeechQueue:
         self._queue = queue.Queue(maxsize=4)
         self._stop_event = threading.Event()
         self._external_tts = fallback_tts
+        self._persistent_piper = None
+        if self._external_tts is not None and hasattr(self._external_tts, 'models') and hasattr(self._external_tts, 'python'):
+            model_thai = self._external_tts.models.get('thai')
+            python_exe = getattr(self._external_tts, 'python', None)
+            if model_thai and python_exe and Path(str(model_thai)).is_file() and Path(str(python_exe)).is_file():
+                try:
+                    self._persistent_piper = PersistentPiperClient(str(model_thai), str(python_exe))
+                except Exception as exc:
+                    logger.warning("Could not launch PersistentPiperClient: %s", exc)
+
         self._thread = threading.Thread(target=self._worker_loop, daemon=True)
         self._thread.start()
 
     def speak(self, text, interrupt=True):
         if not text:
             return
+        if self._persistent_piper is not None:
+            if interrupt:
+                self._persistent_piper.stop()
+            self._persistent_piper.speak(text)
+            return
+
         if interrupt:
-            # ตัดเสียงเดิมที่กำลังพูดค้างอยู่ทันทีเพื่อให้เสียงคำใหม่เล่นแบบ Real-time
             if self._external_tts is not None and hasattr(self._external_tts, 'stop'):
                 try:
                     self._external_tts.stop()
@@ -91,6 +188,10 @@ class NonBlockingSpeechQueue:
             self._queue.put_nowait(text)
         except queue.Full:
             pass
+
+    def precache(self, words):
+        if self._persistent_piper is not None:
+            self._persistent_piper.precache(words)
 
     def _worker_loop(self):
         engine = None
@@ -133,6 +234,12 @@ class NonBlockingSpeechQueue:
                 logger.error("Speech playback error: %s", e)
 
     def stop(self):
+        if getattr(self, '_persistent_piper', None) is not None:
+            try:
+                self._persistent_piper.stop()
+                self._persistent_piper.close()
+            except Exception:
+                pass
         self._stop_event.set()
         while not self._queue.empty():
             try:
@@ -468,8 +575,12 @@ class FingerBrailleTouchReader:
         self.enabled = True
 
     def lock_grid(self):
-        """แช่แข็งพิกัดตารางเซลล์อักษรเบรลล์ ไม่ให้ YOLO เขียนทับ"""
+        """แช่แข็งพิกัดตารางเซลล์อักษรเบรลล์ ไม่ให้ YOLO เขียนทับ พร้อม precache เสียงอ่านคำทั้งหมดในหน้า"""
         self.grid_locked = True
+        if hasattr(self, 'speaker') and hasattr(self.speaker, 'precache'):
+            words = {c.get('word') for c in self.cached_cells if c.get('word')}
+            chars = {self.get_spoken_name(c.get('char')) for c in self.cached_cells if c.get('char')}
+            self.speaker.precache(words | chars)
 
     def unlock_grid(self):
         """ปลดล็อกพิกัดตาราง เพื่อให้สแกนหน้าใหม่ได้"""

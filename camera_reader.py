@@ -866,7 +866,8 @@ class RealTimeBrailleScanner:
             tts_enabled=self._speech is not None,
             tts_status=self._speech.status if self._speech is not None else '',
             finger_enabled=getattr(self.finger_reader, 'enabled', False),
-            finger_mode=getattr(self.finger_reader, 'speech_mode', 'word'))
+            finger_mode=getattr(self.finger_reader, 'speech_mode', 'word'),
+            grid_locked=getattr(self.finger_reader, 'grid_locked', False))
         return self._ui.compose(preview, state)
 
     def _draw_top_hud(self, image, current_text, is_locked):
@@ -965,7 +966,7 @@ class RealTimeBrailleScanner:
         decoded_text = result['decoded_text']
         if result['result_id'] != self._last_stability_result_id:
             self._last_stability_result_id = result['result_id']
-            if result.get('status') == 'ok' and decoded_text and '�' not in decoded_text:
+            if result.get('status') in ('ok', 'uncertain') and decoded_text:
                 if self.history and self.history[-1] != decoded_text:
                     self.history.clear()
                 self.history.append(decoded_text)
@@ -1100,6 +1101,14 @@ class RealTimeBrailleScanner:
             self._ui.scroll(-1 if key == ord('[') else 1)
         elif key in (ord('c'), ord('C')):
             self.cycle_dot_color()
+        elif key == 32:  # Spacebar: สลับล็อค/ปลดล็อคกริดทันที (Quick Lock / Unlock)
+            if hasattr(self, 'finger_reader') and self.finger_reader.enabled:
+                if self.finger_reader.grid_locked:
+                    self.finger_reader.unlock_grid()
+                    print("  🔓 ปลดล็อคตารางเซลล์ (Unlock Grid) [Space]")
+                elif len(self.finger_reader.cached_cells) > 0:
+                    self.finger_reader.lock_grid()
+                    print(f"  🔒 ล็อคตารางเซลล์ทันที {len(self.finger_reader.cached_cells)} เซลล์ (Lock Grid) [Space]")
         elif key in (ord('f'), ord('F'), ord('t'), ord('T')):
             if hasattr(self, 'finger_reader'):
                 self.finger_reader.enabled = not self.finger_reader.enabled

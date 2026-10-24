@@ -192,10 +192,13 @@ class ScannerUI:
         mode = state.get('finger_mode', 'word').upper()
         mode_btn = f'Touch: {mode} [M]'
 
+        grid_locked = state.get('grid_locked', False)
+        lock_label = 'Unlock [Space]' if grid_locked else 'Lock [Space]'
         controls = [(f'{color}  [C]', 'c'), (f'{language}  [L]', 'l'),
                     (f"{state.get('resolution_mode', 'Resolution')}  [V]", 'v'),
                     ('Touch: ON [F]' if finger_on else 'Touch: OFF [F]', 'f'),
                     (mode_btn, 'm'),
+                    (lock_label, ' '),
                     ('Details  [H]', 'h'),
                     ('Zoom -  [X]', 'x'), ('Zoom +  [Z]', 'z'),
                     ('Reset zoom  [R]', 'r'), ('Save image  [P]', 'p'),
@@ -209,7 +212,8 @@ class ScannerUI:
             bx, by = left+(i % 2)*(bw+gap), y+(34+(i//2)*31)*s
             is_active = ((key == 'h' and state.get('details', False))
                          or (key == 'f' and finger_on)
-                         or (key == 'm' and finger_on))
+                         or (key == 'm' and finger_on)
+                         or (key == ' ' and grid_locked))
             self._button(draw, (bx, by, bx+bw, by+26*s), label, ord(key), is_active)
         footer_y = 253 if state.get('tts_enabled') else 222
         footer = state.get('tts_status', 'Ready') if state.get('tts_enabled') else 'Wheel: zoom / click: pan'
