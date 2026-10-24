@@ -112,7 +112,6 @@ def generate_braille_image(
     return image
 
 
-from yolo_detector import YOLOBrailleDetector
 from decoder import decode_cells, decode_cells_verbose
 
 
@@ -121,6 +120,8 @@ def generate_test_suite(output_dir='sample_images/standard', annotated_dir='outp
     สร้างชุดภาพทดสอบภาษาอังกฤษและภาษาไทย
     พร้อมสร้างภาพ Annotated (มี Grid 2x3 และแถบข้อความคำแปล) บันทึกลง output/
     """
+    from yolo_detector import YOLOBrailleDetector  # legacy suite only: yolo_detector is in archive/legacy_scanner
+
     os.makedirs(output_dir, exist_ok=True)
     if save_annotated:
         os.makedirs(annotated_dir, exist_ok=True)
