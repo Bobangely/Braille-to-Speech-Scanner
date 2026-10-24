@@ -279,6 +279,13 @@ class HybridSpeakerTests(unittest.TestCase):
         speaker.speak('กอไก่'), speaker.speak('ไก่')
         self.assertEqual((online.spoken, piper.spoken), (['กอไก่'], ['ไก่']))
 
+    def test_without_fixed_set_every_text_tries_the_online_voice_first(self):
+        from finger_reader import HybridSpeaker
+        online, piper = self.Fake({'ไก่'}), self.Fake({'นก'})
+        speaker = HybridSpeaker(online, piper, fixed=None)
+        self.assertEqual(speaker.prepare_many(['ไก่', 'นก']), {'ไก่', 'นก'})
+        self.assertEqual((online.prepared, piper.prepared), ([['ไก่', 'นก']], [['นก']]))
+
     def test_piper_stands_in_when_the_online_voice_has_no_audio(self):
         from finger_reader import HybridSpeaker
         online, piper = self.Fake(()), self.Fake({'กอไก่'})
@@ -347,8 +354,8 @@ class CachedWavSpeakerTests(unittest.TestCase):
             def synthesize(model, jobs):
                 batches.append([text for text, _ in jobs])
 
-            CachedWavSpeaker(None, Path(cache), backend='edge', synthesize=synthesize).prepare_many(['งองู'])
-            self.assertEqual(batches, [['งองู']])  # respelling is for Piper only
+            CachedWavSpeaker(None, Path(cache), backend='edge', synthesize=synthesize).prepare_many(['งองู', 'สระอิ'])
+            self.assertEqual(batches, [['งองู', 'สะ ละ อิ']])  # Edge has its own, shorter respelling list
 
     def test_leading_silence_is_trimmed_after_synthesis(self):
         import wave

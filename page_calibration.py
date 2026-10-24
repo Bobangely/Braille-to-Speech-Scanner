@@ -30,7 +30,7 @@ class PageFormat:
     width_mm: float = 210.0          # A5 landscape (half of a portrait A4)
     height_mm: float = 148.0
     margin_mm: float = 10.0          # page edge -> marker outer edge
-    marker_size_mm: float = 15.0     # black border included
+    marker_size_mm: float = 10.0     # black border included
     marker_ids: tuple[int, int, int, int] = (0, 1, 2, 3)  # TL, TR, BR, BL
     aruco_dictionary: int = cv2.aruco.DICT_4X4_50
     # Colored Braille lines: SOV_braille_only 32.5 pt + 0.05 pt expanded in Word: the font's
