@@ -56,7 +56,7 @@ class PageCalibrationTests(unittest.TestCase):
 
     def test_default_format_is_a5_landscape(self):
         self.assertEqual((FMT.width_mm, FMT.height_mm), (210.0, 148.0))
-        self.assertEqual((FMT.marker_size_mm, FMT.margin_mm), (15.0, 10.0))
+        self.assertEqual((FMT.marker_size_mm, FMT.margin_mm), (10.0, 10.0))  # 10 mm read fine at 270 mm
         FMT.validate()
 
     def test_default_format_matches_the_slate(self):
