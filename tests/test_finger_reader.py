@@ -354,8 +354,8 @@ class CachedWavSpeakerTests(unittest.TestCase):
             def synthesize(model, jobs):
                 batches.append([text for text, _ in jobs])
 
-            CachedWavSpeaker(None, Path(cache), backend='edge', synthesize=synthesize).prepare_many(['งองู'])
-            self.assertEqual(batches, [['งองู']])  # respelling is for Piper only
+            CachedWavSpeaker(None, Path(cache), backend='edge', synthesize=synthesize).prepare_many(['งองู', 'สระอิ'])
+            self.assertEqual(batches, [['งองู', 'สะ ละ อิ']])  # Edge has its own, shorter respelling list
 
     def test_leading_silence_is_trimmed_after_synthesis(self):
         import wave

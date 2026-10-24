@@ -61,9 +61,16 @@ TTS_SPELLING = {
 }
 
 
-def tts_spelling(text):
+# The same for the Edge voice, which reads most names right (heard by the team).
+EDGE_SPELLING = {
+    'ผอผึ้ง': 'พ๋อ ผึ้ง', 'ฮอนกฮูก': 'ฮอ นก ฮูก',
+    **{name: 'สะ ละ ' + name[3:] for name in SYMBOL_NAMES.values() if name.startswith('สระ')},
+}
+
+
+def tts_spelling(text, spelling=TTS_SPELLING):
     """Text to synthesize for ``text``: every known name in it respelled for the voice."""
-    return ' '.join(TTS_SPELLING.get(part, part) for part in text.split(' '))
+    return ' '.join(spelling.get(part, part) for part in text.split(' '))
 
 
 def symbol_name(text):

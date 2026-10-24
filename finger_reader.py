@@ -25,7 +25,7 @@ from finger_state import EnterCell, FingerState
 from page_calibration import DEFAULT_FORMAT, CalibrationTracker, PageFormat, page_format
 from page_map import PageLearner, new_ink_dots, read_page as read_colored_page
 from speech_queue import UNKNOWN, SpeechQueue
-from thai_speech import SYMBOL_NAMES, THAI_CONSONANT_NAMES, tts_spelling
+from thai_speech import EDGE_SPELLING, SYMBOL_NAMES, THAI_CONSONANT_NAMES, TTS_SPELLING, tts_spelling
 
 ROOT = Path(__file__).resolve().parent
 log = logging.getLogger(__name__)
@@ -140,7 +140,9 @@ class CachedWavSpeaker:
         if backend != 'edge' and not Path(model).exists():  # Edge is an online voice: no model file
             raise FileNotFoundError(f'Thai speech model not found: {model}')
         self.model, self.backend = Path(model or ''), backend
-        self.spell = tts_spelling if backend == 'piper' else str  # respellings were tuned on Piper
+        # Respellings are tuned per voice by ear.
+        table = {'piper': TTS_SPELLING, 'edge': EDGE_SPELLING}.get(backend, {})
+        self.spell = lambda text: tts_spelling(text, table)
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.python = str(Path(python_executable).resolve()) if python_executable else sys.executable
