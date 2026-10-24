@@ -380,7 +380,7 @@ def main() -> int:
     parser.add_argument('--log-latency', type=Path, help='CSV of per-event timings in seconds')
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--marker-size-mm', type=float, help='printed marker side, as in the book template')
-    parser.add_argument('--pad-fraction', type=float, default=0.25,
+    parser.add_argument('--pad-fraction', type=float, default=0.1,
                         help='reading point from the fingertip toward the first joint: 0 = nail tip, 1 = joint')
     parser.add_argument('--debug-dir', type=Path, help='save the camera frame each time the status changes')
     args = parser.parse_args()

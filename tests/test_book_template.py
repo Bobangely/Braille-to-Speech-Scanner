@@ -45,12 +45,12 @@ class BookTemplateTests(unittest.TestCase):
         self.assertAlmostEqual(line_spacing_pt(10), 28.35, delta=0.01)
 
     def test_marker_positions_mm(self):
-        top = {'TL': (10, 10), 'TR': (185, 10), 'BR': (185, 123), 'BL': (10, 123)}
+        top = {'TL': (10, 10), 'TR': (190, 10), 'BR': (190, 128), 'BL': (10, 128)}  # 10 mm markers
         self.assertEqual(marker_positions_mm(FMT, 0.0), top)
-        self.assertEqual(marker_positions_mm(FMT, 148.5)['BR'], (185, 271.5))
+        self.assertEqual(marker_positions_mm(FMT, 148.5)['BR'], (190, 276.5))
 
     def test_front_header_floats_eight_markers_at_their_positions(self):
-        expected = sorted((float(x), float(y), 15.0)
+        expected = sorted((float(x), float(y), 10.0)
                           for half in (0.0, 148.5) for x, y in marker_positions_mm(FMT, half).values())
         self.assertEqual(anchors(self.doc.sections[0].header), expected)
 
