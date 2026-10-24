@@ -972,8 +972,10 @@ class RealTimeBrailleScanner:
                 self.history.append(decoded_text)
             else:
                 self.history.clear()
-        is_locked = (len(self.history) >= self.stability_threshold and bool(decoded_text.strip())
-                     and all(t == decoded_text for t in self.history))
+        is_locked = bool(getattr(self.finger_reader, 'grid_locked', False)) or (
+            len(self.history) >= self.stability_threshold and bool(decoded_text.strip())
+            and all(t == decoded_text for t in self.history)
+        )
         self._line_confirmation.update(result)
         # Diagnostics keep the raw result; the live text/character labels only
         # publish after confirmation across distinct inference results.
