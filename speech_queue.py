@@ -8,6 +8,7 @@ texts that are ready to play at once). Nothing is synthesized while reading.
 from __future__ import annotations
 
 import logging
+import threading
 
 from finger_state import EnterCell, FinishWord
 from page_layout import PageMap
@@ -17,20 +18,31 @@ UNKNOWN = 'ไม่ทราบ'
 log = logging.getLogger(__name__)
 
 
-def spelled(text: str) -> str:
-    """A word spoken symbol by symbol, used when its own audio is missing."""
-    return ' '.join(symbol_name(char) for char in text)
-
-
 class SpeechQueue:
-    def __init__(self, speaker, lang: str = 'thai'):
-        self.speaker, self.lang = speaker, lang
+    def __init__(self, speaker, lang: str = 'thai', background: bool = False):
+        self.speaker, self.lang, self.background = speaker, lang, background
         self._prepared: set[str] = set()
+        self._worker: threading.Thread | None = None
 
     def prepare_page(self, page: PageMap) -> None:
-        """Prepare every text this page can produce: words, spellings, cell names."""
+        """Prepare every text this page can produce: words and cell names.
+
+        With ``background`` it returns at once: cell names are cached from startup,
+        and each word becomes speakable when its audio is ready.
+        """
         names = {c.name for line in page.lines for c in line.cells if c.name}
-        texts = list(dict.fromkeys([*page.words, *map(spelled, page.words), *sorted(names), UNKNOWN]))
+        texts = list(dict.fromkeys([*page.words, *sorted(names), UNKNOWN]))
+        if self.background:
+            self._worker = threading.Thread(target=self._prepare, args=(texts,), daemon=True)
+            self._worker.start()
+        else:
+            self._prepare(texts)
+
+    def wait(self) -> None:
+        if self._worker is not None:
+            self._worker.join()
+
+    def _prepare(self, texts: list[str]) -> None:
         try:
             ready = self.speaker.prepare_many(texts, self.lang)
         except Exception as error:  # a broken voice must not stop the reader
@@ -58,9 +70,11 @@ class SpeechQueue:
         event = events[-1]
         if isinstance(event, EnterCell):
             text = event.name or UNKNOWN
+        elif symbol_name(event.text) != event.text:
+            return  # a one-symbol word: its name was spoken when the finger entered it
         elif self.ready(event.text):
             text = event.text
         else:
-            text = spelled(event.text)
-            log.warning('word %r not prepared; spelling it', event.text)
+            log.info('word %r not ready yet; its cells were named', event.text)
+            return
         self.say(text)

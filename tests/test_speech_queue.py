@@ -44,10 +44,9 @@ class SpeechQueueTests(unittest.TestCase):
         self.assertEqual(self.speaker.calls, ['stop', ('speak', 'สระไอ'), 'stop', ('speak', 'กอไก่')])
 
     def test_only_newest_event_in_a_frame_is_spoken(self):
-        with self.assertLogs('speech_queue', 'WARNING'):
-            self.queue.handle([EnterCell(0, 2, 'ไม้เอก'), FinishWord(0, 'ไก่')])
-        self.assertEqual(self.speaker.calls[-1], ('speak', 'สระไอ กอไก่ ไม้เอก'))
-        self.assertEqual(self.speaker.calls.count('stop'), 1)
+        self.queue.prepare_page(page())
+        self.queue.handle([EnterCell(0, 2, 'ไม้เอก'), FinishWord(0, 'ไก่')])
+        self.assertEqual(self.speaker.calls, ['stop', ('speak', 'ไก่')])
 
     def test_no_events_keeps_current_audio(self):
         self.queue.handle([])
@@ -57,18 +56,39 @@ class SpeechQueueTests(unittest.TestCase):
         self.queue.handle([EnterCell(0, 0, None)])
         self.assertEqual(self.speaker.calls[-1], ('speak', 'ไม่ทราบ'))
 
-    def test_unprepared_word_is_spelled(self):
-        with self.assertLogs('speech_queue', 'WARNING'):
+    def test_one_symbol_word_is_not_repeated_after_its_name(self):
+        # 'ก ข ค': each letter is a word; its name was spoken on entry, so leaving it stays quiet.
+        self.queue.prepare_page(page(words=('ก', 'ไก่')))
+        self.queue.handle([EnterCell(0, 0, 'กอไก่')])
+        self.queue.handle([FinishWord(0, 'ก')])
+        self.assertEqual(self.speaker.calls, ['stop', ('speak', 'กอไก่')])
+
+    def test_word_not_ready_yet_stays_quiet(self):
+        # Its cells were already named one by one; the word's audio may still be on its way.
+        with self.assertLogs('speech_queue', 'INFO'):
             self.queue.handle([FinishWord(0, 'ไก่')])
-        self.assertEqual(self.speaker.calls[-1], ('speak', 'สระไอ กอไก่ ไม้เอก'))
+        self.assertEqual(self.speaker.calls, [])
 
     def test_prepare_page_prepares_everything_the_page_can_say(self):
         self.queue.prepare_page(page())
         self.assertEqual(set(self.speaker.prepared),
-                         {'ไก่', 'ม', 'สระไอ กอไก่ ไม้เอก', 'มอม้า', 'สระไอ', '๕', 'ไม่ทราบ'})
+                         {'ไก่', 'ม', 'สระไอ', '๕', 'ไม่ทราบ'})
         self.assertTrue(self.queue.ready('ไก่'))
         self.queue.handle([FinishWord(0, 'ไก่')])
         self.assertEqual(self.speaker.calls[-1], ('speak', 'ไก่'))
+
+    def test_background_preparation_lets_reading_start_at_once(self):
+        import threading
+        gate = threading.Event()
+        slow = RecordingSpeaker()
+        original = slow.prepare_many
+        slow.prepare_many = lambda texts, lang: (gate.wait(5), original(texts, lang))[1]
+        queue = SpeechQueue(slow, background=True)
+        queue.prepare_page(page())  # returns before synthesis ends
+        self.assertFalse(queue.ready('ไก่'))
+        gate.set()
+        queue.wait()
+        self.assertTrue(queue.ready('ไก่'))
 
     def test_failed_preparation_is_not_ready(self):
         self.speaker.fail = True

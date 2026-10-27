@@ -35,7 +35,7 @@ def read_page(image, calibration: PageCalibration, fmt: PageFormat = DEFAULT_FOR
         cells = _line_cells(points[members], first_y if top is None else top, fmt, words,
                             trusted=top is not None)
         lines.append(LinePair(line_id, bottom, band_end, cells))
-    return PageMap(tuple(lines), tuple(words))
+    return PageMap(tuple(lines), tuple(words), tuple(map(tuple, points.tolist())))
 
 
 def _line_tops(points: np.ndarray, rows, spacing: float) -> list[float | None]:
@@ -84,7 +84,7 @@ def _line_cells(points: np.ndarray, top: float, fmt: PageFormat, words: list[str
     """Cells of one line; with ``trusted`` False the rows are unsure, so nothing is named."""
     pitch, spacing = fmt.cell_pitch_mm, fmt.dot_spacing_mm
     origin = _column_origin(points[:, 0], pitch, spacing)
-    offset = points[:, 0] - origin
+    offset = points[:, 0] - _local_origins(points[:, 0], origin, pitch, spacing)
     index = np.round((offset - np.where(_is_right(offset, pitch, spacing), spacing, 0)) / pitch).astype(int)
     right = _is_right(offset, pitch, spacing)
     row = np.clip(np.round((points[:, 1] - top) / spacing), 0, 2).astype(int)
@@ -119,6 +119,27 @@ def _column_origin(xs: np.ndarray, pitch: float, spacing: float) -> float:
     return origin + np.floor((leftmost + spacing / 2) / pitch) * pitch
 
 
+def _local_origins(xs: np.ndarray, origin: float, pitch: float, spacing: float) -> np.ndarray:
+    """Cell-0 origin seen from each dot's neighbourhood (about 2.5 cells each side).
+
+    Word adds 'Expanded' only between characters, so the cells inside a 2-cell
+    letter sit closer and a printed line can drift by more than half a cell.
+    Walking left to right, each origin is taken within half a cell of the
+    previous one, so cell indices follow the drift instead of jumping a cell;
+    ties (a lone column) keep the phase closest to the previous one.
+    """
+    def error(near, candidate):
+        phase = np.mod(near - candidate, pitch)
+        return np.minimum.reduce([phase, np.abs(phase - spacing), pitch - phase]).sum()
+    result = np.empty(len(xs))
+    reference = origin
+    for i in np.argsort(xs):
+        near = xs[np.abs(xs - xs[i]) <= 2.5 * pitch]
+        candidates = [c - pitch * np.round((c - reference) / pitch) for n in near for c in (n, n - spacing)]
+        reference = result[i] = min(candidates, key=lambda c: error(near, c) + 1e-3 * abs(c - reference))
+    return result
+
+
 def _is_right(offset: np.ndarray, pitch: float, spacing: float) -> np.ndarray:
     phase = np.mod(offset, pitch)
     return np.abs(phase - spacing) < np.minimum(phase, pitch - phase)
@@ -140,6 +161,8 @@ def _decode_words(slots: list[list], words: list[str]) -> None:
                  for i, s in enumerate(group)]
         unreadable = False
         for token in decode_cells_verbose(cells, 'thai'):
+            if token.get('consumed'):
+                continue  # a prefix cell already named by its letter's token
             name = None if token.get('warning') else symbol_name(token['char'])
             unreadable |= name is None
             for s in group[token['cell_start']:token['cell_end'] + 1]:
@@ -147,6 +170,29 @@ def _decode_words(slots: list[list], words: list[str]) -> None:
         for s in group:
             s[5] = len(words)
         words.append(UNKNOWN_WORD if unreadable else decode_cells(cells, 'thai'))
+
+
+def new_ink_dots(read: PageMap, learned: PageMap, fmt: PageFormat = DEFAULT_FORMAT, tolerance_mm: float = 1.2) -> int:
+    """Dots of ``read`` with no dot of ``learned`` nearby.
+
+    A hand or a shadow only hides dots, so a covered page has none; a different
+    page shows ink where the learned one had paper.
+    """
+    known = _dot_points_mm(learned, fmt)
+    if not len(known):
+        return len(_dot_points_mm(read, fmt))
+    return sum(np.min(np.hypot(*(known - point).T)) > tolerance_mm for point in _dot_points_mm(read, fmt))
+
+
+def _dot_points_mm(page: PageMap, fmt: PageFormat) -> np.ndarray:
+    """Measured dot centres (mm); rebuilt from the cells for a map made without them."""
+    if page.dots_mm:
+        return np.array(page.dots_mm, dtype=float)
+    spacing, pad = fmt.dot_spacing_mm, (fmt.cell_pitch_mm - fmt.dot_spacing_mm) / 2
+    points = [(cell.x1_mm + pad + (dot > 3) * spacing,
+               line.raised_y1_mm - _BAND_GAP_MM - 2 * spacing + (dot - 1) % 3 * spacing)
+              for line in page.lines for cell in line.cells for dot in cell.dots]
+    return np.array(points, dtype=float).reshape(-1, 2)
 
 
 def page_signature(page_map: PageMap):

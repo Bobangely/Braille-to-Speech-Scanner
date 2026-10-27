@@ -13,8 +13,8 @@ from speech_queue import SpeechQueue
 FRAME = np.zeros((10, 10, 3), np.uint8)
 
 
-def page(lines=3):
-    cells = (CellSlot(0, 10.0, 16.0, frozenset({1, 5, 6}), 'สระไอ', 0),)
+def page(lines=3, dots=frozenset({1, 5, 6})):
+    cells = (CellSlot(0, 10.0, 16.0, frozenset(dots), 'สระไอ', 0),)
     return PageMap(tuple(LinePair(i, 20.0 + 30 * i, 30.0 + 30 * i, cells) for i in range(lines)), ('ไ',))
 
 
@@ -60,11 +60,11 @@ class FingerReaderTests(unittest.TestCase):
     def setUp(self):
         self.calibrator, self.tracker, self.speaker = FakeCalibrator(), FakeTracker(), RecordingSpeaker()
         self.reads = []
-        self.lines_on_page = 3
+        self.lines_on_page, self.dots_on_page = 3, {1, 5, 6}
 
         def read_page(frame, calibration, fmt):
             self.reads.append(frame)
-            return page(self.lines_on_page)
+            return page(self.lines_on_page, self.dots_on_page)
 
         self.reader = FingerReader(self.tracker, self.calibrator, SpeechQueue(self.speaker),
                                    read_page=read_page, required_maps=3)
@@ -97,18 +97,28 @@ class FingerReaderTests(unittest.TestCase):
         self.assertEqual(self.reader.last_events, [EnterCell(0, 0, 'สระไอ')])
         self.assertAlmostEqual(self.reader.entered_s, 1.0)  # latency is measured from here
 
-    def test_page_change_returns_to_learning(self):
+    def test_moved_page_keeps_reading(self):
+        # The hand drags an unfixed sheet: the map is in page mm, so the new calibration is enough.
         self.learn()
         self.calibrator.result = (Calibration(), True)
-        self.assertEqual(self.reader.step(FRAME, 2.0), 'learning')
-        self.tracker.tip = (13, 25)
+        self.assertEqual(self.reader.step(FRAME, 2.0), 'reading')
+        self.tracker.hand_present, self.tracker.tip = True, (13, 25)
         self.reader.step(FRAME, 2.1)
-        self.assertEqual(self.reader.last_events, [])
+        self.reader.step(FRAME, 2.3)
+        self.assertEqual(self.reader.last_events, [EnterCell(0, 0, 'สระไอ')])
+
+    def test_moved_page_with_new_ink_is_learned_again_at_once(self):
+        # A different sheet put down in another place: recheck immediately instead of waiting a second.
+        self.learn()
+        self.dots_on_page = {2, 3, 4}
+        self.calibrator.result = (Calibration(), True)
+        statuses = [self.reader.step(FRAME, 0.5 + i * 0.05) for i in range(3)]
+        self.assertEqual(statuses[-1], 'learning')
 
     def test_page_flipped_in_place_is_learned_again(self):
         # Spiral book: the next sheet lands on the same markers, so calibration cannot tell.
         self.learn()
-        self.lines_on_page = 2
+        self.lines_on_page, self.dots_on_page = 2, {2, 3, 4}  # new ink where the old page had none
         # Rechecked once a second after learning (t=0.2): three differing reads, then relearn.
         statuses = [self.reader.step(FRAME, 1.0 + i) for i in range(4)]
         self.assertEqual(statuses, ['reading', 'reading', 'reading', 'learning'])
@@ -120,6 +130,37 @@ class FingerReaderTests(unittest.TestCase):
         reads = len(self.reads)
         self.assertEqual([self.reader.step(FRAME, 1.0 + i * 0.1) for i in range(30)], ['reading'] * 30)
         self.assertLessEqual(len(self.reads) - reads, 4)  # about once a second, not every frame
+
+    def test_covered_page_without_a_detected_hand_is_not_a_new_page(self):
+        # MediaPipe can lose a hand that still covers the page for seconds; a hand only hides dots.
+        self.learn()
+        self.lines_on_page, self.dots_on_page = 2, {1}
+        self.assertEqual({self.reader.step(FRAME, 1.0 + i) for i in range(6)}, {'reading'})
+
+    def test_hand_detection_dropouts_do_not_relearn_the_page(self):
+        # MediaPipe misses the hand for a frame now and then while it still covers the dots.
+        self.learn()
+        self.lines_on_page = 2  # what a hand-covered page reads like
+        statuses = []
+        for i in range(60):  # 6 s at 10 frames/s, one missed detection every second
+            self.tracker.hand_present = i % 10 != 9
+            statuses.append(self.reader.step(FRAME, 1.0 + i * 0.1))
+        self.assertEqual(set(statuses), {'reading'})
+
+    def test_reading_can_start_on_any_line(self):
+        # A reader may come back to line 2 without starting from the first letter.
+        self.learn()
+        self.tracker.hand_present, self.tracker.tip = True, (13, 55)  # line 2's raised band is 50-60 mm
+        self.reader.step(FRAME, 1.0)
+        self.reader.step(FRAME, 1.2)
+        self.assertEqual(self.reader.last_events, [EnterCell(1, 0, 'สระไอ')])
+
+    def test_relearning_says_why(self):
+        self.learn()
+        self.calibrator.result = (None, True)
+        with self.assertLogs('finger_reader', 'INFO') as logs:
+            self.reader.step(FRAME, 2.0)
+        self.assertIn('no corner markers', ' '.join(logs.output))
 
     def test_no_recheck_while_a_hand_is_reading(self):
         self.learn()
@@ -133,6 +174,125 @@ class FingerReaderTests(unittest.TestCase):
         self.learn()
         self.calibrator.result = (None, True)
         self.assertEqual(self.reader.step(FRAME, 2.0), 'waiting_page')
+
+    def test_reader_exposes_what_the_preview_draws(self):
+        self.learn()
+        self.tracker.hand_present, self.tracker.tip = True, (13, 25)
+        self.reader.step(FRAME, 1.0)
+        self.reader.step(FRAME, 1.2)
+        self.assertEqual(self.reader.tip, (13, 25))
+        line, cell = self.reader.active_cell
+        self.assertEqual((line.line_id, cell.index), (0, 0))
+        self.assertIs(self.reader.page, self.reader._finger.page)
+
+
+class OverlayTests(unittest.TestCase):
+    """The live preview outlines every cell and word, and marks the finger's cell."""
+
+    PX = 4  # fake calibration: 4 px per mm
+
+    class Calibration:
+        def to_image(self, points):
+            return np.asarray(points, dtype=float).reshape(-1, 2) * OverlayTests.PX
+
+    def setUp(self):
+        cells = (CellSlot(0, 10.0, 16.0, frozenset({1}), 'สระไอ', 0), CellSlot(1, 16.0, 22.0, frozenset({1, 2}), 'กอไก่', 0),
+                 CellSlot(2, 22.0, 28.0, frozenset(), None, None), CellSlot(3, 28.0, 34.0, frozenset({1, 3, 4}), 'มอม้า', 1))
+        self.page = PageMap((LinePair(0, 40.0, 50.0, cells),), ('ไก่', 'ม'))
+        self.frame = np.full((300, 200, 3), 255, np.uint8)
+
+    def px(self, x_mm, y_mm):
+        return self.frame[round(y_mm * self.PX), round(x_mm * self.PX)].tolist()
+
+    def test_finger_cell_is_filled_green_on_the_raised_line(self):
+        from finger_reader import ACTIVE_BGR, draw_overlay
+        line = self.page.lines[0]
+        draw_overlay(self.frame, self.page, self.Calibration(), (13 * self.PX, 45 * self.PX), (line, line.cells[1]))
+        b, g, r = self.px(19.0, 45.0)  # middle of the raised cell under กอไก่
+        self.assertGreater(g, 150)
+        self.assertLess(r, 200)
+        self.assertEqual(self.px(25.0, 45.0), [255, 255, 255])  # the empty cell is not outlined or filled
+
+    def test_each_word_gets_its_own_outline_colour(self):
+        from finger_reader import WORD_BGR, draw_overlay
+        draw_overlay(self.frame, self.page, self.Calibration(), None, None)
+        self.assertEqual(self.px(10.0, 45.0), list(WORD_BGR[0]))  # left edge of word 0
+        self.assertEqual(self.px(34.0, 45.0), list(WORD_BGR[1]))  # right edge of word 1
+
+    def test_status_bar_names_the_symbol_and_word(self):
+        from finger_reader import draw_overlay
+        line = self.page.lines[0]
+        before = self.frame.copy()
+        draw_overlay(self.frame, self.page, self.Calibration(), None, (line, line.cells[1]))
+        self.assertFalse(np.array_equal(self.frame[-30:], before[-30:]))  # text drawn in the bottom bar
+
+
+class ReadingZoneTests(unittest.TestCase):
+    """The dev preview frames the page through the markers' outer corners, coloured by status."""
+
+    def setUp(self):
+        self.frame = np.full((160 * OverlayTests.PX, 220 * OverlayTests.PX, 3), 255, np.uint8)
+
+    def px(self, x_mm, y_mm):
+        return self.frame[round(y_mm * OverlayTests.PX), round(x_mm * OverlayTests.PX)].tolist()
+
+    def test_dashed_frame_runs_through_the_outer_marker_corners(self):
+        from finger_reader import ZONE_BGR, draw_reading_zone
+        draw_reading_zone(self.frame, OverlayTests.Calibration(), 'reading')
+        top = [self.px(x, 10.0) for x in np.arange(10.0, 200.0, 0.25)]
+        self.assertIn(list(ZONE_BGR['reading']), top)  # TL marker corner (10, 10) to TR (200, 10)
+        self.assertIn([255, 255, 255], top)  # gaps: the line is dashed
+        self.assertEqual(self.px(105.0, 74.0), [255, 255, 255])  # inside the page stays untouched
+
+    def test_colour_follows_the_reader_status(self):
+        from finger_reader import ZONE_BGR, draw_reading_zone
+        draw_reading_zone(self.frame, OverlayTests.Calibration(), 'learning')
+        left = [self.px(10.0, y) for y in np.arange(20.0, 130.0, 0.25)]
+        self.assertIn(list(ZONE_BGR['learning']), left)
+        self.assertNotIn(list(ZONE_BGR['reading']), left)
+
+
+class HybridSpeakerTests(unittest.TestCase):
+    """Fixed phrases come from the clear online voice's cache; everything else from Piper."""
+
+    class Fake:
+        def __init__(self, can):
+            self.can, self.prepared, self.spoken, self.stopped = set(can), [], [], 0
+
+        def prepare_many(self, texts, lang='thai'):
+            self.prepared.append(list(texts))
+            return {t for t in texts if t in self.can}
+
+        def speak(self, text, lang='thai'):
+            self.spoken.append(text)
+            return True
+
+        def stop(self):
+            self.stopped += 1
+
+    def test_fixed_phrases_use_the_online_voice_and_words_use_piper(self):
+        from finger_reader import HybridSpeaker
+        online, piper = self.Fake({'กอไก่'}), self.Fake({'กอไก่', 'ไก่'})
+        speaker = HybridSpeaker(online, piper, fixed={'กอไก่'})
+        self.assertEqual(speaker.prepare_many(['กอไก่', 'ไก่']), {'กอไก่', 'ไก่'})
+        self.assertEqual((online.prepared, piper.prepared), ([['กอไก่']], [['ไก่']]))
+        speaker.speak('กอไก่'), speaker.speak('ไก่')
+        self.assertEqual((online.spoken, piper.spoken), (['กอไก่'], ['ไก่']))
+
+    def test_without_fixed_set_every_text_tries_the_online_voice_first(self):
+        from finger_reader import HybridSpeaker
+        online, piper = self.Fake({'ไก่'}), self.Fake({'นก'})
+        speaker = HybridSpeaker(online, piper, fixed=None)
+        self.assertEqual(speaker.prepare_many(['ไก่', 'นก']), {'ไก่', 'นก'})
+        self.assertEqual((online.prepared, piper.prepared), ([['ไก่', 'นก']], [['นก']]))
+
+    def test_piper_stands_in_when_the_online_voice_has_no_audio(self):
+        from finger_reader import HybridSpeaker
+        online, piper = self.Fake(()), self.Fake({'กอไก่'})
+        speaker = HybridSpeaker(online, piper, fixed={'กอไก่'})
+        self.assertEqual(speaker.prepare_many(['กอไก่']), {'กอไก่'})
+        speaker.speak('กอไก่')
+        self.assertEqual((online.spoken, piper.spoken), ([], ['กอไก่']))
 
 
 class CachedWavSpeakerTests(unittest.TestCase):
@@ -179,11 +339,54 @@ class CachedWavSpeakerTests(unittest.TestCase):
                 self.assertFalse(speaker.speak('ไม่เคยเตรียม', 'thai'))
             self.assertEqual((batches, played), ([], []))
 
+    def test_names_are_sent_to_tts_respelled_but_played_by_name(self):
+        with tempfile.TemporaryDirectory() as cache:
+            batches, played = [], []
+            speaker = self.speaker(cache, batches, played)
+            self.assertEqual(speaker.prepare_many(['งองู', 'ไก่ งองู'], 'thai'), {'งองู', 'ไก่ งองู'})
+            self.assertEqual(batches, [['งอ งู', 'ไก่ งอ งู']])
+            self.assertTrue(speaker.speak('งองู', 'thai'))
+
+    def test_edge_voice_gets_names_as_written(self):
+        with tempfile.TemporaryDirectory() as cache:
+            batches = []
+
+            def synthesize(model, jobs):
+                batches.append([text for text, _ in jobs])
+
+            CachedWavSpeaker(None, Path(cache), backend='edge', synthesize=synthesize).prepare_many(['งองู', 'สระอิ'])
+            self.assertEqual(batches, [['งองู', 'สะ ละ อิ']])  # Edge has its own, shorter respelling list
+
+    def test_leading_silence_is_trimmed_after_synthesis(self):
+        import wave
+        from finger_reader import trim_leading_silence
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'a.wav'
+            samples = np.concatenate([np.zeros(16000), np.full(8000, 9000), np.zeros(4000)]).astype(np.int16)
+            with wave.open(str(path), 'wb') as out:
+                out.setnchannels(1), out.setsampwidth(2), out.setframerate(16000)
+                out.writeframes(samples.tobytes())
+            trim_leading_silence(path, keep_s=0.02)
+            with wave.open(str(path)) as trimmed:
+                self.assertEqual(trimmed.getnframes(), 320 + 8000 + 4000)  # 1 s of silence -> 20 ms
+
     def test_failed_texts_are_not_reported_ready(self):
         with tempfile.TemporaryDirectory() as cache:
             batches, played = [], []
             speaker = self.speaker(cache, batches, played, fail={'มา'})
             self.assertEqual(speaker.prepare_many(['ไก่', 'มา'], 'thai'), {'ไก่'})
+
+    def test_blank_texts_are_never_sent_to_the_voice(self):
+        # Piper writes no audio for '' and the whole batch used to fail (wave.Error).
+        with tempfile.TemporaryDirectory() as cache:
+            batches, played = [], []
+            speaker = self.speaker(cache, batches, played)
+            self.assertEqual(speaker.prepare_many(['', '  ', 'ไก่'], 'thai'), {'ไก่'})
+            self.assertEqual(batches, [['ไก่']])
+
+    def test_one_failing_text_does_not_stop_the_batch_in_the_voice_process(self):
+        from finger_reader import BATCH_SCRIPT
+        self.assertIn('except Exception', BATCH_SCRIPT)  # per text, inside the Piper/MMS process
 
 
 if __name__ == '__main__':

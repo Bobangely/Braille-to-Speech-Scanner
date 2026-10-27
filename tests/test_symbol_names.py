@@ -17,6 +17,12 @@ class SymbolNameTests(unittest.TestCase):
         self.assertEqual(symbol_name('เ◌อ'), 'สระเออ')
         self.assertEqual(symbol_name('◌ัว'), 'สระอัว')
 
+    def test_tts_spelling_respells_known_names_only(self):
+        from thai_speech import tts_spelling
+        self.assertEqual(tts_spelling('สระอิ'), 'สะ ละ อิ')
+        self.assertEqual(tts_spelling('กอไก่ สระอิ'), 'กอไก่ สะ ละ อิ')  # a spelled word: each name on its own
+        self.assertEqual(tts_spelling('ไม่ทราบ'), 'ไม่ทราบ')
+
     def test_unknown_symbol_returns_text_itself(self):
         self.assertEqual(symbol_name('?'), '?')
 

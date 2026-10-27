@@ -9,9 +9,11 @@ from fingertip import ActiveFingertipLock, FingertipTracker, fingertip_pixels
 FRAME = np.zeros((480, 640, 3), np.uint8)
 
 
-def hand(index_tip=(0.5, 0.25), middle_tip=(0.9, 0.9)):
+def hand(index_tip=(0.5, 0.25), middle_tip=(0.9, 0.9), index_dip=None):
     points = [SimpleNamespace(x=0.0, y=0.0) for _ in range(21)]
     points[8] = SimpleNamespace(x=index_tip[0], y=index_tip[1])
+    dip = index_dip or index_tip  # default: no finger length, so the pad is the tip
+    points[7] = SimpleNamespace(x=dip[0], y=dip[1])
     points[12] = SimpleNamespace(x=middle_tip[0], y=middle_tip[1])
     return points
 
@@ -29,8 +31,33 @@ class FakeDetector:
 
 
 class FingertipTrackerTests(unittest.TestCase):
-    def test_fingertip_pixels_maps_index_and_middle(self):
-        self.assertEqual(fingertip_pixels([hand()], 640, 480), [(0, 8, 320, 120), (0, 12, 576, 432)])
+    def test_only_the_index_fingertip_reads(self):
+        # Braille is read with the index finger; the middle finger made the lock flip between them.
+        self.assertEqual(fingertip_pixels([hand()], 640, 480), [(0, 8, 320, 120)])
+
+    def test_reading_point_is_the_pad_not_the_nail(self):
+        # Braille is felt with the pad, between the tip (8) and the first joint (7) seen from above.
+        finger = hand(index_tip=(0.5, 0.25), index_dip=(0.5, 0.35))
+        # A tenth of the way by default (team's choice); halfway fell below the raised line on the real page.
+        self.assertEqual(fingertip_pixels([finger], 640, 480), [(0, 8, 320, 125)])
+        self.assertEqual(fingertip_pixels([finger], 640, 480, pad_fraction=0.0), [(0, 8, 320, 120)])
+
+    def test_tracker_reports_the_pad(self):
+        finger = hand(index_tip=(0.5, 0.25), index_dip=(0.5, 0.35))
+        tracker = FingertipTracker(detector=FakeDetector([finger]), pad_fraction=0.25)
+        tracker.update(FRAME, 1)
+        self.assertEqual(tracker.update(FRAME, 300), (320, 132))
+
+    def test_tracker_keeps_the_hands_for_the_skeleton_preview(self):
+        finger = hand()
+        tracker = FingertipTracker(detector=FakeDetector([finger]))
+        tracker.update(FRAME, 1)
+        self.assertEqual(tracker.hand_landmarks, [finger])
+
+    def test_still_middle_finger_is_never_locked(self):
+        moving_index = [[hand(index_tip=(0.1 * k, 0.25), middle_tip=(0.5, 0.5))] for k in range(1, 9)]
+        tracker = FingertipTracker(detector=FakeDetector(*moving_index))
+        self.assertEqual([tracker.update(FRAME, 100 * k) for k in range(8)], [None] * 8)
 
     def test_tracker_returns_none_without_hands(self):
         tracker = FingertipTracker(detector=FakeDetector([]))

@@ -1,6 +1,7 @@
 """Fingertip tracking for the finger reader (MediaPipe Hand Landmarker).
 
-Only the index (landmark 8) and middle (landmark 12) fingertips can read.
+Only the index fingertip (landmark 8) reads: braille is read with the index finger,
+and also tracking the middle finger made the lock flip between the two.
 The first one that stays still for the dwell becomes the reading finger and
 is followed until it disappears.
 """
@@ -12,7 +13,8 @@ from pathlib import Path
 
 import cv2
 
-TIP_LANDMARKS = (8, 12)
+TIP_LANDMARKS = (8,)
+PAD_FRACTION = 0.1  # reading point from the tip toward the first joint; 0.5 fell below the raised line
 DEFAULT_MODEL = Path(__file__).resolve().parent / "models" / "hand_landmarker.task"
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
@@ -20,14 +22,19 @@ MODEL_URL = (
 )
 
 
-def fingertip_pixels(hand_landmarks, width: int, height: int) -> list[tuple[int, int, int, int]]:
-    """Map index and middle fingertips to clamped frame pixels."""
+def fingertip_pixels(hand_landmarks, width: int, height: int,
+                     pad_fraction: float = PAD_FRACTION) -> list[tuple[int, int, int, int]]:
+    """Map the reading point of each reading finger to clamped frame pixels.
+
+    Braille is felt with the pad, not the tip the camera sees: the point moves
+    ``pad_fraction`` of the way from the tip toward the next joint down the finger.
+    """
     points = []
     for hand_index, landmarks in enumerate(hand_landmarks):
         for landmark_index in TIP_LANDMARKS:
-            landmark = landmarks[landmark_index]
-            x = min(width - 1, max(0, round(landmark.x * width)))
-            y = min(height - 1, max(0, round(landmark.y * height)))
+            tip, joint = landmarks[landmark_index], landmarks[landmark_index - 1]
+            x = min(width - 1, max(0, round((tip.x + pad_fraction * (joint.x - tip.x)) * width)))
+            y = min(height - 1, max(0, round((tip.y + pad_fraction * (joint.y - tip.y)) * height)))
             points.append((hand_index, landmark_index, x, y))
     return points
 
@@ -72,10 +79,11 @@ class ActiveFingertipLock:
         self._observed.clear()
 
 
-def labelled_fingertips(result, width: int, height: int) -> list[tuple[str, int, int, int]]:
-    """(hand label, landmark, x, y) for every index/middle fingertip in a detection."""
+def labelled_fingertips(result, width: int, height: int,
+                        pad_fraction: float = PAD_FRACTION) -> list[tuple[str, int, int, int]]:
+    """(hand label, landmark, x, y) for every reading fingertip in a detection."""
     candidates = []
-    for hand_index, landmark_index, x, y in fingertip_pixels(result.hand_landmarks, width, height):
+    for hand_index, landmark_index, x, y in fingertip_pixels(result.hand_landmarks, width, height, pad_fraction):
         handedness = result.handedness[hand_index]
         hand = handedness[0].category_name if handedness else f"Hand {hand_index + 1}"
         candidates.append((hand, landmark_index, x, y))
@@ -86,12 +94,13 @@ class FingertipTracker:
     """Return the locked reading fingertip in frame pixels, or None."""
 
     def __init__(self, model_path: Path = DEFAULT_MODEL, dwell_ms: int = 250, radius_px: int = 20,
-                 detector=None, grace_ms: int = 300):
+                 detector=None, grace_ms: int = 300, pad_fraction: float = PAD_FRACTION):
         self._detector = detector or _create_detector(model_path)
         self._lock = ActiveFingertipLock(dwell_ms, radius_px)
+        self.pad_fraction = pad_fraction
         self.grace_ms = grace_ms  # keep the lock through short detection drop-outs
         self._seen_ms = 0
-        self.hand_present = False
+        self.hand_present, self.hand_landmarks = False, []
 
     def update(self, frame_bgr, now_ms: int) -> tuple[int, int] | None:
         import mediapipe as mp
@@ -99,9 +108,10 @@ class FingertipTracker:
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         result = self._detector.detect_for_video(
             mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb), max(1, int(now_ms)))
+        self.hand_landmarks = result.hand_landmarks  # for the skeleton preview
         self.hand_present = bool(result.hand_landmarks)
         height, width = frame_bgr.shape[:2]
-        candidates = labelled_fingertips(result, width, height)
+        candidates = labelled_fingertips(result, width, height, self.pad_fraction)
         active = self._lock.update(candidates, now_ms)
         if active is None:
             return None
