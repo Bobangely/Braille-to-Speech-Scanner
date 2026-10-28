@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from page_layout import CellSlot, LinePair, PageMap
 
 _EPS = 1e-9
+LINE_DWELL_S = 0.4  # a hand drifting over the next line must not start reading there
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,11 @@ class FingerState:
         self.page = page
         self.dwell_s = dwell_s
         self.hysteresis_mm = hysteresis_mm
+        self._word_cells: dict[tuple[int, int], set[int]] = {}
+        for line in page.lines:
+            for c in line.cells:
+                if c.word_index is not None:
+                    self._word_cells.setdefault((line.line_id, c.word_index), set()).add(c.index)
         self.reset()
 
     def reset(self) -> None:
@@ -32,7 +38,8 @@ class FingerState:
         self._candidate: tuple[LinePair, CellSlot] | None = None
         self._since = 0.0
         self.entered_s: float | None = None  # when the finger reached the last spoken cell
-        self._pending: set[tuple[int, int]] = set()  # (line_id, word) entered, not yet finished
+        self._pending: dict[tuple[int, int], set[int]] = {}  # (line_id, word) entered -> cells read so far
+        self._line_id: int | None = None  # line of the last cell read, kept while the finger is lifted
 
     @property
     def active_cell(self) -> tuple[LinePair, CellSlot] | None:
@@ -74,7 +81,8 @@ class FingerState:
                 self._candidate = None
             elif self._candidate != (line, cell):
                 self._candidate, self._since = (line, cell), now_s
-            if self._candidate and now_s - self._since >= self.dwell_s - _EPS:
+            dwell = self.dwell_s if self._line_id in (None, line.line_id) else LINE_DWELL_S
+            if self._candidate and now_s - self._since >= dwell - _EPS:
                 events += self._promote(line, cell)
         return events
 
@@ -86,18 +94,25 @@ class FingerState:
     def _finish(self, line, word):
         # Pending words are kept even when the finger drops out for a frame,
         # so a lost frame or a lift onto the space still speaks the word.
+        # Only a word read to its end is spoken: a lift or jump mid-word must not give the answer away.
         key = (line.line_id, word)
         if word is not None and key in self._pending:
-            self._pending.discard(key)
-            return [FinishWord(word, self.page.words[word])]
+            read = self._pending.pop(key)
+            if read >= self._word_cells[key]:
+                return [FinishWord(word, self.page.words[word])]
         return []
 
     def _promote(self, line, cell):
         self._active, self._candidate = (line, cell), None
+        self._line_id = line.line_id
         # Moving to another line pair abandons the words started there.
-        self._pending = {key for key in self._pending if key[0] == line.line_id}
+        self._pending = {key: read for key, read in self._pending.items() if key[0] == line.line_id}
         if cell.word_index is None:
             return self._finish(line, self._word_left_of(line, cell.index))
-        self._pending.add((line.line_id, cell.word_index))
+        events = []
+        # Slid over the space too fast to dwell on it: the word before is done (if read to its end).
+        for key in [k for k in self._pending if k[1] != cell.word_index]:
+            events += self._finish(line, key[1])
+        self._pending.setdefault((line.line_id, cell.word_index), set()).add(cell.index)
         self.entered_s = self._since
-        return [EnterCell(line.line_id, cell.index, cell.name)]
+        return events + [EnterCell(line.line_id, cell.index, cell.name)]

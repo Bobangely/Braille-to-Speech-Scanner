@@ -30,8 +30,6 @@ class SpeechQueue:
         self._words: tuple[str, ...] = ()
         self._word_of: dict[tuple[int, int], int] = {}
         self._word_cells: dict[int, int] = {}
-        self._unsaid: int | None = None  # long word whose cells were kept quiet and is not spoken yet
-
     def prepare_page(self, page: PageMap) -> None:
         """Prepare every text this page can produce: words and cell names.
 
@@ -41,7 +39,7 @@ class SpeechQueue:
         self._words = page.words
         self._word_of = {(line.line_id, c.index): c.word_index
                          for line in page.lines for c in line.cells if c.word_index is not None}
-        self._word_cells, self._unsaid = {}, None
+        self._word_cells = {}
         for word in self._word_of.values():
             self._word_cells[word] = self._word_cells.get(word, 0) + 1
         names = {c.name for line in page.lines for c in line.cells if c.name}
@@ -88,15 +86,12 @@ class SpeechQueue:
     def handle(self, events: list[EnterCell | FinishWord]) -> None:
         if not events:
             return
-        event = events[-1]
-        unsaid, self._unsaid = self._unsaid, None  # a finished or left word is no longer owed
+        # Newest event wins, but a quiet cell must not hide the word finished in the same frame.
+        audible = [e for e in events if not (isinstance(e, EnterCell) and self._quiet_cell(e))]
+        if not audible:
+            return
+        event = audible[-1]
         if isinstance(event, EnterCell):
-            if self._quiet_cell(event):
-                self._unsaid = self._word_of[(event.line_id, event.cell_index)]
-                # A fast slide over the space gives no FinishWord: say the skipped word now.
-                if unsaid is not None and unsaid != self._unsaid:
-                    self.say(self._words[unsaid])
-                return
             text = event.name or UNKNOWN
         elif symbol_name(event.text) != event.text:
             return  # a one-symbol word: its name was spoken when the finger entered it
