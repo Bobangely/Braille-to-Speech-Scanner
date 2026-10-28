@@ -162,7 +162,8 @@ async function change(partial) {
     settings = await postSettings(partial);
   } catch (e) {
     settings = before;
-    $('error').textContent = e.message === 'Failed to fetch' ? 'ส่งค่าตั้งไม่ได้: ขาดการเชื่อมต่อ' : e.message;
+    // fetch rejects with a TypeError (wording differs per browser) when the station is unreachable
+    $('error').textContent = e instanceof TypeError ? 'ส่งค่าตั้งไม่ได้: ขาดการเชื่อมต่อ' : e.message;
   }
   sending = false;
   showSettings();
@@ -188,12 +189,18 @@ function showSettings() {
   cam.textContent = settings.camera ? 'กล้อง: เปิด' : 'กล้อง: ปิด';
   const img = $('stream');
   const live = settings.camera && !DEMO;
-  if (live && img.hidden) img.src = '/stream.mjpg?' + Date.now();
+  if (live && img.hidden) openStream();
   if (!live && !img.hidden) img.removeAttribute('src');  // closes the stream so the station stops encoding
   img.hidden = !live;
   $('cam-note').hidden = live;
   $('cam-note').textContent = !settings.camera ? 'ภาพกล้องปิดอยู่' : 'ภาพกล้อง (จำลอง)';
 }
+
+function openStream() {
+  $('stream').src = '/stream.mjpg?' + Date.now();  // new URL: never reuse a dead connection
+}
+// A station restart ends the MJPEG response; retry while the camera should be shown.
+$('stream').onerror = () => setTimeout(() => { if (!$('stream').hidden) openStream(); }, 2000);
 
 let shownLines = '';
 function render(s) {
@@ -233,7 +240,9 @@ function render(s) {
 async function poll() {
   try {
     render(await getState());
-    $('offline').classList.remove('show');
+    const banner = $('offline');
+    if (banner.classList.contains('show') && !$('stream').hidden) openStream();  // back online
+    banner.classList.remove('show');
   } catch {
     $('offline').classList.add('show');
   }

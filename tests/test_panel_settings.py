@@ -1,7 +1,9 @@
 """Teacher-panel settings: validated as a whole, saved atomically, applied to speech."""
 import json
 import tempfile
+import threading
 import unittest
+from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -59,6 +61,23 @@ class PanelSettingsTests(unittest.TestCase):
         self.assertEqual(result, {'mode': 'word', 'spell_max_cells': 3, 'camera': True})
         self.assertEqual((speech.mode, speech.spell_max_cells), ('word', 3))
         self.assertEqual(json.loads(self.path.read_text(encoding='utf-8')), result)
+
+    def test_apply_save_failure_changes_nothing(self):
+        speech = SimpleNamespace(mode='spell', spell_max_cells=2)
+        with mock.patch('panel_settings.os.replace', side_effect=PermissionError('file in use')):
+            with self.assertRaises(PermissionError):
+                apply_settings(speech, self.path, {'mode': 'word'})
+        self.assertEqual(speech.mode, 'spell')
+
+    def test_apply_concurrent_keeps_every_change(self):
+        speech = SimpleNamespace(mode='spell', spell_max_cells=2)
+        changes = [{'mode': 'word'}, {'spell_max_cells': 4}, {'camera': False}] * 5
+        threads = [threading.Thread(target=apply_settings, args=(speech, self.path, c)) for c in changes]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(load(self.path), {'mode': 'word', 'spell_max_cells': 4, 'camera': False})
 
     def test_apply_invalid_changes_nothing(self):
         speech = SimpleNamespace(mode='spell', spell_max_cells=2)

@@ -43,7 +43,7 @@
 | `active_word` | int \| null | index ของ `word` ใน `lines` ใช้ไฮไลต์ | `cell.word_index` |
 | `last_spoken` | string \| null | ข้อความล่าสุดที่เล่นเสียง | `SpeechQueue.say()` |
 | `lines` | array ของบรรทัด แต่ละบรรทัดเป็น array ของ `{index, text}` | ข้อความทั้งหน้า เรียงตามบรรทัด | `reader.page.lines` + `page.words` |
-| `settings` | object | ค่าตั้งปัจจุบัน ดู `POST /api/settings` | `panel_settings.load()` |
+| `settings` | object | ค่าตั้งปัจจุบัน ดู `POST /api/settings` | เก็บไว้ในหน่วยความจำ: ค่าจาก `panel_settings.load()` ตอนเริ่ม แล้วแทนด้วยค่าที่ `apply_settings()` คืนมา ห้ามอ่านไฟล์ทุกครั้งที่ถูกเรียก (บน Windows การอ่านไฟล์ถี่ ๆ ทำให้บันทึกค่าใหม่ไม่ได้) |
 
 ยังไม่มีหน้า (`status` เป็น `waiting_page`): `lines` เป็น `[]` และ `symbol`, `word`, `active_word` เป็น `null`
 
@@ -64,6 +64,7 @@ body เป็น JSON ส่งเฉพาะ field ที่จะเปล�
 server เรียก `panel_settings.apply_settings(speech, path, body)` ฟังก์ชันนี้ตรวจค่า ตั้งค่าให้ `SpeechQueue` และบันทึกไฟล์
 
 - สำเร็จ: `200` พร้อม settings ทั้งหมดหลังเปลี่ยน เช่น `{"mode": "spell", "spell_max_cells": 2, "camera": true}`
+- บันทึกไฟล์ไม่ได้ (`OSError`): `500` พร้อม `{"error": "บันทึกค่าตั้งไม่ได้"}` ค่าในระบบเสียงไม่เปลี่ยน
 - ค่าผิดหรือ JSON ผิด: `400` พร้อม `{"error": "<ข้อความภาษาไทย>"}` และไม่เปลี่ยนค่าใดเลย (ถ้า field หนึ่งผิด field อื่นใน body เดียวกันก็ไม่ถูกใช้)
 
 ## `GET /stream.mjpg`

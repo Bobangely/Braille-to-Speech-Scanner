@@ -9,12 +9,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 
 DEFAULTS = {'mode': 'spell', 'spell_max_cells': 2, 'camera': True}
 DEFAULT_PATH = Path(__file__).resolve().parent / 'output' / 'panel_settings.json'
 MODES = ('spell', 'word')
 log = logging.getLogger(__name__)
+_lock = threading.Lock()
 
 
 def validate(partial: dict, current: dict) -> dict:
@@ -59,7 +61,8 @@ def apply_to(speech, settings: dict) -> None:
 
 def apply_settings(speech, path: Path, partial: dict) -> dict:
     """Validate ``partial`` against the saved settings, apply it to ``speech``, save, and return all settings."""
-    settings = validate(partial, load(path))
-    apply_to(speech, settings)
-    save(path, settings)
+    with _lock:  # the server may handle two requests at once; neither change may be lost
+        settings = validate(partial, load(path))
+        save(path, settings)  # before apply_to: a failed save leaves speech and file in agreement
+        apply_to(speech, settings)
     return settings

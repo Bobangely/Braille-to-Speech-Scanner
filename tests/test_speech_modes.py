@@ -77,6 +77,24 @@ class SpeechModeTests(unittest.TestCase):
         self.queue.handle([FinishWord(2, 'กระดาน')])
         self.assertEqual(self.queue.last_spoken, 'กระดาน')
 
+    def test_word_mode_skipped_word_spoken_on_next_quiet_cell(self):
+        # The finger slid over the space too fast for FinishWord: the quiet word must not be lost.
+        cells =page().lines[0].cells[3:] + tuple(
+            CellSlot(i, i * 6.0, i * 6.0 + 6.0, frozenset({1}), NAMES[i - 5], 3) for i in range(8, 11))
+        long_page = PageMap((LinePair(0, 10.0, 20.0, page().lines[0].cells[:3] + cells),),
+                            ('ก', 'กา', 'กระดาน', 'ขอบคุณ'))
+        self.queue.prepare_page(long_page)
+        self.queue.handle([EnterCell(0, 5, NAMES[5])])
+        self.queue.handle([EnterCell(0, 8, NAMES[3])])
+        self.queue.handle([EnterCell(0, 9, NAMES[4])])
+        self.assertEqual(spoken(self.speaker), ['กระดาน'])
+
+    def test_word_mode_finished_word_not_repeated(self):
+        self.queue.handle([EnterCell(0, 5, NAMES[5])])
+        self.queue.handle([FinishWord(2, 'กระดาน')])
+        self.queue.handle([EnterCell(0, 0, NAMES[0])])
+        self.assertEqual(spoken(self.speaker), ['กระดาน', NAMES[0]])
+
     def test_cell_without_page_spelled(self):
         queue = SpeechQueue(self.speaker, mode='word')
         queue.handle([EnterCell(0, 4, NAMES[4])])
