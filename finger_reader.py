@@ -389,6 +389,8 @@ def main() -> int:
     parser.add_argument('--spell-max-cells', type=int, help='in word mode, words up to this many cells are spelled (1-5)')
     parser.add_argument('--settings', type=Path, default=panel_settings.DEFAULT_PATH,
                         help='teacher-panel settings file; the options above override it and are saved')
+    parser.add_argument('--web', type=int, metavar='PORT',
+                        help='serve the teacher panel on this port to every device on the network (docs/web-api.md)')
     args = parser.parse_args()
     # Check settings before the slow voice preparation, so a typo fails at once.
     cli_settings = {key: value for key, value in
@@ -412,6 +414,12 @@ def main() -> int:
     if cli_settings:
         panel_settings.save(args.settings, settings)
     reader = FingerReader(FingertipTracker(pad_fraction=args.pad_fraction), CalibrationTracker(fmt), speech, fmt)
+    panel = None
+    if args.web is not None:
+        import web_panel
+        panel = web_panel.PanelState(settings)
+        server = web_panel.start(args.web, panel, speech, args.settings)  # port in use: OSError now, not later
+        print(f'teacher panel: http://localhost:{server.server_address[1]}  (other devices: http://<this IP>:{args.web})')
     capture = _open_camera(args.camera, 1920, 1080, 30)
     if not capture.isOpened():
         raise RuntimeError(f'Cannot open camera {args.camera}')
@@ -423,6 +431,7 @@ def main() -> int:
         # entered_s: frame where the fingertip first reached the cell; played_s: playback started.
         latency.writerow(['event', 'entered_s', 'played_s', 'latency_s'])
     started = time.perf_counter()
+    fps, last_frame_s = 0.0, 0.0
     try:
         while True:
             ok, frame = capture.read()
@@ -438,13 +447,21 @@ def main() -> int:
             if latency is not None and reader.last_events and isinstance(reader.last_events[-1], EnterCell):
                 latency.writerow([repr(reader.last_events[-1]), f'{reader.entered_s:.4f}', f'{done_s:.4f}',
                                   f'{done_s - reader.entered_s:.4f}'])
-            if not args.headless:
+            if panel is not None:
+                fps = 0.9 * fps + 0.1 / max(frame_s - last_frame_s, 1e-3)
+                last_frame_s = frame_s
+                panel.update(reader, fps, speech.last_spoken)
+            to_panel = panel is not None and panel.wants_frame(frame_s)
+            if not args.headless or to_panel:
                 draw_hand_skeletons(frame, reader.tracker.hand_landmarks)  # under the reading point
                 if reader.calibration is not None:
                     draw_reading_zone(frame, reader.calibration, status, fmt)
                 if reader.page is not None and reader.calibration is not None:
                     draw_overlay(frame, reader.page, reader.calibration, reader.tip, reader.active_cell)
                 cv2.putText(frame, status, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 200, 255), 3)
+            if to_panel:
+                panel.set_frame(frame, frame_s)
+            if not args.headless:
                 cv2.imshow('finger reader', cv2.resize(frame, (1280, 720)))
                 if cv2.waitKey(1) & 0xFF in (ord('q'), 27):
                     break
