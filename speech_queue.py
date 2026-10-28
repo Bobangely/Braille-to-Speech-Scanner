@@ -19,10 +19,17 @@ log = logging.getLogger(__name__)
 
 
 class SpeechQueue:
-    def __init__(self, speaker, lang: str = 'thai', background: bool = False):
+    def __init__(self, speaker, lang: str = 'thai', background: bool = False,
+                 mode: str = 'spell', spell_max_cells: int = 2):
         self.speaker, self.lang, self.background = speaker, lang, background
+        # 'spell' names every cell; 'word' names cells only of words up to spell_max_cells long.
+        self.mode, self.spell_max_cells = mode, spell_max_cells
+        self.last_spoken: str | None = None
         self._prepared: set[str] = set()
         self._worker: threading.Thread | None = None
+        self._words: tuple[str, ...] = ()
+        self._word_of: dict[tuple[int, int], int] = {}
+        self._word_cells: dict[int, int] = {}
 
     def prepare_page(self, page: PageMap) -> None:
         """Prepare every text this page can produce: words and cell names.
@@ -30,6 +37,12 @@ class SpeechQueue:
         With ``background`` it returns at once: cell names are cached from startup,
         and each word becomes speakable when its audio is ready.
         """
+        self._words = page.words
+        self._word_of = {(line.line_id, c.index): c.word_index
+                         for line in page.lines for c in line.cells if c.word_index is not None}
+        self._word_cells = {}
+        for word in self._word_of.values():
+            self._word_cells[word] = self._word_cells.get(word, 0) + 1
         names = {c.name for line in page.lines for c in line.cells if c.name}
         texts = list(dict.fromkeys([*page.words, *sorted(names), UNKNOWN]))
         if self.background:
@@ -60,15 +73,24 @@ class SpeechQueue:
         """Speak a message, cutting off whatever is playing; playback errors are logged."""
         try:
             self.speaker.stop()
+            self.last_spoken = text
             self.speaker.speak(text, self.lang)
         except Exception:
             log.exception('cannot play %r', text)
+
+    def _quiet_cell(self, event: EnterCell) -> bool:
+        """In 'word' mode a long word's cells stay quiet, unless the word itself cannot be spoken yet."""
+        word = self._word_of.get((event.line_id, event.cell_index))
+        return (self.mode == 'word' and word is not None
+                and self._word_cells[word] > self.spell_max_cells and self.ready(self._words[word]))
 
     def handle(self, events: list[EnterCell | FinishWord]) -> None:
         if not events:
             return
         event = events[-1]
         if isinstance(event, EnterCell):
+            if self._quiet_cell(event):
+                return
             text = event.name or UNKNOWN
         elif symbol_name(event.text) != event.text:
             return  # a one-symbol word: its name was spoken when the finger entered it
