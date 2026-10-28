@@ -28,8 +28,8 @@
 - `mode`: `'spell'` (ค่าเริ่มต้น พฤติกรรมเดิม) หรือ `'word'`
 - `spell_max_cells`: int ค่าเริ่มต้น 2
 
-`EnterCell` เพิ่ม field `word_index: int | None` จาก `CellSlot.word_index`
-`prepare_page()` เก็บ `word_index → จำนวนเซลล์` ของหน้าไว้
+`prepare_page()` เก็บ `(line_id, cell_index) → word_index` และ `word_index → จำนวนเซลล์` ของหน้าไว้
+`EnterCell` ไม่ต้องเปลี่ยน (หาคำของเซลล์จากแผนที่นี้แทน เทสต์เดิมไม่ต้องแก้)
 
 กฎใน `handle()` (ใช้ event ล่าสุดเหมือนเดิม):
 
@@ -83,5 +83,5 @@ def apply_settings(speech, path: Path, partial: dict) -> dict  # validate → �
 
 - `tests/test_speech_modes.py`: ตัวพูดปลอมบันทึกข้อความ ทั้งสองโหมด คำ 1, 2, 5 เซลล์ เสียงคำไม่พร้อม เปลี่ยนโหมดกลางคำ
 - `tests/test_panel_settings.py`: validate ค่าถูก/ผิด/ไม่รู้จัก/bool เป็น int, load ไฟล์ไม่มี/เสีย, save แล้ว load ได้ค่าเดิม, apply ตั้งค่า speech
-- `tests/test_finger_state.py`, `tests/test_speech_queue.py`, `tests/test_finger_reader.py` เดิมต้องผ่านหลังเพิ่ม `word_index`
+- `tests/test_finger_state.py`, `tests/test_speech_queue.py`, `tests/test_finger_reader.py` เดิมต้องผ่านโดยไม่แก้
 - หน้าเว็บ: เปิดโหมดจำลองในเบราว์เซอร์ ขนาดเดสก์ท็อปและมือถือ ถ่ายภาพหน้าจอให้ตรวจ
