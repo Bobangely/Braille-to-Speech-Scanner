@@ -21,6 +21,7 @@ import time
 import wave
 from pathlib import Path
 
+import panel_settings
 from finger_state import EnterCell, FingerState
 from page_calibration import DEFAULT_FORMAT, CalibrationTracker, PageFormat, page_format
 from page_map import PageLearner, new_ink_dots, read_page as read_colored_page
@@ -383,7 +384,19 @@ def main() -> int:
     parser.add_argument('--pad-fraction', type=float, default=0.1,
                         help='reading point from the fingertip toward the first joint: 0 = nail tip, 1 = joint')
     parser.add_argument('--debug-dir', type=Path, help='save the camera frame each time the status changes')
+    parser.add_argument('--speech-mode', choices=['spell', 'word'],
+                        help='spell: name every cell then the word; word: name cells of short words only')
+    parser.add_argument('--spell-max-cells', type=int, help='in word mode, words up to this many cells are spelled (1-5)')
+    parser.add_argument('--settings', type=Path, default=panel_settings.DEFAULT_PATH,
+                        help='teacher-panel settings file; the options above override it and are saved')
     args = parser.parse_args()
+    # Check settings before the slow voice preparation, so a typo fails at once.
+    cli_settings = {key: value for key, value in
+                    (('mode', args.speech_mode), ('spell_max_cells', args.spell_max_cells)) if value is not None}
+    try:
+        settings = panel_settings.validate(cli_settings, panel_settings.load(args.settings))
+    except ValueError as error:
+        parser.error(str(error))
     fmt = page_format(args.marker_size_mm)
 
     speaker = CachedWavSpeaker(args.tts_thai_model, args.cache, args.tts_python, args.tts_thai_backend)
@@ -394,8 +407,11 @@ def main() -> int:
     missing = [t for t in symbol_texts() if t not in speaker.prepare_many(symbol_texts())]
     if missing:  # fail at startup, never silently while reading
         raise RuntimeError(f'Thai voice cannot synthesize {len(missing)} phrases, e.g. {missing[:3]}')
-    reader = FingerReader(FingertipTracker(pad_fraction=args.pad_fraction), CalibrationTracker(fmt),
-                          SpeechQueue(speaker, background=True), fmt)
+    speech = SpeechQueue(speaker, background=True)
+    panel_settings.apply_to(speech, settings)
+    if cli_settings:
+        panel_settings.save(args.settings, settings)
+    reader = FingerReader(FingertipTracker(pad_fraction=args.pad_fraction), CalibrationTracker(fmt), speech, fmt)
     capture = _open_camera(args.camera, 1920, 1080, 30)
     if not capture.isOpened():
         raise RuntimeError(f'Cannot open camera {args.camera}')
