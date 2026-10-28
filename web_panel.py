@@ -18,7 +18,7 @@ import cv2
 import panel_settings
 
 INDEX = Path(__file__).resolve().parent / 'web' / 'index.html'
-FRAME_GAP_S = 0.2  # at most 5 camera frames per second to the page
+STREAM_FPS = 5  # each streamed frame costs a resize + JPEG encode on the reader's CPU
 STREAM_WIDTH = 960
 log = logging.getLogger(__name__)
 
@@ -35,8 +35,9 @@ def _lines(page) -> list[list[dict]]:
 class PanelState:
     """The latest reader state and camera frame, shared between the main loop and the server."""
 
-    def __init__(self, settings: dict):
+    def __init__(self, settings: dict, stream_fps: float = STREAM_FPS):
         self.settings = settings
+        self._frame_gap_s = 1 / stream_fps
         self.viewers = 0
         self._lock = threading.Lock()
         self._new_frame = threading.Condition(self._lock)
@@ -64,7 +65,7 @@ class PanelState:
             return {**self._snap, 'settings': dict(self.settings)}
 
     def wants_frame(self, now_s: float) -> bool:
-        return self.settings['camera'] and self.viewers > 0 and now_s - self._frame_s >= FRAME_GAP_S - 1e-9
+        return self.settings['camera'] and self.viewers > 0 and now_s - self._frame_s >= self._frame_gap_s - 1e-9
 
     def set_frame(self, frame, now_s: float) -> None:
         with self._new_frame:

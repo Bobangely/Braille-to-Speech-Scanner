@@ -72,7 +72,7 @@ server เรียก `panel_settings.apply_settings(speech, path, body)` ฟ�
 ภาพจากกล้องพร้อมโครงมือและกรอบเซลล์ (ภาพเดียวกับหน้าจอ dev) แบบ MJPEG
 
 - `Content-Type: multipart/x-mixed-replace; boundary=frame`
-- ไม่เกิน 5 fps ความกว้างไม่เกิน 960 px
+- ไม่เกิน `--web-fps` (ค่าเริ่มต้น 5, รับ 1–30) ความกว้างไม่เกิน 960 px
 - เข้ารหัส JPEG เฉพาะเมื่อ `camera` เป็น true และมีผู้ชมอย่างน้อยหนึ่งคน
 - `camera` เป็น false: ตอบ `503`
 

@@ -391,7 +391,11 @@ def main() -> int:
                         help='teacher-panel settings file; the options above override it and are saved')
     parser.add_argument('--web', type=int, metavar='PORT',
                         help='serve the teacher panel on this port to every device on the network (docs/web-api.md)')
+    parser.add_argument('--web-fps', type=int, default=5, metavar='N',
+                        help='camera frames per second sent to the panel (1-30); more is smoother but costs CPU')
     args = parser.parse_args()
+    if not 1 <= args.web_fps <= 30:
+        parser.error('--web-fps ต้องอยู่ระหว่าง 1–30')
     # Check settings before the slow voice preparation, so a typo fails at once.
     cli_settings = {key: value for key, value in
                     (('mode', args.speech_mode), ('spell_max_cells', args.spell_max_cells)) if value is not None}
@@ -417,7 +421,7 @@ def main() -> int:
     panel = None
     if args.web is not None:
         import web_panel
-        panel = web_panel.PanelState(settings)
+        panel = web_panel.PanelState(settings, stream_fps=args.web_fps)
         server = web_panel.start(args.web, panel, speech, args.settings)  # port in use: OSError now, not later
         print(f'teacher panel: http://localhost:{server.server_address[1]}  (other devices: http://<this IP>:{args.web})')
     capture = _open_camera(args.camera, 1920, 1080, 30)

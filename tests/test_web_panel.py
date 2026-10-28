@@ -57,6 +57,13 @@ class PanelStateTests(unittest.TestCase):
         self.assertEqual(snap['status'], 'waiting_page')
         self.assertEqual(snap['lines'], [])
 
+    def test_stream_fps_is_configurable(self):
+        state = PanelState(dict(DEFAULTS), stream_fps=15)
+        state.viewers = 1
+        state.set_frame(np.zeros((4, 4, 3), np.uint8), 0.0)
+        self.assertFalse(state.wants_frame(0.05))
+        self.assertTrue(state.wants_frame(1 / 15))
+
     def test_wants_frame_only_with_viewer_and_camera(self):
         state = PanelState(dict(DEFAULTS))
         self.assertFalse(state.wants_frame(0.0))
