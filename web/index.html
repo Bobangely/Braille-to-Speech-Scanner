@@ -1,0 +1,1110 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Braille Station</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⠿</text></svg>">
+<!-- Teacher panel & Station Interface. API contract: docs/web-api.md. Opened from file:// or with ?demo runs on simulation. -->
+<style>
+  :root {
+    --blue: #0050dc; --blue-hover: #003eb0; --blue-soft: #dbe7ff; --blue-border: #bfd4ff;
+    --bg: #f6f7f9; --card: #ffffff; --line: #e1e5eb;
+    --text: #1d2430; --muted: #5b6472;
+    --ok-bg: #dcfce7; --ok: #166534; --bad-bg: #fee2e2; --bad: #991b1b;
+    --amber-bg: #fef3c7; --amber: #92400e;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -2px rgba(0,0,0,0.05);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.45 system-ui, "Segoe UI", "Noto Sans Thai", Tahoma, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
+    padding: 12px 20px; background: var(--card); border-bottom: 1px solid var(--line);
+    box-shadow: var(--shadow-sm);
+  }
+  .brand { display: flex; align-items: center; gap: 8px; }
+  .brand-icon {
+    width: 26px; height: 26px; border-radius: 6px; background: var(--blue);
+    display: inline-flex; align-items: center; justify-content: center; color: #fff;
+    font-size: 14px; font-weight: 800; letter-spacing: -1px;
+  }
+  h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: .5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chip {
+    padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    background: var(--ok-bg); color: var(--ok); transition: all .2s ease;
+  }
+  .chip.off { background: var(--bad-bg); color: var(--bad); }
+  .chip.plain { background: #eef1f5; color: var(--muted); }
+  .chip.warn { background: var(--amber-bg); color: var(--amber); }
+
+  #offline { display: none; padding: 10px 16px; background: var(--bad); color: #fff; font-weight: 600; text-align: center; }
+  #offline.show { display: block; animation: slideDown .25s ease; }
+  @keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+
+  main {
+    display: grid; grid-template-columns: 2fr 1fr; gap: 16px;
+    padding: 16px 20px; max-width: 1340px; margin: 0 auto;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px; box-shadow: var(--shadow-sm);
+  }
+  .card-header {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+  }
+  .label {
+    font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 6px;
+  }
+
+  /* Camera Card */
+  .cam {
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 14px; background: var(--card); border-radius: 12px;
+    border: 1px solid var(--line); box-shadow: var(--shadow-sm);
+  }
+  .cam .placeholder { color: #8392a5; font-size: 15px; position: absolute; pointer-events: none; }
+  .cam-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px; flex-wrap: wrap; width: 100%;
+  }
+  .cam-left { display: flex; align-items: center; gap: 6px; }
+  .cam-badge {
+    background: #0f172a; color: #fff;
+    font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+  .cam-select {
+    background: rgba(0, 0, 0, 0.75); color: #fff; border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+    outline: none; cursor: pointer; backdrop-filter: blur(4px);
+    max-width: 280px; text-overflow: ellipsis;
+  }
+  .cam-select option { background: #222; color: #fff; }
+  .cam-btn-sm {
+    background: rgba(0, 0, 0, 0.75); color: #fff; border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 5px 9px; border-radius: 6px; font-size: 12px; cursor: pointer;
+    backdrop-filter: blur(4px); transition: background .15s ease;
+  }
+  .cam-btn-sm:hover { background: rgba(0, 0, 0, 0.9); }
+  .cam-actions { display: flex; gap: 6px; }
+
+  /* Aside / Controls */
+  aside { display: flex; flex-direction: column; gap: 16px; }
+
+  /* Fingertip Hero Display */
+  .fingertip-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 0 12px; border-bottom: 1px solid var(--line);
+  }
+  .symbol {
+    font-size: 42px; font-weight: 800; color: var(--blue); line-height: 1.1;
+    min-height: 48px; letter-spacing: -0.5px;
+  }
+  .braille-preview {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 6px 10px; background: #f0f4fa; border: 1px solid #dce4f0; border-radius: 8px;
+  }
+  .braille-grid {
+    display: grid; grid-template-columns: 14px 14px; grid-template-rows: repeat(3, 14px);
+    gap: 6px;
+  }
+  .braille-grid .dot {
+    width: 14px; height: 14px; border-radius: 50%; background: #ccd5e3;
+    transition: all .15s ease;
+  }
+  .braille-grid .dot.active {
+    background: var(--blue); box-shadow: 0 0 5px rgba(0, 80, 220, 0.5);
+    transform: scale(1.15);
+  }
+  .braille-dots-text { font-size: 11px; font-weight: 700; color: var(--muted); }
+
+  .word { font-size: 18px; margin-top: 8px; }
+  .word b { color: var(--text); }
+  .spoken-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 14px; }
+
+  /* Buttons & Segmented Controls */
+  button {
+    font: inherit; cursor: pointer; transition: background .15s ease, border-color .15s ease, transform .1s ease;
+  }
+  button:active { transform: scale(0.98); }
+  button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+  .btn-bar { display: flex; gap: 8px; margin-top: 12px; }
+  .btn-action {
+    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--text); font-weight: 600; font-size: 14px;
+  }
+  .btn-action:hover { background: #f1f4f9; border-color: #cfd6df; }
+  .btn-action.primary {
+    background: var(--blue); color: #fff; border-color: var(--blue);
+  }
+  .btn-action.primary:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
+
+  .seg { display: flex; border: 1px solid #cfd6df; border-radius: 8px; overflow: hidden; margin: 4px 0 10px; }
+  .seg button { flex: 1; padding: 7px 0; border: 0; background: var(--card); color: var(--text); font-size: 13px; font-weight: 500; }
+  .seg button[aria-pressed="true"] { background: var(--blue); color: #fff; font-weight: 700; }
+  .stepper { display: flex; align-items: center; gap: 8px; }
+  .stepper.dim { opacity: .45; }
+  .stepper button, .toggle {
+    min-width: 40px; padding: 6px 12px; border: 1px solid #cfd6df; border-radius: 8px;
+    background: var(--card); color: var(--text); font-weight: 600;
+  }
+  .toggle[aria-pressed="true"] { background: #16a34a; border-color: #16a34a; color: #fff; }
+  .stepper output { min-width: 1.5em; text-align: center; font-size: 20px; font-weight: 700; }
+  #error { color: var(--bad); font-size: 13px; min-height: 1.3em; margin: 6px 0 0; }
+
+  /* Audio Configuration Sliders */
+  .setting-item { margin-bottom: 12px; }
+  .setting-item:last-child { margin-bottom: 0; }
+  .sublabel { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .range-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .val-badge { font-size: 13px; color: var(--blue); font-weight: 700; }
+  .slider {
+    width: 100%; height: 6px; border-radius: 3px; background: #e2e8f0;
+    outline: none; accent-color: var(--blue); cursor: pointer; margin: 4px 0;
+  }
+  .range-ticks {
+    display: flex; justify-content: space-between; font-size: 11px; color: var(--muted);
+  }
+
+  /* Camera Viewport & Digital Zoom / Rotate Controls */
+  .cam-viewport {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #0d131f;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .cam-viewport img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform-origin: center center;
+  }
+  .cam-view-badge {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background: rgba(13, 19, 31, 0.8);
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+    z-index: 2;
+  }
+  .cam-controls-bar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+  .cam-transform-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Reading History Section */
+  .history-card {
+    grid-column: 1 / -1;
+  }
+  .history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .history-title-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .history-count-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: var(--blue-soft);
+    color: var(--blue);
+  }
+  .history-chips-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 44px;
+    max-height: 180px;
+    overflow-y: auto;
+    padding: 4px 2px;
+  }
+  .history-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: #f1f4f9;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+    transition: all .15s ease;
+    user-select: none;
+  }
+  .history-chip:hover {
+    background: var(--blue-soft);
+    border-color: var(--blue-border);
+    color: var(--blue);
+    transform: translateY(-2px);
+    box-shadow: 0 2px 6px rgba(0,80,220,0.12);
+  }
+  .history-chip .chip-time {
+    font-size: 11px;
+    font-weight: normal;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .history-chip .chip-speak {
+    font-size: 13px;
+    opacity: 0.8;
+  }
+  .history-chip.flash {
+    animation: flashWord .4s ease;
+  }
+  .history-empty {
+    font-size: 13px;
+    color: var(--muted);
+    padding: 10px 0;
+    font-style: italic;
+  }
+
+  /* Full Page View */
+  .page { grid-column: 1 / -1; }
+  .page-hint { font-size: 13px; color: var(--muted); font-weight: normal; margin-left: 8px; }
+  .page-stats { font-size: 13px; font-weight: 600; color: var(--muted); }
+  #lines { padding-top: 4px; }
+  #lines p { margin: 8px 0; font-size: 22px; line-height: 1.6; }
+  .word-span {
+    display: inline-block; padding: 2px 8px; margin: 2px 3px; border-radius: 6px;
+    background: #f7f9fb; border: 1px solid transparent; cursor: pointer;
+    user-select: none; transition: all .15s ease;
+  }
+  .word-span:hover {
+    background: var(--blue-soft); border-color: var(--blue-border); color: var(--blue);
+    transform: translateY(-1px);
+  }
+  .word-span.active {
+    background: var(--blue-soft); color: var(--blue); font-weight: 700;
+    border-color: var(--blue); box-shadow: 0 0 0 2px rgba(0,80,220,0.15);
+  }
+  .word-span.flash {
+    animation: flashWord .4s ease;
+  }
+  @keyframes flashWord {
+    0% { background: #ffe4b5; transform: scale(1.1); }
+    100% { background: var(--blue-soft); transform: scale(1); }
+  }
+
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; padding: 12px; }
+    .page, .history-card { grid-column: 1; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="brand-icon">⠿</span>
+    <h1>BRAILLE STATION</h1>
+  </div>
+  <div class="chips" aria-live="polite">
+    <span class="chip" id="chip-markers">marker</span>
+    <span class="chip" id="chip-hand">มือ</span>
+    <span class="chip plain" id="chip-status">—</span>
+    <span class="chip plain" id="chip-fps">— fps</span>
+    <span class="chip plain" id="chip-audio">🔊 เสียงเปิด</span>
+  </div>
+</header>
+<div id="offline" role="alert">ขาดการเชื่อมต่อกับสถานี กำลังพยายามเชื่อมต่อใหม่…</div>
+
+<main>
+  <!-- Camera stream preview with camera selector and transform controls -->
+  <section class="card cam" aria-label="ภาพกล้อง">
+    <div class="cam-bar">
+      <div class="cam-left">
+        <span class="cam-badge" id="cam-badge">📹 ตรวจหากล้อง…</span>
+        <span class="cam-badge" id="cam-count-badge" style="background: rgba(14, 116, 144, 0.9); border-color: rgba(56, 189, 248, 0.4);">ตรวจพบ 1 ตัว</span>
+        <select id="cam-select" class="cam-select" title="เลือกสลับอุปกรณ์กล้อง">
+          <option value="0">กำลังค้นหากล้อง…</option>
+        </select>
+        <button class="cam-btn-sm" id="btn-scan-cams" title="ค้นหาและตรวจเช็กกล้องใหม่">🔄 ค้นหากล้อง</button>
+      </div>
+      <div class="cam-actions">
+        <button class="toggle" id="btn-fullscreen" title="ขยายเต็มหน้าจอ">⛶ เต็มจอ</button>
+        <button class="toggle" id="camera" aria-pressed="true" aria-label="เปิดหรือปิดภาพกล้อง">กล้อง: เปิด</button>
+      </div>
+    </div>
+    <div class="cam-viewport" id="cam-viewport">
+      <img id="stream" alt="ภาพจากกล้องพร้อมโครงมือและกรอบเซลล์" hidden>
+      <span class="placeholder" id="cam-note">ภาพกล้องปิดอยู่</span>
+      <span class="cam-view-badge" id="cam-view-badge">ซูม: 100%</span>
+    </div>
+    <div class="cam-controls-bar">
+      <div class="cam-transform-group">
+        <span class="sublabel" style="font-size:12px;">🔍 ซูม:</span>
+        <button class="cam-btn-sm" id="btn-zoom-out" title="ซูมออก">−</button>
+        <b class="val-badge" id="zoom-val" style="min-width:38px; text-align:center;">100%</b>
+        <button class="cam-btn-sm" id="btn-zoom-in" title="ซูมเข้า">+</button>
+        <button class="cam-btn-sm" id="btn-reset-view" title="รีเซ็ตระดับการซูม">↺ รีเซ็ตซูม</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Control aside -->
+  <aside>
+    <!-- Fingertip Details & Braille Matrix -->
+    <section class="card" aria-live="polite">
+      <p class="label">ใต้นิ้ว (Fingertip)</p>
+      <div class="fingertip-row">
+        <div>
+          <div class="symbol" id="symbol">—</div>
+          <div class="word">คำ: <b id="word">—</b></div>
+        </div>
+        <div class="braille-preview" title="รูปแบบจุดเบรลล์ 6 จุด">
+          <div class="braille-grid" id="braille-dots" aria-label="ผังจุดเบรลล์ 6 จุด">
+            <span class="dot" data-dot="1"></span><span class="dot" data-dot="4"></span>
+            <span class="dot" data-dot="2"></span><span class="dot" data-dot="5"></span>
+            <span class="dot" data-dot="3"></span><span class="dot" data-dot="6"></span>
+          </div>
+          <span class="braille-dots-text" id="dots-text">—</span>
+        </div>
+      </div>
+      <div class="spoken-row muted">
+        <span>พูดล่าสุด:</span> <b id="spoken" style="color: var(--text);">—</b>
+      </div>
+      <div class="btn-bar">
+        <button class="btn-action primary" id="btn-replay" title="สั่งให้ออกเสียงซ้ำอีกครั้ง">
+          🔊 พูดซ้ำ
+        </button>
+        <button class="btn-action" id="btn-mute" title="ปิดหรือเปิดเสียงพูด">
+          🔇 ปิดเสียง
+        </button>
+      </div>
+    </section>
+
+    <!-- Audio Configuration: Engine, Rate, Volume -->
+    <section class="card">
+      <p class="label">ระบบเสียง & ระดับความเร็ว (Audio Settings)</p>
+      <!-- Voice Engine Toggle -->
+      <div class="setting-item">
+        <span class="sublabel">เอนจินเสียง (Voice Engine)</span>
+        <div class="seg" role="group" aria-label="เอนจินเสียง">
+          <button id="engine-edge" aria-pressed="true">🌐 Edge TTS (ออนไลน์)</button>
+          <button id="engine-piper" aria-pressed="false">⚡ Piper ONNX (ออฟไลน์)</button>
+        </div>
+      </div>
+      <!-- Speech Rate Slider -->
+      <div class="setting-item">
+        <div class="range-header">
+          <span class="sublabel">ความเร็วเสียง (Rate)</span>
+          <b class="val-badge" id="rate-val">1.0x</b>
+        </div>
+        <input type="range" id="rate-slider" min="0.7" max="1.5" step="0.05" value="1.0" class="slider">
+        <div class="range-ticks">
+          <span>0.7x (ช้า)</span>
+          <span>1.0x (ปกติ)</span>
+          <span>1.25x</span>
+          <span>1.5x (เร็ว)</span>
+        </div>
+      </div>
+      <!-- Volume Slider -->
+      <div class="setting-item">
+        <div class="range-header">
+          <span class="sublabel">ระดับความดังเสียง (Volume)</span>
+          <b class="val-badge" id="volume-val">100%</b>
+        </div>
+        <input type="range" id="volume-slider" min="0" max="100" step="5" value="100" class="slider">
+      </div>
+    </section>
+
+    <!-- Speech Mode Settings -->
+    <section class="card">
+      <p class="label">โหมดเสียง (Speech Mode)</p>
+      <div class="seg" role="group" aria-label="โหมดเสียง">
+        <button id="mode-spell" aria-pressed="true">สะกด</button>
+        <button id="mode-word" aria-pressed="false">เฉพาะคำ</button>
+      </div>
+      <div class="stepper" id="stepper">
+        <span>สะกดคำยาวไม่เกิน</span>
+        <button id="less" aria-label="ลดจำนวนเซลล์">−</button>
+        <output id="cells" aria-live="polite">2</output>
+        <button id="more" aria-label="เพิ่มจำนวนเซลล์">+</button>
+        <span>เซลล์</span>
+      </div>
+      <p id="error" role="status"></p>
+    </section>
+
+    <!-- Station Controls -->
+    <section class="card">
+      <p class="label">คำสั่งสถานี (Station Controls)</p>
+      <div class="station-actions">
+        <button class="btn-action" id="btn-rescan" title="สั่งให้ระบบลืมหน้าเดิมและสแกนหน้ากระดาษใหม่">
+          🔄 สแกนหน้าใหม่
+        </button>
+      </div>
+    </section>
+  </aside>
+
+  <!-- Reading History / Word Log -->
+  <section class="card history-card" aria-label="ประวัติคำที่อ่านแล้ว">
+    <div class="history-header">
+      <div class="history-title-box">
+        <span class="label">📜 ประวัติคำที่อ่านแล้ว (Reading History)</span>
+        <span class="history-count-badge" id="history-count">0 คำ</span>
+      </div>
+      <button class="cam-btn-sm" id="btn-clear-history" title="ล้างประวัติคำที่อ่าน">🗑️ ล้างประวัติ</button>
+    </div>
+    <div class="history-chips-container" id="history-chips-container">
+      <span class="history-empty">ยังไม่มีคำที่อ่าน — เมื่อใช้นิ้วชี้อ่านตัวอักษรบนหน้าหนังสือ คำที่อ่านจบจะปรากฏที่นี่โดยอัตโนมัติ</span>
+    </div>
+  </section>
+
+  <!-- Page Text Display with Click-to-Speak -->
+  <section class="card page">
+    <div class="card-header">
+      <div>
+        <span class="label">ข้อความทั้งหน้า</span>
+        <span class="page-hint">💡 คลิกที่คำเพื่อสั่งให้อ่านออกเสียงคำนั้นได้ทันที</span>
+      </div>
+      <span class="page-stats" id="page-stats">รอหน้าหนังสือ</span>
+    </div>
+    <div id="lines"><p class="muted">รอหน้าหนังสือ</p></div>
+  </section>
+</main>
+
+<script>
+const DEMO = location.protocol === 'file:' || new URLSearchParams(location.search).has('demo');
+const STATUS = {waiting_page: 'รอหน้าหนังสือ', learning: 'กำลังจำหน้า', reading: 'กำลังอ่าน'};
+const $ = id => document.getElementById(id);
+
+let settings = {mode: 'spell', spell_max_cells: 2, camera: true};
+let audioConfig = {engine: 'edge', rate: 1.0, volume: 100};
+let cameraConfig = {
+  current: 0,
+  current_name: 'EMEET SmartCam C60E 4K',
+  available: [0],
+  devices: [{index: 0, name: 'EMEET SmartCam C60E 4K'}],
+  total: 1
+};
+let muted = false;
+let sending = false;
+let isDraggingRate = false;
+let isDraggingVolume = false;
+let rateDebounce = null;
+let volDebounce = null;
+const readHistory = [];
+
+// Thai Braille dot patterns for DEMO simulation
+const DEMO_DOTS = {
+  'กอไก่': [1,2,4,5], 'ชอช้าง': [1,4], 'งองู': [1,2,4,6], 'นอหนู': [1,3,4,5], 'มอม้า': [1,3,4],
+  'ลอลิง': [1,2,3], 'วอแหวน': [2,4,5,6], 'ยอยักษ์': [1,3,4,5,6], 'อออ่าง': [1,3,5],
+  'สระอา': [3,4,5], 'สระอิ': [2,4], 'สระแอ': [1,2,6], 'ไม้โท': [3,5,6], 'ไม้เอก': [2]
+};
+
+// ---- fake station for DEMO ------------------------------------------------
+const demo = (() => {
+  const lines = [
+    [['ช้าง', ['ชอช้าง', 'สระอา', 'ไม้โท', 'งองู']], ['กิน', ['กอไก่', 'สระอิ', 'นอหนู']],
+     ['กล้วย', ['กอไก่', 'ลอลิง', 'ไม้โท', 'วอแหวน', 'ยอยักษ์']]],
+    [['แมว', ['สระแอ', 'มอม้า', 'วอแหวน']], ['ก', ['กอไก่']], ['นอน', ['นอหนู', 'อออ่าง', 'นอหนู']]]
+  ];
+  const words = lines.flat();
+  const cells = words.flatMap((w, i) => w[1].map(name => [i, name]));
+  let step = 0, spoken = null, paused = false;
+
+  function speakBrowser(text) {
+    if (muted || !window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'th-TH';
+      u.rate = audioConfig.rate || 1.0;
+      u.volume = Math.max(0, Math.min(1, (audioConfig.volume || 100) / 100));
+      window.speechSynthesis.speak(u);
+    } catch {}
+  }
+
+  const demoHistory = [];
+  function addDemoHistory(text) {
+    if (!text || text === '—' || (demoHistory.length && demoHistory[demoHistory.length - 1].text === text)) return;
+    const now = new Date();
+    const timeStr = [now.getHours(), now.getMinutes(), now.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
+    demoHistory.push({text, time: timeStr});
+    if (demoHistory.length > 50) demoHistory.shift();
+  }
+
+  return {
+    state() {
+      const [index, symbol] = cells[step % cells.length];
+      const next = cells[(step + 1) % cells.length][0];
+      const word = words[index];
+      if (settings.mode === 'spell' || word[1].length <= settings.spell_max_cells) spoken = symbol;
+      if (next !== index) spoken = word[1].length === 1 ? spoken : word[0];
+      if (spoken && !paused) addDemoHistory(spoken);
+      let n = 0;
+      return {
+        status: paused ? 'waiting_page' : 'reading',
+        markers: true, hand: true, fps: 24.6, symbol,
+        dots: DEMO_DOTS[symbol] || [1, 2],
+        word: word[0], active_word: index,
+        last_spoken: spoken, settings, muted,
+        audio_config: audioConfig,
+        camera_config: cameraConfig,
+        history: [...demoHistory],
+        lines: lines.map(line => line.map(w => ({index: n++, text: w[0]})))
+      };
+    },
+    tick() { if (!paused) step++; },
+    jumpWord(idx, text) {
+      step = cells.findIndex(c => c[0] === idx);
+      if (step < 0) step = 0;
+      spoken = text;
+      addDemoHistory(text);
+      speakBrowser(text);
+    },
+    replay() {
+      if (spoken) speakBrowser(spoken);
+    },
+    rescan() {
+      paused = true;
+      step = 0;
+      spoken = 'กำลังจำหน้า';
+      setTimeout(() => { paused = false; spoken = 'พร้อมอ่าน'; }, 1500);
+    },
+    toggleMute() {
+      muted = !muted;
+      if (muted && window.speechSynthesis) window.speechSynthesis.cancel();
+    },
+    setAudio(cfg) {
+      audioConfig = {...audioConfig, ...cfg};
+    },
+    setCamera(idx) {
+      cameraConfig.current = idx;
+      const dev = (cameraConfig.devices || []).find(d => d.index === idx);
+      cameraConfig.current_name = dev ? dev.name : `กล้อง #${idx}`;
+    },
+    scanCameras() {
+      cameraConfig.available = [0, 1];
+      cameraConfig.devices = [
+        {index: 0, name: 'EMEET SmartCam C60E 4K'},
+        {index: 1, name: 'Camera (NVIDIA Broadcast)'}
+      ];
+      cameraConfig.total = 2;
+    },
+    clearHistory() {
+      demoHistory.length = 0;
+    }
+  };
+})();
+if (DEMO) setInterval(demo.tick, 1000);
+
+// ---- talking to the station ----------------------------------------------
+async function getState() {
+  if (DEMO) return demo.state();
+  const r = await fetch('/api/state', {cache: 'no-store'});
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+async function postSettings(partial) {
+  if (DEMO) return {...settings, ...partial};
+  const r = await fetch('/api/settings', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(partial)
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || `ตั้งค่าไม่สำเร็จ (${r.status})`);
+  return body;
+}
+
+async function postAction(actionData) {
+  if (DEMO) {
+    if (actionData.action === 'replay') demo.replay();
+    else if (actionData.action === 'speak') demo.jumpWord(-1, actionData.text);
+    else if (actionData.action === 'rescan') demo.rescan();
+    else if (actionData.action === 'toggle_mute') demo.toggleMute();
+    else if (actionData.action === 'set_audio') demo.setAudio(actionData);
+    else if (actionData.action === 'set_camera') demo.setCamera(actionData.index);
+    else if (actionData.action === 'scan_cameras') demo.scanCameras();
+    else if (actionData.action === 'clear_history') demo.clearHistory();
+    return {ok: true};
+  }
+  const r = await fetch('/api/action', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(actionData)
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || `สั่งการไม่สำเร็จ (${r.status})`);
+  return body;
+}
+
+async function change(partial) {
+  const before = settings;
+  settings = {...settings, ...partial};
+  sending = true;
+  showSettings();
+  $('error').textContent = '';
+  try {
+    settings = await postSettings(partial);
+  } catch (e) {
+    settings = before;
+    $('error').textContent = e instanceof TypeError ? 'ส่งค่าตั้งไม่ได้: ขาดการเชื่อมต่อ' : e.message;
+  }
+  sending = false;
+  showSettings();
+}
+
+// ---- UI Drawing & Rendering ----------------------------------------------
+function chip(id, ok, text, warn = false) {
+  const el = $(id);
+  el.textContent = text;
+  el.classList.toggle('off', !ok && !warn);
+  el.classList.toggle('warn', warn);
+}
+
+function updateDots(dots) {
+  const activeSet = new Set(dots || []);
+  for (let i = 1; i <= 6; i++) {
+    const dotEl = document.querySelector(`.braille-grid .dot[data-dot="${i}"]`);
+    if (dotEl) dotEl.classList.toggle('active', activeSet.has(i));
+  }
+  const dotsTextEl = $('dots-text');
+  if (dots && dots.length > 0) {
+    dotsTextEl.textContent = `จุด ${dots.join('-')}`;
+  } else {
+    dotsTextEl.textContent = '—';
+  }
+}
+
+let lastRenderedHistoryHash = '';
+function renderHistory(items) {
+  const container = $('history-chips-container');
+  if (!container) return;
+  const list = items || [];
+  $('history-count').textContent = `${list.length} คำ`;
+  if (!list.length) {
+    if (lastRenderedHistoryHash !== 'empty') {
+      container.innerHTML = '<span class="history-empty">ยังไม่มีคำที่อ่าน — เมื่อใช้นิ้วชี้อ่านตัวอักษรบนหน้าหนังสือ คำที่อ่านจบจะปรากฏที่นี่โดยอัตโนมัติ</span>';
+      lastRenderedHistoryHash = 'empty';
+    }
+    return;
+  }
+  const hash = list.map(it => it.text + it.time).join('|');
+  if (hash === lastRenderedHistoryHash) return;
+  lastRenderedHistoryHash = hash;
+
+  container.replaceChildren();
+  // Display newest first
+  for (let i = list.length - 1; i >= 0; i--) {
+    const item = list[i];
+    const chip = document.createElement('div');
+    chip.className = 'history-chip';
+    chip.title = `คลิกเพื่อฟังเสียงคำว่า "${item.text}" ซ้ำอีกครั้ง`;
+    chip.innerHTML = `<span class="chip-speak">🔊</span><b>${item.text}</b><span class="chip-time">${item.time || ''}</span>`;
+    chip.onclick = async () => {
+      chip.classList.add('flash');
+      setTimeout(() => chip.classList.remove('flash'), 400);
+      if (DEMO) demo.jumpWord(-1, item.text);
+      else await postAction({action: 'speak', text: item.text});
+    };
+    container.appendChild(chip);
+  }
+}
+
+function showSettings() {
+  const spell = settings.mode === 'spell';
+  $('mode-spell').setAttribute('aria-pressed', spell);
+  $('mode-word').setAttribute('aria-pressed', !spell);
+  $('cells').textContent = settings.spell_max_cells;
+  $('stepper').classList.toggle('dim', spell);
+  $('less').disabled = settings.spell_max_cells <= 1;
+  $('more').disabled = settings.spell_max_cells >= 5;
+  const cam = $('camera');
+  cam.setAttribute('aria-pressed', settings.camera);
+  cam.textContent = settings.camera ? 'กล้อง: เปิด' : 'กล้อง: ปิด';
+  const img = $('stream');
+  const live = Boolean(settings.camera && !DEMO);
+  if (live) {
+    img.hidden = false;
+    $('cam-note').hidden = true;
+    if (!img.src || img.src.indexOf('/stream.mjpg') === -1) {
+      openStream();
+    }
+  } else {
+    img.hidden = true;
+    img.removeAttribute('src');
+    $('cam-note').hidden = false;
+    $('cam-note').textContent = !settings.camera ? 'ภาพกล้องปิดอยู่' : 'ภาพกล้อง (โหมดจำลอง DEMO)';
+  }
+  const curDev = (cameraConfig.devices || []).find(d => d.index === cameraConfig.current);
+  const curName = cameraConfig.current_name || (curDev ? curDev.name : `กล้อง #${cameraConfig.current}`);
+  $('cam-badge').textContent = DEMO ? 'โหมดจำลอง (DEMO)' : (settings.camera ? `📹 กล้องสด: ${curName}` : 'กล้อง: ปิด');
+}
+
+function updateAudioUI(cfg) {
+  if (!cfg) return;
+  audioConfig = {...audioConfig, ...cfg};
+  const isEdge = audioConfig.engine === 'edge';
+  $('engine-edge').setAttribute('aria-pressed', isEdge);
+  $('engine-piper').setAttribute('aria-pressed', !isEdge);
+
+  const rateVal = Number(audioConfig.rate || 1.0).toFixed(2);
+  $('rate-val').textContent = `${Number(rateVal)}x`;
+  if (document.activeElement !== $('rate-slider') && !isDraggingRate) {
+    $('rate-slider').value = audioConfig.rate || 1.0;
+  }
+
+  const vol = Math.round(audioConfig.volume !== undefined ? audioConfig.volume : 100);
+  $('volume-val').textContent = `${vol}%`;
+  if (document.activeElement !== $('volume-slider') && !isDraggingVolume) {
+    $('volume-slider').value = vol;
+  }
+
+  const audioChip = $('chip-audio');
+  if (muted) {
+    audioChip.textContent = '🔇 ปิดเสียงอยู่';
+    audioChip.className = 'chip off';
+  } else {
+    audioChip.textContent = isEdge ? `🌐 Edge TTS · ${rateVal}x` : `⚡ Piper ONNX · ${rateVal}x`;
+    audioChip.className = 'chip plain';
+  }
+}
+
+function updateCameraUI(cfg) {
+  if (!cfg) return;
+  cameraConfig = {...cameraConfig, ...cfg};
+  const sel = $('cam-select');
+  const devices = cfg.devices || (cfg.available || [0]).map(idx => ({index: idx, name: idx === 0 ? 'EMEET SmartCam C60E 4K' : `กล้อง ${idx}`}));
+  const current = cfg.current !== undefined ? cfg.current : 0;
+  const currentDev = devices.find(d => d.index === current);
+  const currentName = cfg.current_name || (currentDev ? currentDev.name : `กล้อง #${current}`);
+  const total = cfg.total !== undefined ? cfg.total : devices.length;
+
+  $('cam-badge').textContent = DEMO ? 'โหมดจำลอง (DEMO)' : (settings.camera ? `📹 กล้องสด: ${currentName}` : 'กล้อง: ปิด');
+  $('cam-badge').title = `กล้องลำดับที่ #${current}: ${currentName}`;
+  const countBadge = $('cam-count-badge');
+  if (countBadge) {
+    countBadge.textContent = `พบ ${total} ตัว`;
+    countBadge.title = `ระบบตรวจพบอุปกรณ์กล้องทั้งหมด ${total} ตัว`;
+  }
+
+  // Rebuild options if list or names changed
+  const optKeys = Array.from(sel.options).map(o => `${o.value}:${o.textContent}`).join(',');
+  const newKeys = devices.map(d => `${d.index}:[#${d.index}] ${d.name}${d.index === 0 ? ' (หลัก)' : ''}`).join(',');
+  if (optKeys !== newKeys) {
+    sel.replaceChildren();
+    for (const d of devices) {
+      const opt = document.createElement('option');
+      opt.value = d.index;
+      opt.textContent = `[#${d.index}] ${d.name}${d.index === 0 ? ' (หลัก)' : ''}`;
+      opt.title = `สลับไปยัง ${d.name} (Index #${d.index})`;
+      sel.appendChild(opt);
+    }
+  }
+  sel.value = current;
+}
+
+function updateAudioState(isMuted) {
+  muted = isMuted;
+  const muteBtn = $('btn-mute');
+  if (muted) {
+    muteBtn.textContent = '🔊 เปิดเสียง';
+    muteBtn.classList.add('primary');
+  } else {
+    muteBtn.textContent = '🔇 ปิดเสียง';
+    muteBtn.classList.remove('primary');
+  }
+  updateAudioUI(audioConfig);
+}
+
+function openStream() {
+  const stream = $('stream');
+  const note = $('cam-note');
+  stream.hidden = false;
+  stream.src = '/stream.mjpg?' + Date.now();
+  if (note) note.hidden = true;
+}
+$('stream').onerror = () => {
+  const note = $('cam-note');
+  if (note && settings.camera && !DEMO) {
+    note.hidden = false;
+    note.textContent = 'กำลังเชื่อมต่อสัญญาณกล้อง…';
+  }
+  setTimeout(() => {
+    if (settings.camera && !DEMO) openStream();
+  }, 1200);
+};
+
+let shownLines = '';
+function render(s) {
+  chip('chip-markers', s.markers, s.markers ? 'marker ✓' : 'ไม่เห็น marker');
+  chip('chip-hand', s.hand, s.hand ? 'มือ ✓' : 'ไม่เห็นมือ');
+  $('chip-status').textContent = STATUS[s.status] || s.status;
+  $('chip-fps').textContent = `${Number(s.fps || 0).toFixed(1)} fps`;
+
+  updateAudioState(Boolean(s.muted));
+  if (s.audio_config) updateAudioUI(s.audio_config);
+  if (s.camera_config) updateCameraUI(s.camera_config);
+
+  $('symbol').textContent = s.symbol || '—';
+  $('word').textContent = s.word || '—';
+  $('spoken').textContent = s.last_spoken || '—';
+
+  updateDots(s.dots);
+  renderHistory(s.history);
+
+  // Rebuild word spans only when the page layout changes
+  const key = JSON.stringify(s.lines);
+  if (key !== shownLines) {
+    shownLines = key;
+    const box = $('lines');
+    box.replaceChildren();
+    if (!s.lines.length) {
+      box.innerHTML = '<p class="muted">รอหน้าหนังสือ</p>';
+      $('page-stats').textContent = 'รอหน้าหนังสือ';
+    } else {
+      let totalWords = 0;
+      for (const line of s.lines) {
+        const p = document.createElement('p');
+        for (const w of line) {
+          totalWords++;
+          const span = document.createElement('span');
+          span.className = 'word-span';
+          span.textContent = w.text;
+          span.dataset.index = w.index;
+          span.dataset.text = w.text;
+          span.title = `คลิกเพื่อให้อ่านคำว่า "${w.text}"`;
+          span.onclick = () => {
+            span.classList.add('flash');
+            setTimeout(() => span.classList.remove('flash'), 400);
+            if (DEMO) demo.jumpWord(w.index, w.text);
+            else postAction({action: 'speak', text: w.text});
+          };
+          p.append(span, ' ');
+        }
+        box.append(p);
+      }
+      $('page-stats').textContent = `${totalWords} คำ`;
+    }
+  }
+
+  // Highlight active word
+  for (const span of $('lines').querySelectorAll('.word-span')) {
+    span.classList.toggle('active', Number(span.dataset.index) === s.active_word);
+  }
+
+  if (!sending && JSON.stringify(s.settings) !== JSON.stringify(settings)) {
+    settings = s.settings;
+    showSettings();
+  }
+}
+
+async function poll() {
+  try {
+    render(await getState());
+    const banner = $('offline');
+    if (banner.classList.contains('show') && !$('stream').hidden) openStream();
+    banner.classList.remove('show');
+  } catch {
+    $('offline').classList.add('show');
+  }
+  setTimeout(poll, 300);
+}
+
+// User Actions Wiring
+$('mode-spell').onclick = () => change({mode: 'spell'});
+$('mode-word').onclick = () => change({mode: 'word'});
+$('less').onclick = () => change({spell_max_cells: Math.max(1, settings.spell_max_cells - 1)});
+$('more').onclick = () => change({spell_max_cells: Math.min(5, settings.spell_max_cells + 1)});
+$('camera').onclick = () => change({camera: !settings.camera});
+
+// Voice Engine Toggle
+$('engine-edge').onclick = async () => {
+  audioConfig.engine = 'edge';
+  updateAudioUI(audioConfig);
+  await postAction({action: 'set_audio', engine: 'edge', preview: true});
+};
+$('engine-piper').onclick = async () => {
+  audioConfig.engine = 'piper';
+  updateAudioUI(audioConfig);
+  await postAction({action: 'set_audio', engine: 'piper', preview: true});
+};
+
+// Rate & Volume Sliders
+$('rate-slider').addEventListener('pointerdown', () => { isDraggingRate = true; });
+window.addEventListener('pointerup', () => {
+  isDraggingRate = false;
+  isDraggingVolume = false;
+});
+
+$('rate-slider').oninput = e => {
+  isDraggingRate = true;
+  const r = parseFloat(e.target.value);
+  $('rate-val').textContent = `${r}x`;
+  audioConfig.rate = r;
+  clearTimeout(rateDebounce);
+  rateDebounce = setTimeout(async () => {
+    await postAction({action: 'set_audio', rate: r});
+  }, 100);
+};
+$('rate-slider').onchange = async e => {
+  isDraggingRate = false;
+  clearTimeout(rateDebounce);
+  const r = parseFloat(e.target.value);
+  audioConfig.rate = r;
+  await postAction({action: 'set_audio', rate: r, preview: true});
+};
+
+$('volume-slider').addEventListener('pointerdown', () => { isDraggingVolume = true; });
+
+$('volume-slider').oninput = e => {
+  isDraggingVolume = true;
+  const v = parseInt(e.target.value, 10);
+  $('volume-val').textContent = `${v}%`;
+  audioConfig.volume = v;
+  clearTimeout(volDebounce);
+  volDebounce = setTimeout(async () => {
+    await postAction({action: 'set_audio', volume: v});
+  }, 100);
+};
+$('volume-slider').onchange = async e => {
+  isDraggingVolume = false;
+  clearTimeout(volDebounce);
+  const v = parseInt(e.target.value, 10);
+  audioConfig.volume = v;
+  await postAction({action: 'set_audio', volume: v, preview: true});
+};
+
+// Camera Selector & Scan
+$('cam-select').onchange = async e => {
+  const idx = parseInt(e.target.value, 10);
+  cameraConfig.current = idx;
+  const dev = (cameraConfig.devices || []).find(d => d.index === idx);
+  const name = dev ? dev.name : `กล้อง #${idx}`;
+  cameraConfig.current_name = name;
+  $('cam-badge').textContent = `📹 กล้องสด: ${name}`;
+  await postAction({action: 'set_camera', index: idx});
+};
+
+$('btn-scan-cams').onclick = async () => {
+  const btn = $('btn-scan-cams');
+  btn.textContent = '⏳ กำลังค้นหา…';
+  btn.disabled = true;
+  try {
+    const res = await postAction({action: 'scan_cameras'});
+    if (res && res.devices) {
+      updateCameraUI(res);
+      btn.textContent = `✓ พบ ${res.total || res.devices.length} ตัว`;
+    } else {
+      btn.textContent = '✓ อัปเดตแล้ว';
+    }
+  } catch (e) {
+    btn.textContent = '⚠️ ค้นหาไม่สำเร็จ';
+  }
+  setTimeout(() => {
+    btn.textContent = '🔄 ค้นหากล้อง';
+    btn.disabled = false;
+  }, 1600);
+};
+
+$('btn-replay').onclick = async () => {
+  $('btn-replay').disabled = true;
+  try {
+    await postAction({action: 'replay'});
+  } finally {
+    setTimeout(() => { $('btn-replay').disabled = false; }, 300);
+  }
+};
+
+$('btn-mute').onclick = async () => {
+  await postAction({action: 'toggle_mute'});
+};
+
+$('btn-rescan').onclick = async () => {
+  const btn = $('btn-rescan');
+  btn.textContent = '⏳ กำลังเริ่มสแกนใหม่…';
+  btn.disabled = true;
+  try {
+    await postAction({action: 'rescan'});
+  } finally {
+    setTimeout(() => {
+      btn.textContent = '🔄 สแกนหน้าใหม่';
+      btn.disabled = false;
+    }, 1200);
+  }
+};
+
+$('btn-fullscreen').onclick = () => {
+  const cam = document.querySelector('.cam');
+  if (!document.fullscreenElement) {
+    if (cam.requestFullscreen) cam.requestFullscreen().catch(() => {});
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+  }
+};
+
+// Camera Viewport & Digital Zoom Controls
+let camZoom = 1.0;
+
+function applyCamTransform() {
+  const stream = $('stream');
+  if (!stream) return;
+  stream.style.transform = `scale(${camZoom})`;
+  $('zoom-val').textContent = `${Math.round(camZoom * 100)}%`;
+  $('cam-view-badge').textContent = `ซูม: ${Math.round(camZoom * 100)}%`;
+}
+
+$('btn-zoom-in').onclick = () => {
+  camZoom = Math.min(2.5, Math.round((camZoom + 0.25) * 100) / 100);
+  applyCamTransform();
+};
+$('btn-zoom-out').onclick = () => {
+  camZoom = Math.max(1.0, Math.round((camZoom - 0.25) * 100) / 100);
+  applyCamTransform();
+};
+$('btn-reset-view').onclick = () => {
+  camZoom = 1.0;
+  applyCamTransform();
+};
+
+$('btn-clear-history').onclick = async () => {
+  await postAction({action: 'clear_history'});
+  renderHistory([]);
+};
+
+showSettings();
+poll();
+</script>
+</body>
+</html>
