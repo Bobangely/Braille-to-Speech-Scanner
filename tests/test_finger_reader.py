@@ -286,6 +286,16 @@ class HybridSpeakerTests(unittest.TestCase):
         self.assertEqual(speaker.prepare_many(['ไก่', 'นก']), {'ไก่', 'นก'})
         self.assertEqual((online.prepared, piper.prepared), ([['ไก่', 'นก']], [['นก']]))
 
+    def test_piper_is_synthesized_only_when_chosen(self):
+        from finger_reader import HybridSpeaker
+        online, piper = self.Fake({'ไก่'}), self.Fake({'ไก่'})
+        speaker = HybridSpeaker(online, piper, fixed=None)
+        speaker.prepare_many(['ไก่'])
+        self.assertEqual(piper.prepared, [[]])  # Edge had it: no Piper work
+        speaker.engine = 'piper'
+        speaker.prepare_many(['ไก่'])
+        self.assertEqual(piper.prepared[-1], ['ไก่'])
+
     def test_piper_stands_in_when_the_online_voice_has_no_audio(self):
         from finger_reader import HybridSpeaker
         online, piper = self.Fake(()), self.Fake({'กอไก่'})
@@ -369,6 +379,19 @@ class CachedWavSpeakerTests(unittest.TestCase):
             trim_leading_silence(path, keep_s=0.02)
             with wave.open(str(path)) as trimmed:
                 self.assertEqual(trimmed.getnframes(), 320 + 8000 + 4000)  # 1 s of silence -> 20 ms
+
+    def test_volume_scales_a_cached_copy(self):
+        import wave
+        from finger_reader import at_volume
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'a.wav'
+            with wave.open(str(path), 'wb') as out:
+                out.setnchannels(1), out.setsampwidth(2), out.setframerate(16000)
+                out.writeframes(np.full(100, 10000, np.int16).tobytes())
+            self.assertEqual(at_volume(path, 100), path)
+            quiet = at_volume(path, 50)
+            with wave.open(str(quiet)) as half:
+                self.assertEqual(np.frombuffer(half.readframes(100), np.int16)[0], 5000)
 
     def test_failed_texts_are_not_reported_ready(self):
         with tempfile.TemporaryDirectory() as cache:

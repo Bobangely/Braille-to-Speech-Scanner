@@ -90,6 +90,15 @@ class SpeechQueueTests(unittest.TestCase):
         queue.wait()
         self.assertTrue(queue.ready('ไก่'))
 
+    def test_switching_voice_prepares_the_page_again(self):
+        self.speaker.engine, self.speaker.volume = 'edge', 100
+        self.queue.prepare_page(page())
+        self.speaker.prepared.clear()
+        self.assertEqual(self.queue.set_audio_config(engine='piper', volume=150), {'engine': 'piper', 'volume': 100})
+        self.assertIn('ไก่', self.speaker.prepared)
+        with self.assertRaises(ValueError):
+            self.queue.set_audio_config(engine='auto')
+
     def test_failed_preparation_is_not_ready(self):
         self.speaker.fail = True
         with self.assertLogs('speech_queue', 'WARNING'):

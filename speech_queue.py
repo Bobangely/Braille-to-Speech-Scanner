@@ -26,8 +26,7 @@ class SpeechQueue:
         self.mode, self.spell_max_cells = mode, spell_max_cells
         self.last_spoken: str | None = None
         self.muted: bool = False
-        self.rate: float = 1.0
-        self.volume: int = 100
+        self._texts: list[str] = []
         self._prepared: set[str] = set()
         self._worker: threading.Thread | None = None
         self._words: tuple[str, ...] = ()
@@ -36,25 +35,23 @@ class SpeechQueue:
 
     @property
     def engine(self) -> str:
-        return getattr(self.speaker, 'engine', 'edge')
+        return getattr(self.speaker, 'engine', 'edge')  # a plain speaker has one voice
 
-    @engine.setter
-    def engine(self, val: str) -> None:
-        if hasattr(self.speaker, 'engine'):
-            self.speaker.engine = val
+    @property
+    def volume(self) -> int:
+        return getattr(self.speaker, 'volume', 100)
 
-    def set_audio_config(self, engine: str | None = None, rate: float | None = None, volume: int | None = None) -> dict:
-        if engine is not None:
-            self.engine = str(engine)
-        if rate is not None:
-            self.rate = float(rate)
-            if hasattr(self.speaker, 'rate'):
-                self.speaker.rate = self.rate
+    def set_audio_config(self, engine: str | None = None, volume: int | None = None) -> dict:
+        """Switch voice ('edge'/'piper') and volume (0-100); a new voice prepares the current page."""
+        if engine not in (None, 'edge', 'piper'):
+            raise ValueError(f'unknown voice engine: {engine}')
+        if engine is not None and engine != self.engine:
+            self.speaker.engine = engine
+            self._start(self._texts)
         if volume is not None:
-            self.volume = max(0, min(100, int(volume)))
-            if hasattr(self.speaker, 'volume'):
-                self.speaker.volume = self.volume
-        return {'engine': self.engine, 'rate': self.rate, 'volume': self.volume}
+            self.speaker.volume = max(0, min(100, int(volume)))
+        return {'engine': self.engine, 'volume': self.volume}
+
     def prepare_page(self, page: PageMap) -> None:
         """Prepare every text this page can produce: words and cell names.
 
@@ -68,7 +65,10 @@ class SpeechQueue:
         for word in self._word_of.values():
             self._word_cells[word] = self._word_cells.get(word, 0) + 1
         names = {c.name for line in page.lines for c in line.cells if c.name}
-        texts = list(dict.fromkeys([*page.words, *sorted(names), UNKNOWN]))
+        self._texts = list(dict.fromkeys([*page.words, *sorted(names), UNKNOWN]))
+        self._start(self._texts)
+
+    def _start(self, texts: list[str]) -> None:
         if self.background:
             self._worker = threading.Thread(target=self._prepare, args=(texts,), daemon=True)
             self._worker.start()
@@ -82,11 +82,6 @@ class SpeechQueue:
     def _prepare(self, texts: list[str]) -> None:
         try:
             ready = self.speaker.prepare_many(texts, self.lang)
-            if hasattr(self.speaker, 'piper') and hasattr(self.speaker.piper, 'prepare_many'):
-                try:
-                    self.speaker.piper.prepare_many(texts, self.lang)
-                except Exception:
-                    pass
         except Exception as error:  # a broken voice must not stop the reader
             log.warning('cannot prepare page speech: %s', error)
             return
@@ -103,7 +98,7 @@ class SpeechQueue:
         try:
             self.speaker.stop()
             self.last_spoken = text
-            if not getattr(self, 'muted', False):
+            if not self.muted:
                 self.speaker.speak(text, self.lang)
         except Exception:
             log.exception('cannot play %r', text)

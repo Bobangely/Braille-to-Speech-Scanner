@@ -28,7 +28,8 @@ def reader(status='reading', active=True):
     line = p.lines[0] if p else None
     return SimpleNamespace(status=status, calibration=object() if status != 'waiting_page' else None,
                            tip=(1, 2) if active else None, page=p,
-                           active_cell=(line, line.cells[1]) if p and active else None)
+                           active_cell=(line, line.cells[1]) if p and active else None,
+                           speech=SimpleNamespace(engine='edge', volume=100, muted=False))
 
 
 class PanelStateTests(unittest.TestCase):
@@ -80,7 +81,7 @@ class ServerTests(unittest.TestCase):
     def setUp(self):
         self._dir = tempfile.TemporaryDirectory()
         self.path = Path(self._dir.name) / 'panel_settings.json'
-        self.speech = SimpleNamespace(mode='spell', spell_max_cells=2)
+        self.speech = SimpleNamespace(mode='spell', spell_max_cells=2, muted=False)
         self.state = PanelState(dict(DEFAULTS))
         self.state.update(reader(), fps=10.0, last_spoken=None)
         self.server = start(0, self.state, self.speech, self.path, host='127.0.0.1')
@@ -187,35 +188,18 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(self.speech.muted)
 
         # test set_audio
-        self.speech.set_audio_config = mock.MagicMock(return_value={'engine': 'piper', 'rate': 1.25, 'volume': 80})
-        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "set_audio", "engine": "piper", "rate": 1.25, "volume": 80}', method='POST',
+        self.speech.set_audio_config = mock.MagicMock(return_value={'engine': 'piper', 'volume': 80})
+        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "set_audio", "engine": "piper", "volume": 80}', method='POST',
                                      headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=5) as r:
             self.assertEqual(r.status, 200)
             data = json.loads(r.read())
             self.assertTrue(data['ok'])
             self.assertEqual(data['audio_config']['engine'], 'piper')
-
-        # test set_camera
-        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "set_camera", "index": 1}', method='POST',
-                                     headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=5) as r:
-            self.assertEqual(r.status, 200)
-            data = json.loads(r.read())
-            self.assertEqual(data['camera'], 1)
-        # test clear_history
-        self.state.history.append({'text': 'ช้าง', 'time': '12:00:00'})
-        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "clear_history"}', method='POST',
-                                     headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=5) as r:
-            self.assertEqual(r.status, 200)
-            data = json.loads(r.read())
-            self.assertTrue(data['ok'])
-            self.assertEqual(data['history'], [])
-        self.assertEqual(len(self.state.history), 0)
+        self.speech.set_audio_config.assert_called_with(engine='piper', volume=80)
 
     def test_post_action_invalid_is_400(self):
-        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "unknown"}', method='POST',
+        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "set_camera", "index": 1}', method='POST',
                                      headers={'Content-Type': 'application/json'})
         with self.assertRaises(urllib.error.HTTPError) as caught:
             urllib.request.urlopen(req, timeout=5)

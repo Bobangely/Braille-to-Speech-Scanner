@@ -44,9 +44,7 @@
 | `active_word` | int \| null | index ของ `word` ใน `lines` ใช้ไฮไลต์ | `cell.word_index` |
 | `last_spoken` | string \| null | ข้อความล่าสุดที่เล่นเสียง | `SpeechQueue.say()` |
 | `muted` | bool | สถานะปิดเสียง | `speech.muted` |
-| `audio_config` | object | ค่าคอนฟิกเสียง: `engine` ("edge" \| "piper"), `rate` (0.7–1.5), `volume` (0–100) | `SpeechQueue` |
-| `camera_config` | object | ค่าคอนฟิกกล้อง: `current` (int), `available` (array ของ int) | `PanelState` |
-| `history` | array ของ `{text, time}` | ประวัติคำที่อ่านแล้วตามลำดับเวลา | `PanelState.history` |
+| `audio_config` | object | ค่าคอนฟิกเสียง: `engine` ("edge" \| "piper"), `volume` (0–100) | `SpeechQueue` |
 | `lines` | array ของบรรทัด แต่ละบรรทัดเป็น array ของ `{index, text}` | ข้อความทั้งหน้า เรียงตามบรรทัด | `reader.page.lines` + `page.words` |
 | `settings` | object | ค่าตั้งปัจจุบัน ดู `POST /api/settings` | เก็บไว้ในหน่วยความจำ: ค่าจาก `panel_settings.load()` ตอนเริ่ม แล้วแทนด้วยค่าที่ `apply_settings()` คืนมา ห้ามอ่านไฟล์ทุกครั้งที่ถูกเรียก (บน Windows การอ่านไฟล์ถี่ ๆ ทำให้บันทึกค่าใหม่ไม่ได้) |
 
@@ -84,13 +82,9 @@ server เรียก `panel_settings.apply_settings(speech, path, body)` ฟ�
 |---|---|---|
 | `"replay"` | — | เล่นเสียงข้อความล่าสุดซ้ำอีกครั้ง |
 | `"speak"` | `"text": "คำที่ต้องการพูด"` | สั่งให้ออกเสียงคำหรือข้อความที่ระบุทันที |
-| `"rescan"` | — | สั่งรีเซ็ตให้ระบบลืมหน้าเดิมและเริ่มสแกนหน้ากระดาษใหม่ |
 | `"mute"` | `"value": true \| false` | ปิดหรือเปิดเสียงระบบ |
 | `"toggle_mute"` | — | สลับสถานะปิด/เปิดเสียง |
-| `"set_audio"` | `"engine": "edge" \| "piper"`, `"rate": 1.0`, `"volume": 100` | ปรับเอนจินเสียง, ความเร็วเสียง (0.7–1.5x) และระดับความดัง (0–100%) |
-| `"set_camera"` | `"index": 0 \| 1 \| 2` | สลับแหล่งภาพกล้องสดทันที |
-| `"scan_cameras"` | — | สแกนค้นหากล้องที่เชื่อมต่ออยู่ทั้งหมด |
-| `"clear_history"` | — | ล้างประวัติคำที่อ่านแล้วทั้งหมด |
+| `"set_audio"` | `"engine": "edge" \| "piper"`, `"volume": 100` | ปรับเอนจินเสียง (เปลี่ยนแล้วเตรียมเสียงของหน้าปัจจุบันใหม่) และระดับความดัง (0–100%) |
 
 - สำเร็จ: `200` พร้อมผลลัพธ์ เช่น `{"ok": true, "action": "set_audio"}`
 - ข้อผิดพลาด: `400` เมื่อ JSON ผิด หรือ action ไม่ถูกต้อง
@@ -110,3 +104,5 @@ server เรียก `panel_settings.apply_settings(speech, path, body)` ฟ�
 ## ทดสอบหน้าเว็บโดยไม่มี server
 
 เปิด `web/index.html` ตรงจากไฟล์ หรือเพิ่ม `?demo` ท้าย URL หน้าเว็บจะใช้ข้อมูลจำลองแทนการเรียก API
+
+เซิร์ฟเวอร์ฟังที่ `127.0.0.1` เป็นค่าเริ่มต้น ใช้ `--web-host 0.0.0.0` เพื่อเปิดให้อุปกรณ์อื่นในเครือข่ายเข้าได้ (ไม่มีรหัสผ่าน)
