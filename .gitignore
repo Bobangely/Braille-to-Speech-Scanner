@@ -50,3 +50,7 @@ scratch/
 # เก็บไฟล์ export ชุดข้อมูลเฉพาะเครื่องไว้ แต่ไม่รวมในการ merge
 /data.yaml
 .superpowers/
+
+# Debug frames from --debug-dir and a local MediaPipe checkout
+output/live_debug/
+third_party/
