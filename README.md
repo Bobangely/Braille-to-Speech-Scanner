@@ -79,7 +79,9 @@ py -3.12 -m venv .venv
 
 - Python environment ของ Piper พร้อมเสียง `th_TH-tsync2-medium.onnx` ([requirements-piper.txt](requirements-piper.txt))
 - Python environment ของ Edge TTS ([requirements-edge-tts.txt](requirements-edge-tts.txt))
-- `models/hand_landmarker.task` ของ MediaPipe
+- `models/hand_landmarker.task` ของ MediaPipe: ดาวน์โหลดจาก
+  https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+  แล้ววางไว้ในโฟลเดอร์ `models/`
 
 ตัวเลือกที่ใช้บ่อย: `--marker-size-mm` (ถ้า marker ไม่ใช่ 10 มม.), `--pad-fraction` (ตำแหน่งจุดอ่านบนนิ้ว),
 `--headless` (ไม่เปิดหน้าจอ), `--debug-dir` (เก็บภาพเมื่อสถานะเปลี่ยน), `--log-latency` (บันทึกเวลาตอบสนอง)

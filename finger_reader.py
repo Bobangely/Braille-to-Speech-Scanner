@@ -15,6 +15,7 @@ import csv
 import hashlib
 import json
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -378,9 +379,11 @@ def at_volume(path: Path, volume: int) -> Path:
         with wave.open(str(path)) as source:
             params, frames = source.getparams(), source.readframes(source.getnframes())
         samples = np.frombuffer(frames, np.int16).astype(np.float32) * (volume / 100)
-        with wave.open(str(scaled), 'wb') as out:
+        partial = scaled.with_suffix('.tmp')  # a write cut short must never pass for a finished file
+        with wave.open(str(partial), 'wb') as out:
             out.setparams(params)
             out.writeframes(np.clip(samples, -32768, 32767).astype(np.int16).tobytes())
+        os.replace(partial, scaled)
     return scaled
 
 

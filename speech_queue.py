@@ -29,6 +29,7 @@ class SpeechQueue:
         self._texts: list[str] = []
         self._prepared: set[str] = set()
         self._worker: threading.Thread | None = None
+        self._synthesizing = threading.Lock()  # one batch at a time: two would write the same cache files
         self._words: tuple[str, ...] = ()
         self._word_of: dict[tuple[int, int], int] = {}
         self._word_cells: dict[int, int] = {}
@@ -81,7 +82,8 @@ class SpeechQueue:
 
     def _prepare(self, texts: list[str]) -> None:
         try:
-            ready = self.speaker.prepare_many(texts, self.lang)
+            with self._synthesizing:
+                ready = self.speaker.prepare_many(texts, self.lang)
         except Exception as error:  # a broken voice must not stop the reader
             log.warning('cannot prepare page speech: %s', error)
             return
