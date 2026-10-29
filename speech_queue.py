@@ -19,17 +19,54 @@ log = logging.getLogger(__name__)
 
 
 class SpeechQueue:
-    def __init__(self, speaker, lang: str = 'thai', background: bool = False):
+    def __init__(self, speaker, lang: str = 'thai', background: bool = False,
+                 mode: str = 'spell', spell_max_cells: int = 2):
         self.speaker, self.lang, self.background = speaker, lang, background
+        # 'spell' names every cell; 'word' names cells only of words up to spell_max_cells long.
+        self.mode, self.spell_max_cells = mode, spell_max_cells
+        self.last_spoken: str | None = None
+        self.muted: bool = False
+        self.rate: float = 1.0
+        self.volume: int = 100
         self._prepared: set[str] = set()
         self._worker: threading.Thread | None = None
+        self._words: tuple[str, ...] = ()
+        self._word_of: dict[tuple[int, int], int] = {}
+        self._word_cells: dict[int, int] = {}
 
+    @property
+    def engine(self) -> str:
+        return getattr(self.speaker, 'engine', 'edge')
+
+    @engine.setter
+    def engine(self, val: str) -> None:
+        if hasattr(self.speaker, 'engine'):
+            self.speaker.engine = val
+
+    def set_audio_config(self, engine: str | None = None, rate: float | None = None, volume: int | None = None) -> dict:
+        if engine is not None:
+            self.engine = str(engine)
+        if rate is not None:
+            self.rate = float(rate)
+            if hasattr(self.speaker, 'rate'):
+                self.speaker.rate = self.rate
+        if volume is not None:
+            self.volume = max(0, min(100, int(volume)))
+            if hasattr(self.speaker, 'volume'):
+                self.speaker.volume = self.volume
+        return {'engine': self.engine, 'rate': self.rate, 'volume': self.volume}
     def prepare_page(self, page: PageMap) -> None:
         """Prepare every text this page can produce: words and cell names.
 
         With ``background`` it returns at once: cell names are cached from startup,
         and each word becomes speakable when its audio is ready.
         """
+        self._words = page.words
+        self._word_of = {(line.line_id, c.index): c.word_index
+                         for line in page.lines for c in line.cells if c.word_index is not None}
+        self._word_cells = {}
+        for word in self._word_of.values():
+            self._word_cells[word] = self._word_cells.get(word, 0) + 1
         names = {c.name for line in page.lines for c in line.cells if c.name}
         texts = list(dict.fromkeys([*page.words, *sorted(names), UNKNOWN]))
         if self.background:
@@ -45,6 +82,11 @@ class SpeechQueue:
     def _prepare(self, texts: list[str]) -> None:
         try:
             ready = self.speaker.prepare_many(texts, self.lang)
+            if hasattr(self.speaker, 'piper') and hasattr(self.speaker.piper, 'prepare_many'):
+                try:
+                    self.speaker.piper.prepare_many(texts, self.lang)
+                except Exception:
+                    pass
         except Exception as error:  # a broken voice must not stop the reader
             log.warning('cannot prepare page speech: %s', error)
             return
@@ -60,14 +102,26 @@ class SpeechQueue:
         """Speak a message, cutting off whatever is playing; playback errors are logged."""
         try:
             self.speaker.stop()
-            self.speaker.speak(text, self.lang)
+            self.last_spoken = text
+            if not getattr(self, 'muted', False):
+                self.speaker.speak(text, self.lang)
         except Exception:
             log.exception('cannot play %r', text)
+
+    def _quiet_cell(self, event: EnterCell) -> bool:
+        """In 'word' mode a long word's cells stay quiet, unless the word itself cannot be spoken yet."""
+        word = self._word_of.get((event.line_id, event.cell_index))
+        return (self.mode == 'word' and word is not None
+                and self._word_cells[word] > self.spell_max_cells and self.ready(self._words[word]))
 
     def handle(self, events: list[EnterCell | FinishWord]) -> None:
         if not events:
             return
-        event = events[-1]
+        # Newest event wins, but a quiet cell must not hide the word finished in the same frame.
+        audible = [e for e in events if not (isinstance(e, EnterCell) and self._quiet_cell(e))]
+        if not audible:
+            return
+        event = audible[-1]
         if isinstance(event, EnterCell):
             text = event.name or UNKNOWN
         elif symbol_name(event.text) != event.text:

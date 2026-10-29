@@ -77,7 +77,7 @@ class FingerStateTest(unittest.TestCase):
         ev = []
         for k in range(4):
             ev += self.fs.update((19, 25), k * 0.05)
-        for k in range(4):
+        for k in range(9):  # a deliberate move: the new line needs LINE_DWELL_S
             ev += self.fs.update((19, 55), 0.3 + k * 0.05)
         self.assertEqual(ev, [EnterCell(0, 1, "กอไก่"), EnterCell(1, 1, "กอไก่")])
 
@@ -126,6 +126,35 @@ class FingerStateTest(unittest.TestCase):
             ev += self.fs.update((13, 25), 1.0 + k * 0.05)
         self.assertEqual(ev, [EnterCell(0, 0, "สระไอ")])
         self.assertAlmostEqual(self.fs.entered_s, 1.0)
+
+    def test_unfinished_word_is_not_spoken_on_space(self):
+        # Read สระไอ กอไก่, lift, put the finger down on the space: ไก่ was not read to the end.
+        ev = run(self.fs, [13, 19, None, 31])
+        self.assertNotIn(FinishWord(0, "ไก่"), ev)
+
+    def test_unfinished_word_is_not_spoken_past_line_end(self):
+        fs = FingerState(PageMap((LinePair(0, 20, 30, PAGE.lines[0].cells[:3]),), ("ไก่",)))
+        ev = run(fs, [13, 19, None, 70])
+        self.assertEqual(ev, [EnterCell(0, 0, "สระไอ"), EnterCell(0, 1, "กอไก่")])
+
+    def test_fast_slide_over_space_finishes_read_word(self):
+        # Too quick on the space to dwell there: the next word's first cell finishes ไก่.
+        ev = run(self.fs, [13, 19, 25])
+        ev += self.fs.update((31, 25), 0.60)
+        for k in range(4):
+            ev += self.fs.update((37, 25), 0.65 + k * 0.05)
+        self.assertEqual(ev[-2:], [FinishWord(0, "ไก่"), EnterCell(0, 4, "มอม้า")])
+
+    def test_fast_slide_does_not_finish_unread_word(self):
+        ev = run(self.fs, [13, None, 37])
+        self.assertNotIn(FinishWord(0, "ไก่"), ev)
+
+    def test_brushing_other_line_says_nothing(self):
+        ev = run(self.fs, [19])
+        for k in range(6):  # 0.25 s on the line below: a drifting hand, not a move
+            ev += self.fs.update((19, 55), 0.3 + k * 0.05)
+        ev += run(self.fs, [25])
+        self.assertEqual(ev, [EnterCell(0, 1, "กอไก่"), EnterCell(0, 2, "ไม้เอก")])
 
     def test_word_finishes_once(self):
         ev = run(self.fs, [13, 19, 25, 31, 70])
