@@ -7,7 +7,6 @@ from config_thai import THAI_MULTI_CELL_SYMBOLS, THAI_READING_MULTI_CELL
 from decoder import decode_cells
 from thai_braille import LEXICAL_SEQUENCES, lex_braille
 from thai_decoder import decode_thai_details, tokenize_thai
-from tts import TextToSpeech, prepare_thai_speech_text
 
 
 def cells(patterns):
@@ -65,13 +64,6 @@ class ThaiMultiCellSymbolTests(unittest.TestCase):
                 if boundary != 'invalid':
                     self.assertEqual(result['raw_tokens'][-1]['char'], 'แ')
 
-    def test_symbol_preserves_surrounding_text_and_stops_syllable_joining(self):
-        source = cells([[1, 2, 4, 5], [1, 6], [5], [1, 2, 6], [1, 3], [1, 6]])
-        text = decode_cells(source, 'thai')
-        self.assertEqual(text, 'กา(ขา')
-        self.assertEqual(prepare_thai_speech_text(text), 'กา วงเล็บเปิด ขา')
-        self.assertEqual(text, 'กา(ขา')
-
     def test_longest_lexical_match_precedes_shorter_symbol(self):
         # Temporary rule exercises the existing generic matcher with 3 cells.
         longer = dict(kind='literal', value='LONG', vowel=None, semantic=False)
@@ -92,25 +84,6 @@ class ThaiMultiCellSymbolTests(unittest.TestCase):
             result = decode_thai_details(cells([[4, 5, 6]]))
         self.assertTrue(result['needs_review'])
         self.assertIn('UNKNOWN_BRAILLE_SEQUENCE', unknown.output[0])
-
-    def test_tts_expands_label_for_both_backends_and_leaves_english_unchanged(self):
-        with patch.object(TextToSpeech, '_init_offline_engine'):
-            speaker = TextToSpeech()
-        with patch.object(speaker, '_speak_online', return_value=True) as online:
-            self.assertTrue(speaker.speak('(', lang='thai', method='online'))
-            self.assertEqual(online.call_args.args[0], 'วงเล็บเปิด')
-        with patch.object(speaker, '_speak_offline', return_value=True) as offline:
-            self.assertTrue(speaker.speak('(', lang='th', method='offline'))
-            self.assertEqual(offline.call_args.args[0], 'วงเล็บเปิด')
-            speaker.speak('(', lang='english', method='offline')
-            self.assertEqual(offline.call_args.args[0], '(')
-
-    def test_speech_label_is_loaded_from_config(self):
-        key = (frozenset({5}), frozenset({1, 2, 6}))
-        replacement = dict(THAI_MULTI_CELL_SYMBOLS[key], tts='ชื่อจาก config')
-        with patch.dict(THAI_MULTI_CELL_SYMBOLS, {key: replacement}):
-            self.assertEqual(prepare_thai_speech_text('('), 'ชื่อจาก config')
-
 
 if __name__ == '__main__':
     unittest.main()

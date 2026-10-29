@@ -6,7 +6,7 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-from thai_composer import compose_tokens
+from thai_parser import compose_tokens
 from thai_decoder import decode_thai_details
 from thai_lexicon import default_lexicon
 from tests.test_thai_syllable_boundaries import physical

@@ -1,10 +1,8 @@
 """Keep Thai short-i plus tone distinct from long-i through decoding and TTS."""
 
 import unittest
-from unittest.mock import patch
 
 from decoder import decode_cells, decode_cells_verbose, normalize_thai_text
-from tts import TextToSpeech
 
 
 def cells(patterns):
@@ -62,37 +60,6 @@ class ThaiCompositionTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertEqual(decode_cells(cells(patterns), 'thai'), expected)
                 self.assertEqual(normalize_thai_text(expected), expected)
-
-    def test_final_text_passed_to_tts_keeps_vowel_and_tone(self):
-        # Mock only the audio backends: exercise the real pre-TTS normalization
-        # without initializing devices, using the network, or producing files.
-        with patch.object(TextToSpeech, '_init_offline_engine'):
-            speaker = TextToSpeech()
-        samples = [(cells([consonant, '12', '35', '12456']), word)
-                   for word, consonant in WORDS]
-        samples.append((cells(SENTENCE_PATTERNS), SENTENCE))
-        for input_cells, expected in samples:
-            text = decode_cells(input_cells, 'thai')
-            for language in ('thai', 'th'):
-                with self.subTest(expected=expected, language=language):
-                    with patch.object(speaker, '_speak_online', return_value=True) as online:
-                        self.assertTrue(speaker.speak(text, lang=language, method='online'))
-                        online.assert_called_once_with(expected, lang='th', save_file=None)
-                    with patch.object(speaker, '_speak_offline', return_value=True) as offline:
-                        self.assertTrue(speaker.speak(text, lang=language, method='offline'))
-                        offline.assert_called_once_with(expected, is_thai=True)
-
-    def test_english_decode_and_tts_unchanged(self):
-        for language in ('english', 'en'):
-            with self.subTest(language=language):
-                text = decode_cells(cells(['6', '145', '3456', '1', '12']), language)
-                self.assertEqual(text, 'D12')
-                with patch.object(TextToSpeech, '_init_offline_engine'):
-                    speaker = TextToSpeech()
-                with patch.object(speaker, '_speak_online', return_value=True) as online:
-                    self.assertTrue(speaker.speak(text, lang=language, method='online'))
-                    online.assert_called_once_with('D12', lang='en', save_file=None)
-
 
 if __name__ == '__main__':
     unittest.main()

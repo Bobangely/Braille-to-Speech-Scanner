@@ -3,7 +3,8 @@
 from copy import deepcopy
 import unittest
 
-from thai_composer import CompositionError, compose_syllable, compose_tokens
+from thai_parser import compose_tokens
+from thai_renderer import CompositionError, compose_syllable
 
 
 CASES = [

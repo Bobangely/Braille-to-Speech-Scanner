@@ -4,7 +4,7 @@ from copy import deepcopy
 import unittest
 
 from decoder import decode_cells, decode_cells_verbose
-from thai_composer import compose_tokens
+from thai_parser import compose_tokens
 from thai_decoder import decode_thai_details, tokenize_thai
 
 

@@ -4,7 +4,7 @@ from collections import Counter
 from copy import deepcopy
 
 from thai_renderer import (CONSONANTS, TONES, LEADING, SHORT, INHERENT_FINAL,
-                           CODA_CHANGES_VOWEL, RULES, normalize_vowel)
+                           CODA_CHANGES_VOWEL, RULES, normalize_vowel, render_thai)
 from thai_braille import BRAILLE_STANDARD, RULES_SOURCE, lex_braille, match_post_onset_vowel
 from thai_raw_rules import RAW_STANDARD, RAW_RULES_SOURCE, candidate_validation
 
@@ -604,3 +604,8 @@ def parse_braille(cells, *, compatibility=False):
     return dict(parsed, standard=RAW_STANDARD, rules_source=RAW_RULES_SOURCE, raw_cells=raw,
                 compatibility_standard=BRAILLE_STANDARD, compatibility_rules_source=RULES_SOURCE,
                 raw_patterns=[cell['pattern'] for cell in raw], semantic_tokens=semantic, parser_trace=trace)
+
+
+def compose_tokens(tokens, *, lexicon=None, confidence_threshold=None):
+    """Braille tokens to Thai text: parse, then render with the word list."""
+    return render_thai(parse_tokens(tokens), lexicon=lexicon, confidence_threshold=confidence_threshold)
