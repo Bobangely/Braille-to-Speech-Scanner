@@ -155,6 +155,72 @@ class ServerTests(unittest.TestCase):
         self.assertIn(b'--frame', chunk)
         self.assertIn(b'\xff\xd8', chunk)  # JPEG start marker
 
+    def test_post_action(self):
+        # test replay
+        self.speech.last_spoken = 'กล้วย'
+        self.speech.say = mock.MagicMock()
+        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "replay"}', method='POST',
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            self.assertEqual(r.status, 200)
+            data = json.loads(r.read())
+            self.assertTrue(data['ok'])
+            self.assertEqual(data['action'], 'replay')
+        self.speech.say.assert_called_with('กล้วย')
+
+        # test speak
+        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "speak", "text": "\xe0\xb8\x8a\xe0\xb9\x89\xe0\xb8\xb2\xe0\xb8\x87"}', method='POST',
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            self.assertEqual(r.status, 200)
+            data = json.loads(r.read())
+            self.assertTrue(data['ok'])
+        self.speech.say.assert_called_with('ช้าง')
+
+        # test mute / toggle_mute
+        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "toggle_mute"}', method='POST',
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            self.assertEqual(r.status, 200)
+            data = json.loads(r.read())
+            self.assertTrue(data['muted'])
+        self.assertTrue(self.speech.muted)
+
+        # test set_audio
+        self.speech.set_audio_config = mock.MagicMock(return_value={'engine': 'piper', 'rate': 1.25, 'volume': 80})
+        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "set_audio", "engine": "piper", "rate": 1.25, "volume": 80}', method='POST',
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            self.assertEqual(r.status, 200)
+            data = json.loads(r.read())
+            self.assertTrue(data['ok'])
+            self.assertEqual(data['audio_config']['engine'], 'piper')
+
+        # test set_camera
+        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "set_camera", "index": 1}', method='POST',
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            self.assertEqual(r.status, 200)
+            data = json.loads(r.read())
+            self.assertEqual(data['camera'], 1)
+        # test clear_history
+        self.state.history.append({'text': 'ช้าง', 'time': '12:00:00'})
+        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "clear_history"}', method='POST',
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            self.assertEqual(r.status, 200)
+            data = json.loads(r.read())
+            self.assertTrue(data['ok'])
+            self.assertEqual(data['history'], [])
+        self.assertEqual(len(self.state.history), 0)
+
+    def test_post_action_invalid_is_400(self):
+        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "unknown"}', method='POST',
+                                     headers={'Content-Type': 'application/json'})
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(req, timeout=5)
+        self.assertEqual(caught.exception.code, 400)
+
     def test_unknown_path_404(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self.get('/../panel_settings.py')

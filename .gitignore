@@ -20,8 +20,12 @@ build/
 # Output artifacts
 output/*.png
 output/*.mp3
+output/*.wav
+output/*.json
 output/thai_tts/
 output/edge_tts/
+output/finger_speech/
+output/symbol_voice_edge/
 output/*_stream/
 output/diagnostic_*/
 output/diag_*/

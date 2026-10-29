@@ -76,7 +76,7 @@ class FingerReaderTests(unittest.TestCase):
         self.calibrator.result = (None, False)
         self.assertEqual(self.reader.step(FRAME, 0.0), 'waiting_page')
         self.reader.step(FRAME, 0.1)
-        self.assertEqual(self.speaker.spoken, ['วางหน้าให้เห็นมุมครบ'])
+        self.assertEqual(self.speaker.spoken, ['วางหน้าให้เห็นมุมทั้งหมด'])
 
     def test_page_learning_waits_for_no_hand(self):
         self.tracker.hand_present = True

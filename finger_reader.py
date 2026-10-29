@@ -17,6 +17,7 @@ import json
 import logging
 import subprocess
 import sys
+import threading
 import time
 import wave
 from pathlib import Path
@@ -30,7 +31,7 @@ from thai_speech import EDGE_SPELLING, SYMBOL_NAMES, THAI_CONSONANT_NAMES, TTS_S
 
 ROOT = Path(__file__).resolve().parent
 log = logging.getLogger(__name__)
-PLACE_PAGE = 'วางหน้าให้เห็นมุมครบ'
+PLACE_PAGE = 'วางหน้าให้เห็นมุมทั้งหมด'
 LIFT_HAND = 'ยกมือออกก่อน'
 RECHECK_S = 1.0  # re-read the colored lines this often while no hand is in view
 NEW_INK_DOTS = 3  # dots where the learned page had paper, before the page counts as changed
@@ -149,6 +150,11 @@ class CachedWavSpeaker:
         self.python = str(Path(python_executable).resolve()) if python_executable else sys.executable
         self._synthesize = synthesize or self._synthesize_in_tts_env
         self._play = play or _winsound_play
+        self.rate = 1.0
+        self.volume = 100
+
+    def ready(self, text: str) -> bool:
+        return self._path(text).is_file()
 
     def _path(self, text: str) -> Path:
         # Keyed by what is synthesized, so a new respelling makes new audio.
@@ -177,11 +183,23 @@ class CachedWavSpeaker:
         if not path.is_file():  # never synthesize inside the frame loop
             log.warning('no prepared speech for %r', text)
             return False
-        self._play(path)
+        try:
+            self._play(path, getattr(self, 'rate', 1.0), getattr(self, 'volume', 100))
+        except TypeError:
+            try:
+                self._play(path, getattr(self, 'rate', 1.0))
+            except TypeError:
+                self._play(path)
         return True
 
     def stop(self) -> None:
-        self._play(None)
+        try:
+            self._play(None, getattr(self, 'rate', 1.0), getattr(self, 'volume', 100))
+        except TypeError:
+            try:
+                self._play(None, getattr(self, 'rate', 1.0))
+            except TypeError:
+                self._play(None)
 
     def _synthesize_in_tts_env(self, model: Path, jobs: list[tuple[str, Path]]) -> None:
         # One process, one model load: synthesize_wav caches the loaded voice per model.
@@ -199,10 +217,36 @@ class HybridSpeaker:
     """Texts in ``fixed`` (or every text when it is None) in a clear online voice, cached;
     the rest in Piper. A text without online audio (offline, service down) falls back to Piper."""
 
-    def __init__(self, online, piper, fixed=None):
+    def __init__(self, online, piper, fixed=None, engine='edge'):
         self.online, self.piper = online, piper
         self.fixed = None if fixed is None else set(fixed)
+        self.engine = engine  # 'edge', 'piper', or 'auto'
         self._online_ready: set[str] = set()
+        self._rate = 1.0
+
+    @property
+    def rate(self) -> float:
+        return self._rate
+
+    @rate.setter
+    def rate(self, val: float) -> None:
+        self._rate = float(val)
+        if hasattr(self.online, 'rate'):
+            self.online.rate = self._rate
+        if hasattr(self.piper, 'rate'):
+            self.piper.rate = self._rate
+
+    @property
+    def volume(self) -> int:
+        return getattr(self, '_volume', 100)
+
+    @volume.setter
+    def volume(self, val: int) -> None:
+        self._volume = int(val)
+        if hasattr(self.online, 'volume'):
+            self.online.volume = self._volume
+        if hasattr(self.piper, 'volume'):
+            self.piper.volume = self._volume
 
     def prepare_many(self, texts, lang: str = 'thai') -> set[str]:
         texts = list(texts)
@@ -212,7 +256,14 @@ class HybridSpeaker:
         return {t for t in texts if t in self._online_ready} | self.piper.prepare_many(rest, lang)
 
     def speak(self, text: str, lang: str = 'thai') -> bool:
-        return (self.online if text in self._online_ready else self.piper).speak(text, lang)
+        engine = getattr(self, 'engine', 'edge')
+        if engine == 'piper':
+            if self.piper.speak(text, lang):
+                return True
+            return self.online.speak(text, lang)
+        else: # edge
+            target = self.online if text in self._online_ready else self.piper
+            return target.speak(text, lang)
 
     def stop(self) -> None:
         self.piper.stop()  # one shared player: stopping either stops playback
@@ -339,13 +390,48 @@ with ThreadPoolExecutor(8 if job["backend"] == "edge" else 1) as pool:
 '''
 
 
-def _winsound_play(path: Path | None) -> None:
+def _winsound_play(path: Path | None, rate: float = 1.0, volume: int = 100) -> None:
     # shortcut: Windows-only playback; add an aplay process for Linux boards when needed.
     import winsound
     if path is None:
         winsound.PlaySound(None, winsound.SND_PURGE)
-    else:
-        winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+        return
+    path = Path(path)
+    if not path.is_file():
+        return
+    volume = max(0, min(100, int(volume)))
+    if volume == 0:
+        return  # silent
+    play_path = path
+    speed_tag = int(round(rate * 100))
+    vol_tag = int(round(volume / 5.0) * 5)
+    need_rate = abs(rate - 1.0) >= 0.04
+    need_vol = vol_tag != 100
+
+    if need_rate or need_vol:
+        adj_path = path.parent / f'{path.stem}_r{speed_tag}_v{vol_tag}.wav'
+        if not adj_path.is_file():
+            try:
+                import wave
+                import numpy as np
+                with wave.open(str(path), 'rb') as src:
+                    params = src.getparams()
+                    frames = src.readframes(src.getnframes())
+                new_framerate = max(8000, min(96000, int(params.framerate * rate))) if need_rate else params.framerate
+                if need_vol:
+                    samples = np.frombuffer(frames, dtype=np.int16)
+                    factor = vol_tag / 100.0
+                    frames = np.clip(samples.astype(np.float32) * factor, -32768, 32767).astype(np.int16).tobytes()
+                with wave.open(str(adj_path), 'wb') as dst:
+                    dst.setparams(params)
+                    dst.setframerate(new_framerate)
+                    dst.writeframes(frames)
+            except Exception as e:
+                log.warning('failed to adjust speech audio for %s: %s', path.name, e)
+                adj_path = path
+        if adj_path.is_file():
+            play_path = adj_path
+    winsound.PlaySound(str(play_path), winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
 
 
 def symbol_texts() -> list[str]:
@@ -413,6 +499,8 @@ def main() -> int:
     missing = [t for t in symbol_texts() if t not in speaker.prepare_many(symbol_texts())]
     if missing:  # fail at startup, never silently while reading
         raise RuntimeError(f'Thai voice cannot synthesize {len(missing)} phrases, e.g. {missing[:3]}')
+    if hasattr(speaker, 'piper') and hasattr(speaker.piper, 'prepare_many'):
+        threading.Thread(target=speaker.piper.prepare_many, args=(symbol_texts(),), daemon=True).start()
     speech = SpeechQueue(speaker, background=True)
     panel_settings.apply_to(speech, settings)
     if cli_settings:
@@ -422,11 +510,14 @@ def main() -> int:
     if args.web is not None:
         import web_panel
         panel = web_panel.PanelState(settings, stream_fps=args.web_fps)
-        server = web_panel.start(args.web, panel, speech, args.settings)  # port in use: OSError now, not later
+        server = web_panel.start(args.web, panel, speech, args.settings, reader=reader)  # port in use: OSError now, not later
         print(f'teacher panel: http://localhost:{server.server_address[1]}  (other devices: http://<this IP>:{args.web})')
-    capture = _open_camera(args.camera, 1920, 1080, 30)
+    current_camera = args.camera
+    if panel is not None:
+        panel.current_camera = current_camera
+    capture = _open_camera(current_camera, 1920, 1080, 30)
     if not capture.isOpened():
-        raise RuntimeError(f'Cannot open camera {args.camera}')
+        raise RuntimeError(f'Cannot open camera {current_camera}')
     latency = None
     if args.log_latency:
         args.log_latency.parent.mkdir(parents=True, exist_ok=True)
@@ -438,6 +529,19 @@ def main() -> int:
     fps, last_frame_s = 0.0, 0.0
     try:
         while True:
+            if panel is not None and getattr(panel, 'requested_camera', None) is not None and panel.requested_camera != current_camera:
+                target_cam = panel.requested_camera
+                panel.requested_camera = None
+                new_cap = _open_camera(target_cam, 1920, 1080, 30)
+                if new_cap.isOpened():
+                    capture.release()
+                    capture = new_cap
+                    current_camera = target_cam
+                    panel.current_camera = target_cam
+                    log.info('switched to camera %d', target_cam)
+                else:
+                    log.warning('failed to open camera %d', target_cam)
+
             ok, frame = capture.read()
             if not ok or frame is None:
                 break
