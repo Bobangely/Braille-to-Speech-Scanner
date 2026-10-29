@@ -38,7 +38,7 @@ class CachedWavSpeaker:
         self.spell = lambda text: tts_spelling(text, table)
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.python = str(Path(python_executable).resolve()) if python_executable else sys.executable
+        self.python = str(Path(python_executable).absolute()) if python_executable else sys.executable
         self._synthesize = synthesize or self._synthesize_in_tts_env
         self._play = play or _winsound_play
         self.volume = 100
@@ -169,8 +169,24 @@ with ThreadPoolExecutor(8 if job["backend"] == "edge" else 1) as pool:
 '''
 
 
+_player: subprocess.Popen | None = None
+
+
+def _process_play(path: Path | None) -> None:
+    """macOS/Linux playback: one afplay/aplay process, killed when the next sound starts."""
+    global _player
+    if _player is not None and _player.poll() is None:
+        _player.kill()
+    _player = None
+    if path is not None:
+        command = 'afplay' if sys.platform == 'darwin' else 'aplay'
+        _player = subprocess.Popen([command, '-q', str(path)] if command == 'aplay' else [command, str(path)],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def _winsound_play(path: Path | None) -> None:
-    # shortcut: Windows-only playback; add an aplay process for Linux boards when needed.
+    if sys.platform != 'win32':
+        return _process_play(path)
     import winsound
     if path is None:
         winsound.PlaySound(None, winsound.SND_PURGE)

@@ -33,7 +33,7 @@ class PiperSpeech:
                 continue
             if not path.is_file() or not Path(str(path) + '.json').is_file():
                 raise FileNotFoundError(f'Piper requires local model and model.onnx.json: {path}')
-        self.python = str(Path(python_executable or sys.executable).resolve())
+        self.python = str(Path(python_executable or sys.executable).absolute())
         if not Path(self.python).is_file():
             raise FileNotFoundError(self.python)
         self._process = None
