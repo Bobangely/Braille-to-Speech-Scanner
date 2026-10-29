@@ -284,7 +284,7 @@
 
     <!-- Audio Configuration: Engine, Rate, Volume -->
     <section class="card">
-      <p class="label">ระบบเสียง & ระดับความเร็ว (Audio Settings)</p>
+      <p class="label">ระบบเสียง (Audio Settings)</p>
       <!-- Voice Engine Toggle -->
       <div class="setting-item">
         <span class="sublabel">เอนจินเสียง (Voice Engine)</span>
@@ -341,14 +341,7 @@ const STATUS = {waiting_page: 'รอหน้าหนังสือ', learnin
 const $ = id => document.getElementById(id);
 
 let settings = {mode: 'spell', spell_max_cells: 2, camera: true};
-let audioConfig = {engine: 'edge', rate: 1.0, volume: 100};
-let cameraConfig = {
-  current: 0,
-  current_name: 'กล้อง #0',
-  available: [0],
-  devices: [],
-  total: 1
-};
+let audioConfig = {engine: 'edge', volume: 100};
 let muted = false;
 let sending = false;
 let isDraggingVolume = false;
@@ -377,7 +370,6 @@ const demo = (() => {
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'th-TH';
-      u.rate = audioConfig.rate || 1.0;
       u.volume = Math.max(0, Math.min(1, (audioConfig.volume || 100) / 100));
       window.speechSynthesis.speak(u);
     } catch {}
@@ -398,7 +390,6 @@ const demo = (() => {
         word: word[0], active_word: index,
         last_spoken: spoken, settings, muted,
         audio_config: audioConfig,
-        camera_config: cameraConfig,
         lines: lines.map(line => line.map(w => ({index: n++, text: w[0]})))
       };
     },
@@ -412,31 +403,12 @@ const demo = (() => {
     replay() {
       if (spoken) speakBrowser(spoken);
     },
-    rescan() {
-      paused = true;
-      step = 0;
-      spoken = 'กำลังจำหน้า';
-      setTimeout(() => { paused = false; spoken = 'พร้อมอ่าน'; }, 1500);
-    },
     toggleMute() {
       muted = !muted;
       if (muted && window.speechSynthesis) window.speechSynthesis.cancel();
     },
     setAudio(cfg) {
       audioConfig = {...audioConfig, ...cfg};
-    },
-    setCamera(idx) {
-      cameraConfig.current = idx;
-      const dev = (cameraConfig.devices || []).find(d => d.index === idx);
-      cameraConfig.current_name = dev ? dev.name : `กล้อง #${idx}`;
-    },
-    scanCameras() {
-      cameraConfig.available = [0, 1];
-      cameraConfig.devices = [
-        {index: 0, name: 'EMEET SmartCam C60E 4K'},
-        {index: 1, name: 'Camera (NVIDIA Broadcast)'}
-      ];
-      cameraConfig.total = 2;
     },
   };
 })();
@@ -465,11 +437,8 @@ async function postAction(actionData) {
   if (DEMO) {
     if (actionData.action === 'replay') demo.replay();
     else if (actionData.action === 'speak') demo.jumpWord(-1, actionData.text);
-    else if (actionData.action === 'rescan') demo.rescan();
     else if (actionData.action === 'toggle_mute') demo.toggleMute();
     else if (actionData.action === 'set_audio') demo.setAudio(actionData);
-    else if (actionData.action === 'set_camera') demo.setCamera(actionData.index);
-    else if (actionData.action === 'scan_cameras') demo.scanCameras();
     return {ok: true};
   }
   const r = await fetch('/api/action', {
@@ -541,9 +510,7 @@ function showSettings() {
     $('cam-note').hidden = false;
     $('cam-note').textContent = !settings.camera ? 'ภาพกล้องปิดอยู่' : 'ภาพกล้อง (โหมดจำลอง DEMO)';
   }
-  const curDev = (cameraConfig.devices || []).find(d => d.index === cameraConfig.current);
-  const curName = cameraConfig.current_name || (curDev ? curDev.name : `กล้อง #${cameraConfig.current}`);
-  $('cam-badge').textContent = DEMO ? 'โหมดจำลอง (DEMO)' : (settings.camera ? `ใช้กล้อง: ${curName}` : `กล้องที่เลือก: ${curName} (ปิดภาพอยู่)`);
+  $('cam-badge').textContent = DEMO ? 'โหมดจำลอง (DEMO)' : (settings.camera ? 'ภาพกล้องสด' : 'ภาพกล้องปิดอยู่');
 }
 
 function updateAudioUI(cfg) {
@@ -567,18 +534,6 @@ function updateAudioUI(cfg) {
     audioChip.textContent = isEdge ? 'Edge TTS' : 'Piper ONNX';
     audioChip.className = 'chip plain';
   }
-}
-
-function updateCameraUI(cfg) {
-  if (!cfg) return;
-  cameraConfig = {...cameraConfig, ...cfg};
-  const devices = cfg.devices || (cfg.available || [0]).map(idx => ({index: idx, name: idx === 0 ? 'EMEET SmartCam C60E 4K' : `กล้อง ${idx}`}));
-  const current = cfg.current !== undefined ? cfg.current : 0;
-  const currentDev = devices.find(d => d.index === current);
-  const currentName = cfg.current_name || (currentDev ? currentDev.name : `กล้อง #${current}`);
-
-  $('cam-badge').textContent = DEMO ? 'โหมดจำลอง (DEMO)' : (settings.camera ? `ใช้กล้อง: ${currentName}` : `กล้องที่เลือก: ${currentName} (ปิดภาพอยู่)`);
-  $('cam-badge').title = `กล้องลำดับที่ #${current}: ${currentName}`;
 }
 
 function updateAudioState(isMuted) {
@@ -621,7 +576,6 @@ function render(s) {
 
   updateAudioState(Boolean(s.muted));
   if (s.audio_config) updateAudioUI(s.audio_config);
-  if (s.camera_config) updateCameraUI(s.camera_config);
 
   $('symbol').textContent = s.symbol || '—';
   $('word').textContent = s.word || '—';
