@@ -1,170 +1,149 @@
-# Thai Braille Reader — Painted Dots
+# Braille Finger Reader
 
-## ติดตั้งและเปิดจาก source
+สถานีฝึกอ่านอักษรเบรลล์ภาษาไทยด้วยนิ้ว: ผู้เรียนลากนิ้วบนบรรทัดเบรลล์นูน
+แล้วระบบพูดชื่อตัวอักษรใต้ปลายนิ้วทันที และพูดทั้งคำเมื่อนิ้วอ่านจบคำ
 
-ชุดนี้รองรับการรันจากโฟลเดอร์ source ไม่ใช่แพ็กเกจ pip/wheel และไม่มีคำสั่งติดตั้ง `braille-reader` ให้ใช้ Python 3.12 แบบ 64-bit แล้วเปิด terminal ในโฟลเดอร์ที่มี README นี้:
+![หน้าจอขณะอ่าน: โครงมือจาก MediaPipe กรอบสีแบ่งคำ และเซลล์สีเขียวใต้ปลายนิ้ว](docs/images/finger-reading-mediapipe.webp)
+
+*ภาพจากกล้องจริงขณะอ่าน: เส้นขาวและจุดแดงคือโครงมือจาก MediaPipe วงกลมดำคือจุดอ่านบนนิ้วชี้
+กรอบแต่ละสีคือหนึ่งคำ เซลล์สีเขียวคือเซลล์ที่นิ้วแตะอยู่ เส้นประเขียวคือพื้นที่อ่านจาก marker
+แถบล่างแสดงชื่อตัวอักษรใต้นิ้วและคำที่นิ้วอยู่*
+
+## หลักการ
+
+หนังสือแต่ละหน้ามี **2 บรรทัดคู่กัน**: บรรทัดจุดสีน้ำเงินที่พิมพ์ไว้ให้กล้องอ่าน
+และบรรทัดนูนที่เขียนด้วยสเลทไว้ให้นิ้วสัมผัสอยู่ใต้บรรทัดสีพอดี
+กล้องอ่านบรรทัดสี ส่วน MediaPipe ตามตำแหน่งนิ้ว ระบบจึงรู้ว่านิ้วอยู่บนเซลล์ไหน
+
+```
+กล้อง 1080p (สูง 270 มม. มองลงตรง)
+  → ArUco marker 4 มุม: แปลงพิกัดภาพเป็นมิลลิเมตรบนหน้า
+  → จุดสีน้ำเงิน (HSV + Otsu): จัดบรรทัด เซลล์ คำ แล้วถอดเป็นภาษาไทย
+  → จำหน้า (อ่านตรงกัน 3 ครั้ง) และเตรียมเสียงทั้งหน้าไว้ล่วงหน้า
+  → MediaPipe Hand Landmarker: ตามปลายนิ้วชี้
+  → นิ้วเข้าเซลล์ใหม่: พูดชื่อตัวอักษร · นิ้วออกจากคำ: พูดทั้งคำ
+```
+
+- เสียงเล่นจากไฟล์ที่เตรียมไว้: เริ่มพูดประมาณ 0.2 วินาทีหลังนิ้วแตะเซลล์
+- เสียง Edge TTS (ชัดกว่า) เมื่อมีอินเทอร์เน็ต และใช้ Piper แทนเมื่อออฟไลน์ ทุกเสียงเก็บไว้ในแคช
+- กระดาษเลื่อนระหว่างอ่านได้ ระบบตามหน้าเดิมต่อ พลิกหน้าใหม่ ระบบจำหน้าใหม่เอง
+- ผลทดสอบจริงที่กล้องสูง 270 มม.: อ่านเซลล์ถูก 59/60
+
+### ทำไมใช้ MediaPipe
+
+- ได้ตำแหน่งข้อนิ้ว 21 จุดต่อมือจากภาพ RGB ธรรมดา ไม่ต้องฝึกโมเดลเองหรือติดเซนเซอร์ที่นิ้ว
+- ใช้ปลายนิ้วชี้ (landmark 8) ขยับเข้าหาข้อนิ้วเล็กน้อย (`--pad-fraction`) ให้ตรงกับส่วนของนิ้วที่สัมผัสจุดจริง
+- ล็อกนิ้วที่กำลังอ่านไว้แม้มีสองมือในภาพ และคงล็อกไว้เมื่อตรวจไม่เจอชั่วครู่ (เช่น นิ้วบังกันเอง)
+- แปลงตำแหน่งนิ้วเป็นมิลลิเมตรบนหน้าด้วย homography จาก marker แล้ว state machine ตัดสินว่านิ้วเข้าเซลล์ใหม่ อยู่ระหว่างคำ หรือยกนิ้ว
+
+### สถานีอ่าน
+
+![แบบร่างสถานีอ่าน: กล้องมองลงจากด้านบน ที่วางหนังสือ และแผงปุ่ม](docs/images/station-3d.png)
+
+แบบร่างสถานีสำหรับใช้งานจริง (ยังไม่ได้ประกอบ): กล้องติดแขนมองลงตรงที่ความสูง 270 มม. เหนือที่วางหนังสือ
+
+## ทำหนังสือ
+
+![หน้าหนังสือจริงจากกล้อง: marker ArUco 4 มุมและบรรทัดจุดสีน้ำเงิน](docs/images/book-page.png)
+
+| ค่า | ตั้งเป็น |
+|---|---|
+| กระดาษ | A4 แนวตั้ง ตัดครึ่งเป็น A5 แนวนอน 2 หน้า |
+| marker | ArUco 4×4 ขนาด 10 มม. ห่างขอบ 10 มม. ทั้ง 4 มุม |
+| บรรทัดสี | SOV_braille_only 32.5 pt · Expanded 0.05 pt · Lowered 3 pt · สี #0050DC |
+| ระยะบรรทัด | Exactly 10 มม. ตามสเลท · บรรทัดสีสลับกับแถวว่างสำหรับบรรทัดนูน |
+| จำนวน | 4 คู่บรรทัดต่อหน้า · ไม่เกิน 24 เซลล์ต่อบรรทัด |
+
+ที่ 32.5 pt ระยะเซลล์ของฟอนต์เท่ากับช่องสเลท (6.21 มม.) จึงไม่ต้องปรับระยะตัวอักษร 2 เซลล์หรือสระทีละตัว
+
+```powershell
+.\.venv\Scripts\python.exe tools\make_book_template.py --out output\book_template.docx
+```
+
+เปิดไฟล์ที่ได้ใน Word แล้วพิมพ์ข้อความลงบรรทัดสี พิมพ์ด้วยขนาดจริง (Normal-size / No Scaling)
+แล้วเขียนบรรทัดนูนด้วยสเลทในแถวว่างใต้แต่ละบรรทัดสี
+
+## เริ่มใช้งาน
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m pip check
-.\main.bat
+.\.venv\Scripts\python.exe finger_reader.py `
+    --tts-thai-model scratch\piper-voices\th_TH-tsync2-medium.onnx `
+    --tts-python scratch\piper-env\Scripts\python.exe `
+    --symbol-voice edge --word-voice edge `
+    --edge-python scratch\edge-tts-env\Scripts\python.exe
 ```
 
-หรือใช้ `uv sync --locked` เพื่อเตรียม dependencies แล้วเรียก `uv run camera_reader.py` จากโฟลเดอร์โปรเจกต์ บน Linux ใช้ `python3.12` และ `.venv/bin/python` แทนคำสั่ง Windows; ต้องมี desktop/GUI กล้อง และอุปกรณ์เสียงที่ OS รองรับ ยังไม่รับรอง Linux ARM64 จนกว่าจะทดสอบบนบอร์ดจริง
+ต้องเตรียมเพิ่มเอง (ไม่อยู่ใน git):
 
-requirements หลักไม่รวมโมเดลเสียงหรือ dependencies เสียงเสริม: Edge ต้องติดตั้ง `requirements-edge-tts.txt` ใน environment เสียงและใช้อินเทอร์เน็ต ส่วน Piper/MMS ต้องติดตั้ง requirements และโมเดล local ตามคู่มือเสียงด้านล่าง ไม่ใช้ `uv build` หรือ `pip install .` เพื่อแจกโปรแกรมรุ่นนี้
+- Python environment ของ Piper พร้อมเสียง `th_TH-tsync2-medium.onnx` ([requirements-piper.txt](requirements-piper.txt))
+- Python environment ของ Edge TTS ([requirements-edge-tts.txt](requirements-edge-tts.txt))
+- `models/hand_landmarker.task` ของ MediaPipe
 
-กล้องเริ่มด้วย `--res auto`: ตรวจเฟรมจริงของ 4K / 2K / 1080p แล้วเลือกโหมดสูงสุดที่ใช้ได้ ปุ่ม `V` วนเฉพาะโหมดที่ตรวจผ่าน หากเปิดไม่ได้จะลองโหมดต่ำกว่า; CLI ที่ระบุ preset/ขนาดเองยังใช้ได้เป็น override
+ตัวเลือกที่ใช้บ่อย: `--marker-size-mm` (ถ้า marker ไม่ใช่ 10 มม.), `--pad-fraction` (ตำแหน่งจุดอ่านบนนิ้ว),
+`--headless` (ไม่เปิดหน้าจอ), `--debug-dir` (เก็บภาพเมื่อสถานะเปลี่ยน), `--log-latency` (บันทึกเวลาตอบสนอง)
 
-ถอด Sharpness และปุ่ม `E` แล้ว ส่ง pixel ต้นฉบับเข้า Detection โดยตรง คง `--sharp 0` เพื่อ compatibility; ค่าอื่นไม่รองรับ ไม่ได้เปลี่ยนกฎ Parser ไทย/อังกฤษ
+### เปิดด้วยดับเบิลคลิก
 
-รีวิวก่อน merge: [บั๊กที่แก้ การเก็บโค้ด ผลตรวจ และข้อจำกัด](docs/PRE_MERGE_REVIEW_TH.md)
+เตรียมไฟล์ด้านบนให้ครบ แล้วดับเบิลคลิก `Start_Finger_Reader.bat` โปรแกรมเปิดพร้อมหน้าเว็บครูที่ http://localhost:8080
+ถ้าขาดไฟล์ จะบอกชื่อไฟล์ที่ขาดแล้วหยุดรอ ส่งตัวเลือกเพิ่มต่อท้ายได้ เช่น `Start_Finger_Reader.bat --speech-mode word --web-fps 15`
+ทำไอคอนบนเดสก์ท็อป: คลิกขวาที่ไฟล์ → Send to → Desktop (create shortcut)
 
-หน้าจอกล้องใหม่: [Preview, ปุ่มควบคุม, การ resize และผลทดสอบ UI](docs/SCANNER_UI_TH.md) — แสดงชื่อเซลล์ จุด 1–6 และ pattern บน Preview โดยตรง กด `H` เพื่อเปิด/ปิดข้อมูลตรวจสอบเพิ่มเติม ปุ่ม Sharpness เดิมถูกยกเลิกแล้ว
+### โหมดเสียง
 
-เส้นทางกล้องและภาพเดี่ยวอ่าน **เฉพาะจุดที่แต้มสี** โดยค่าเริ่มต้นเป็นสีน้ำเงิน: ตรวจสี → กรอง noise → จัดกริดเซลล์ → ตำแหน่งจุด 1–6 → รวม marker → ข้อความไทย/อังกฤษ
+| โหมด | พูดอะไร |
+|---|---|
+| `spell` (ค่าเริ่มต้น) | ชื่อตัวอักษรทุกเซลล์ แล้วพูดคำเมื่ออ่านจบคำ |
+| `word` | เฉพาะคำเมื่ออ่านจบคำ ยกเว้นคำยาวไม่เกิน `--spell-max-cells` (ค่าเริ่มต้น 2) ที่ยังสะกด |
 
-จุดนูนที่ไม่มีสีไม่ถูกนำมาสร้างเซลล์หรือ decode ค่าเริ่มต้น `--roi off` ไม่โหลด/รัน YOLO เปิด `--roi yolo` เพื่อทดลองใช้โมเดลตรวจจุดเสนอกรอบบริเวณข้อความก่อนอ่านสี ส่วนเส้นทาง YOLO เดิมยังเก็บไว้สำหรับประเมินและฝึกโมเดล โดยเรียก `YOLOBrailleDetector(dot_color=None)` อย่างชัดเจน ไม่ใช่ค่าเริ่มต้นของกล้อง
+คำจะถูกพูดเฉพาะเมื่อนิ้วผ่านครบทุกเซลล์ ยกนิ้วหรือย้ายบรรทัดกลางคำจะไม่พูดคำ
+เปลี่ยนบรรทัดต้องค้างนิ้วบนบรรทัดใหม่ 0.4 วินาที มือที่เฉียดบรรทัดอื่นจึงไม่ทำให้พูด
+ตั้งจาก CLI (`--speech-mode`, `--spell-max-cells`) หรือหน้าเว็บครู ค่าบันทึกใน `output/panel_settings.json`
 
-## ตัวอ่านเฉพาะสี
+### หน้าเว็บครู
 
-[สาเหตุที่แก้ อัลกอริทึม ข้อจำกัด และผลทดสอบ](docs/COLORED_BRAILLE_ONLY_TH.md)
+![หน้าเว็บครู: ภาพกล้องสด ตัวอักษรใต้นิ้ว โหมดเสียง และข้อความทั้งหน้า](docs/images/teacher-panel.webp)
 
-รองรับเฉพาะ `--dot-color blue` และ `red` กด `C` ในหน้ากล้องเพื่อสลับสีระหว่างใช้งาน ระบบล้างผลสีเดิมและรอผลเฟรมใหม่ โดยไม่เปิดกล้องหรือโหลดโมเดลซ้ำ สีอื่นและจุดที่ไม่มีสีไม่ถูกนำไปอ่าน
+เพิ่ม `--web 8080` (ไฟล์ .bat ใส่ให้แล้ว) แล้วเปิด http://localhost:8080 จากเครื่องเดียวกัน
+หรือ `http://<IP เครื่อง>:8080` จากมือถือใน WiFi เดียวกัน (ดู IP ด้วย `ipconfig`; Windows Firewall ต้องอนุญาต Python ใน Private network)
 
-กล้องติดตามตำแหน่งกรอบด้วย optical flow เมื่อขยับเล็กน้อย หากติดตามไม่ได้หรือผลเกินอายุ 1 วินาที จะล้างข้อความยืนยันและรอเฟรมใหม่ กล้องยังทำงานต่อ ค่า sharpening เริ่มต้นเป็น `0` เพื่ออ่านขอบสีจากภาพเดิม
+- ดูภาพกล้องสด ตัวอักษรใต้นิ้ว คำที่กำลังอ่าน และข้อความทั้งหน้า
+- เปลี่ยนโหมดเสียงและจำนวนเซลล์ได้ทันที เปิด/ปิดภาพกล้องเพื่อลดภาระ CPU
+- `--web-fps N` (1–30, ค่าเริ่มต้น 5): ภาพลื่นขึ้นแต่กิน CPU มากขึ้น บนบอร์ดเล็กให้ใช้ค่าต่ำ
+- ไม่มีรหัสผ่าน: ทุกเครื่องใน WiFi เดียวกันเปิดและเปลี่ยนค่าได้
+- ดูหน้าเว็บโดยไม่ต่อกล้อง: `.\.venv\Scripts\python.exe -m http.server 8765 --directory web` แล้วเปิด http://localhost:8765/?demo
+- API สำหรับพัฒนาต่อ: [docs/web-api.md](docs/web-api.md)
 
-สำหรับกล้องบนขาตั้ง ใช้ `--scan-roi X1 Y1 X2 Y2` กำหนดพื้นที่อ่านคงที่เป็นสัดส่วน 0–1 ของภาพกล้อง ตัดพื้นที่ก่อนตรวจสี/YOLO และจำกัด zoom ภายในกรอบนั้น ค่าเริ่มต้นยังอ่านทั้งภาพ ตัวอ่านแยกก้อนสีที่มีแกนจุดสองก้อนก่อนสร้าง Grid และตรวจมุมแต่ละแถบข้อความเมื่อมุมรวมจัดแถวไม่ได้
+## โครงสร้าง
 
-[รีวิวกล้องบนขาตั้ง วิธีเลือก ROI ผลทดสอบ และวิธีเก็บภาพหนังสือเพื่อฝึก YOLO](docs/MOUNTED_CAMERA_REVIEW_TH.md)
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `finger_reader.py` | โปรแกรมหลัก: ลำดับสถานะ เสียง และหน้าจอ dev |
+| `page_calibration.py` | รูปแบบหน้าและ marker ArUco |
+| `page_map.py`, `colored_braille.py` | อ่านจุดสีเป็นบรรทัด เซลล์ และคำ |
+| `fingertip.py`, `finger_state.py` | ตามนิ้ว และตัดสินว่าเข้าเซลล์หรือจบคำ |
+| `web_panel.py`, `web/index.html`, `panel_settings.py` | หน้าเว็บครู web server และค่าตั้งโหมดเสียง |
+| `speech_queue.py`, `thai_speech.py` | เลือกข้อความที่จะพูด และคำสะกดสำหรับเสียงแต่ละแบบ |
+| `decoder.py`, `thai_parser.py` | ถอดรหัสเบรลล์ไทย |
+| `tools/make_book_template.py` | สร้างไฟล์ Word ต้นแบบพร้อม marker |
+| `tools/diagnostics/symbol_speech_page.py` | หน้าฟังเสียงชื่อสัญลักษณ์ทั้งหมดเทียบ Piper กับ Edge |
+| `tools/diagnostics/page_map_accuracy.py` | วัดความแม่นการอ่านจากภาพถ่ายเทียบข้อความเฉลย |
+| `archive/legacy_scanner/` | ระบบสแกนรุ่นก่อน (ถือกล้องสแกน + YOLO) เก็บไว้อ้างอิง |
 
-## งาน Dataset / YOLO
-
-สร้าง dataset เบรลล์ไทยสังเคราะห์ **3,000 ภาพ**: train 2,400 / validation 300 / test 300 อยู่ใน `datasets/thai_synthetic/seed_20260908/` พร้อม label จุดและข้อมูลเซลล์/บรรทัด ภาพฝึกไม่มีกรอบ debug ทับ
-
-**[รีวิวภาษาไทย สิ่งที่ทำ ผลตรวจ และวิธีฝึกต่อ](docs/SYNTHETIC_DATASET.md)**
-
-ข้อมูลที่สร้างในเครื่องถูกแยกจาก source code ด้วย `.gitignore` หากเริ่มจาก clone ใหม่ ให้สร้างด้วยคำสั่งนี้:
+## ทดสอบ
 
 ```powershell
-.venv\Scripts\python.exe tools\training\generate_yolo_training.py
+.\.venv\Scripts\python.exe -m unittest discover -s tests
 ```
 
-ตัวสร้างไม่เขียนทับ dataset เดิม การเพิ่มข้อมูลใช้ `--extend-from` และ seed ใหม่ โดยคง validation/test เดิมไว้ ดูตัวอย่างในเอกสารรีวิว
+## เทคโนโลยี
 
-## ฝึก YOLO
+Python 3.12 · OpenCV (ArUco, HSV) · MediaPipe Hand Landmarker · Edge TTS · Piper TTS · python-docx
 
-```powershell
-.venv\Scripts\python.exe tools\training\train_yolo.py --data datasets/thai_synthetic/seed_20260908/data.yaml --epochs 30 --batch 8 --imgsz 640 --device cpu --name thai_synthetic_round1
-```
+## ข้อจำกัด
 
-เก็บโมเดลทดลองใน `runs/detect/<ชื่อรอบ>/weights/` โดยไม่เขียนทับ production ใช้ `--weights` สำหรับฝึกรอบใหม่หรือ `--resume` สำหรับงานที่หยุดกลางคัน ประเมิน candidate ด้วย `tools/diagnostics/benchmark_yolo_stream.py --model <best.pt>` โหมด `--roi yolo` เลือกโมเดลเสนอ ROI ด้วย `--model <best.pt>` ได้ ส่วน `--roi off` ไม่ใช้ weights
-
-## ใช้งานกล้องและภาพเดี่ยว
-
-ดับเบิลคลิก `main.bat` เพื่อเปิดเมนูเดียว: scanner, scanner พร้อม Piper offline หรือ Edge online,
-ตรวจกล้อง, ทดสอบภาพ/ภาพตัวอย่างเดิม และติดตั้ง dependencies ลง `.venv` แบบเลือกเอง
-ลากไฟล์ภาพมาวางบน `main.bat` ได้ หรือเรียกคำสั่งโดยตรง:
-
-```powershell
-.\main.bat scan
-.\main.bat scan --res 1080p --camera 0
-.\main.bat piper
-.\main.bat edge
-.\main.bat camera-test
-.\main.bat image "path/to/image.png" --lang thai --no-show
-.\main.bat setup
-```
-
-โหมด `scan` ไม่เปิดเสียง; เลือก `piper` เพื่อเปิดปุ่ม S อ่าน/อ่านซ้ำ และ B หยุดเสียง
-โดยต้องมี environment/โมเดลในเครื่องก่อน ไม่มีการดาวน์โหลดอัตโนมัติหรือ Cloud fallback
-ดู [Piper offline](docs/PIPER_OFFLINE_TTS_TH.md), [Edge online ไทย/อังกฤษและวิธีติดตั้งหลัง pull](docs/EDGE_TTS_TH.md) และ [ผล audit launcher](docs/MAIN_LAUNCHER_AUDIT_TH.md)
-
-`main.bat` หาไฟล์โปรเจกต์จากตำแหน่งของตัวเอง จึงเรียกจากโฟลเดอร์อื่นได้
-path ภาพแบบ relative อ้างอิงโฟลเดอร์ที่เรียกคำสั่ง ส่วน scanner options ส่งต่อให้ CLI เดิม
-หาก dependencies ไม่ครบ จะแจ้งให้รัน `main.bat setup` โดยไม่ติดตั้งเอง
-
-คำสั่ง Python เดิมยังใช้ได้สำหรับงานพัฒนา:
-
-```powershell
-.venv\Scripts\python.exe camera_reader.py --lang thai --res fhd --sharp 0 --dot-color blue
-.venv\Scripts\python.exe yolo_detector.py path/to/image.png --lang thai --dot-color blue --save --dump-stream
-```
-
-กด `C` สลับน้ำเงิน/แดง, `P` บันทึก snapshot, `D` บันทึกภาพที่ตัวอ่านใช้จริงพร้อม trace รายเซลล์ และ `Q`/Esc ออก กล้องยังรองรับ zoom, sharpness และสลับความละเอียด `--dump-stream` สร้างภาพ crop สำหรับตรวจสอบและ JSON พร้อมสีของเฟรมนั้นและสถานะ ROI
-
-ทดลองให้ YOLO เสนอ ROI ก่อนอ่านสี:
-
-```powershell
-.venv\Scripts\python.exe camera_reader.py --lang thai --res fhd --dot-color blue --roi yolo
-```
-
-โมเดลปัจจุบันตรวจ `braille_dot` จึงใช้กรอบรวมจุดพร้อมขอบเผื่อ ไม่ใช่โมเดลตรวจกรอบบรรทัด/ตัวอักษรโดยตรง ติดตาม ROI ระหว่างรอบ YOLO และค้นหาใหม่ทุกประมาณ 0.35 วินาทีหรือเมื่อ tracking หลุด ภายใน ROI อ่านเฉพาะจุดสีที่เลือก หาก YOLO หา ROI ไม่พบจะรอเฟรมใหม่ โหมดนี้ยังต้องเทียบกับ `--roi off` บนหนังสือจริง
-
-## Lexicon ช่วยจัดอันดับภาษาไทย
-
-ติดตั้ง dependencies จาก `requirements.txt` หรือ `uv sync --locked` เพื่อใช้ชุดคำทั่วไป
-ที่มากับ `pythainlp==5.3.3` ระบบโหลดชุดคำครั้งเดียวและไม่ดาวน์โหลดข้อมูลระหว่างอ่านกล้อง
-หากชุดคำใช้ไม่ได้ จะคงผลจาก structural parser พร้อมบันทึกคำเตือน
-
-- ตรวจโครงสร้างและ source cells ของทุก segmentation ก่อนให้คะแนน
-- จับคำที่ขอบพยางค์ภายในช่วงเดียวกัน ไม่จับข้ามช่องว่างหรือบรรทัด
-- คำที่ไม่มีในชุดคำยังเป็น candidate ได้ รวมถึงชื่อเฉพาะและคำใหม่
-- ใช้คำเป็นหลักฐานรองหลังตรวจ raw patterns, กฎเบรลล์ และการประกอบอักษร ไม่ทำให้คู่แข่งผิดเพียงเพราะไม่พบคำ
-- ยืนยันด้วย lexicon ได้เมื่อค้น candidate ครบ มีเพียงทางเดียวครอบคลุมคำครบ เป็นมาตรฐาน มีหลักฐาน raw cells ไร้คำเตือน ผ่านเกณฑ์ confidence ที่กำหนด และมีอย่างน้อยสองคำพร้อมคำที่ครอบคลุมหลายพยางค์ ทางเลือกอื่นยังเก็บเป็น valid/plausible ใน trace
-- หากมีหลายทางที่ครอบคลุมคำครบ หลักฐานไม่เพียงพอ หรือค้น candidate ไม่ครบภายในขอบเขต 128 ทาง
-  จะคง `NEEDS_REVIEW` และไม่ยืนยันข้อความนั้น
-
-`decode_thai_details(cells, lexicon=ชุดคำ)` ใช้ชุดคำของผู้เรียกได้;
-ส่ง `lexicon=set()` เพื่อปิดหลักฐาน lexicon โดยคง parser เดิม
-ข้อมูล debug เดิมอยู่ใน `raw_patterns`, `parser_trace`, `semantic_tokens` และ
-`structural_syllables`; ทางเลือกทั้งหมดกับคะแนนอยู่ใน `segmentation_runs` และ
-`lexicon_ranking` ส่วน `syllables` แสดงทางที่เลือกสำหรับ renderer
-
-## มาตรฐาน raw Braille และ compatibility ภาษาไทย
-
-เส้นทาง scanner ใช้กฎ raw ของ Liblouis Thai Grade 1 เป็นหลัก โดยแยกจาก semantic
-compatibility ของโปรเจกต์ ลำดับเลือกคือ `standard > compatibility > lexicon`
-และเก็บ candidate ที่ถูกปฏิเสธไว้ใน `segmentation_runs` พร้อมเหตุผลของแต่ละ mode
-
-กฎ raw ที่ตรวจสอบและเพิ่มในรอบนี้อยู่ใน `thai_raw_rules.py`: `15` แทนรูปเขียน `ัว`
-จึงห้ามนำตัวสะกดจากพยางค์ถัดไปมาทำให้ `ัว` กลายเป็น `ว` โดยไม่มีหลักฐานจาก raw
-ส่วนอัวที่ลดรูปแล้วใช้ `ว` (`2456`) ยังคงอ่านผ่าน parser เดิม ไม่ห้ามตัวสะกด `ร`
-และไม่ใช้รายชื่อคำมาตัดสิน ดูแหล่งตารางที่ตรึง revision ไว้ใน `RAW_RULES_SOURCE`
-
-การเปลี่ยนนี้เป็น **scanner subset ที่ตรวจสอบกฎอัวแล้ว** ไม่ใช่การกลับตาราง Liblouis
-ทุกกฎแบบสมบูรณ์ กฎ segmentation/สระอื่นที่มีอยู่ยังคงเดิมเพื่อรักษา regression ของ P1
-
-ค่าเริ่มต้นไม่รับ raw รูปปิดที่อาศัย semantic compatibility เพียงอย่างเดียว หากเป็นข้อมูล
-legacy ที่ใช้ `15` เป็นสระอัวแบบปิด ให้เปิด mode อย่างชัดเจน:
-
-```python
-from thai_decoder import decode_thai_details
-
-result = decode_thai_details(cells, compatibility=True)
-```
-
-`decode_cells()` และ `decode_cells_verbose()` รับ keyword เดียวกัน ส่วน `compose_tokens()`
-เป็น semantic adapter จึงคง compatibility สำหรับ token เดิมที่ไม่มี raw encoding
-เมื่อทั้งสอง mode ให้คำตอบที่ต่างกันและยัง valid ระบบแสดง standard ก่อน แต่คืน
-`NEEDS_REVIEW`; lexicon จัดอันดับได้เฉพาะภายในระดับ mode เดียวกัน ไม่สามารถชุบ
-candidate ที่ผิดโครงสร้างหรือทำให้ compatibility แซง standard ได้
-
-debug มี `standard_valid`, `standard_error`, `compatibility_valid`,
-`compatibility_error`, `accepted_mode` และ `acceptance_reason` โดยไม่แก้ raw cells,
-patterns, source cell IDs หรือกฎ confirmation/Vision/Grid
-
-## ตรวจสอบ
-
-```powershell
-.venv\Scripts\python.exe -m unittest discover -s tests -v
-.venv\Scripts\python.exe tools\training\validate_dataset.py datasets/thai_synthetic/seed_20260908
-.venv\Scripts\python.exe tools\diagnostics\benchmark_yolo_stream.py
-```
-
-ผลตรวจวันที่ 13 กันยายน 2026: ผ่าน **99 tests**, ทดลอง ROI ด้วยโมเดลจริงบนภาพสังเคราะห์น้ำเงิน/แดงตรงและเอียง 3° ผ่าน **4/4 กรณี** และ benchmark เส้นทาง YOLO เดิม **99/99** ผลเหล่านี้ไม่ใช่ตัวเลขความแม่นยำของหนังสือจริงหรือ FPS กล้อง/บอร์ด
-
-ยังต้องทดสอบกับภาพดิบจากกล้องจริงในสภาพแสงและการแต้มสีที่หลากหลาย พิกัด/รูปแบบสีใน tests ไม่ได้ใช้เป็นค่าตายตัวใน algorithm
-
-[การทำงานของ cell stream และข้อจำกัด](docs/YOLO_CELL_STREAM.md) · [ประวัติโค้ด CV ที่เลิกใช้](archive/legacy_cv/README.md)
+- อ่านได้เฉพาะหนังสือที่ทำตามรูปแบบข้างบน (มีบรรทัดสีและ marker)
+- ยังทดสอบบน Windows เท่านั้น: เล่นเสียงด้วย `winsound`
+- ยังไม่ได้ทดสอบกับผู้เรียนจริงและหนังสือหลายหน้า
+- Edge TTS เป็นบริการออนไลน์ที่ไม่เป็นทางการ คำใหม่ต้องใช้อินเทอร์เน็ตครั้งแรก

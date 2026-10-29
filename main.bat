@@ -1,43 +1,24 @@
 @echo off
-setlocal EnableExtensions DisableDelayedExpansion
+setlocal
 chcp 65001 >nul 2>&1
-title Braille Reader
-set "BRAILLE_CALLER_CWD=%CD%"
-pushd "%~dp0" >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Cannot enter the project folder.
-    endlocal & exit /b 1
-)
-if not exist "tools\launch.py" (
-    echo [ERROR] Missing tools\launch.py. Restore the project files.
-    set "BRAILLE_EXIT=1"
-    goto done
-)
-if exist ".venv\Scripts\python.exe" goto local_python
-py -3 -c "import sys; sys.exit(sys.version_info < (3,12))" >nul 2>&1
-if not errorlevel 1 goto py_launcher
-python -c "import sys; sys.exit(sys.version_info < (3,12))" >nul 2>&1
-if not errorlevel 1 goto path_python
-echo [ERROR] Python 3.12 or newer is required. Install Python, then run main.bat setup.
-set "BRAILLE_EXIT=1"
-goto done
+cd /d "%~dp0"
+title Braille Station Launcher - Live Camera and Web Interface
 
-:local_python
-".venv\Scripts\python.exe" -X utf8 "tools\launch.py" %*
-set "BRAILLE_EXIT=%errorlevel%"
-goto done
+echo ===================================================================
+echo   BRAILLE STATION - Live Camera and Web Interface
+echo ===================================================================
+echo   Opening: http://localhost:8080
+echo   Close this window to stop the system.
+echo ===================================================================
+echo.
 
-:py_launcher
-py -3 -X utf8 "tools\launch.py" %*
-set "BRAILLE_EXIT=%errorlevel%"
-goto done
+start /b cmd /c "timeout /t 2 /nobreak >nul & start http://localhost:8080"
+".venv\Scripts\python.exe" finger_reader.py ^
+    --tts-thai-model scratch\piper-voices\th_TH-tsync2-medium.onnx ^
+    --tts-python .venv\Scripts\python.exe ^
+    --symbol-voice edge --word-voice edge ^
+    --edge-python .venv\Scripts\python.exe ^
+    --web 8080 --headless %*
 
-:path_python
-python -X utf8 "tools\launch.py" %*
-set "BRAILLE_EXIT=%errorlevel%"
-
-:done
-if not "%BRAILLE_EXIT%"=="0" echo [ERROR] Launcher stopped. Read the error above.
-if "%~1"=="" if not "%BRAILLE_EXIT%"=="0" pause
-popd
-endlocal & exit /b %BRAILLE_EXIT%
+endlocal
+pause

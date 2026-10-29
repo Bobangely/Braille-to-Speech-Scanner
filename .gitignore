@@ -20,8 +20,12 @@ build/
 # Output artifacts
 output/*.png
 output/*.mp3
+output/*.wav
+output/*.json
 output/thai_tts/
 output/edge_tts/
+output/finger_speech/
+output/symbol_voice_edge/
 output/*_stream/
 output/diagnostic_*/
 output/diag_*/
@@ -39,8 +43,10 @@ output/niwat_probe/
 datasets/
 runs/
 yolov8n.pt
+models/*.task
 scratch/
 *.cache
 
 # เก็บไฟล์ export ชุดข้อมูลเฉพาะเครื่องไว้ แต่ไม่รวมในการ merge
 /data.yaml
+.superpowers/

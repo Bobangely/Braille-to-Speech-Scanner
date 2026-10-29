@@ -1,0 +1,23 @@
+{
+  "dataset": "C:\\Users\\bavon\\.gemini\\antigravity\\scratch\\braille-reader\\datasets\\sov_camera_mixed_v3\\data.yaml",
+  "dataset_audit": {
+    "valid": true,
+    "images": {
+      "train": 2006,
+      "val": 201,
+      "test": 202
+    },
+    "scene_groups": 609,
+    "dots": 476301,
+    "negatives": 348,
+    "cross_split_group_leaks": 0,
+    "cross_split_exact_duplicates": 0
+  },
+  "source_weights": "C:\\Users\\bavon\\.gemini\\antigravity\\scratch\\braille-reader\\runs\\detect\\sov_camera_blue_smoke\\weights\\best.pt",
+  "source_sha256": "7284016a5d07e6f1f6894042562f7888d02009c1faedf69d29e4a7f0c7c5414e",
+  "best_weights": "C:\\Users\\bavon\\.gemini\\antigravity\\scratch\\braille-reader\\runs\\detect\\sov_camera_mixed_v3\\weights\\best.pt",
+  "last_weights": "C:\\Users\\bavon\\.gemini\\antigravity\\scratch\\braille-reader\\runs\\detect\\sov_camera_mixed_v3\\weights\\last.pt",
+  "best_sha256": "2027b2313e91df47292bb0623513def48f9176e72c2fe923fafdc15dd13dd921",
+  "production_weights_replaced": false,
+  "resumed": false
+}

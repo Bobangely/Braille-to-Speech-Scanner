@@ -806,6 +806,28 @@ class RealTimeBrailleScanner:
         return cropped, (x1, y1, x2, y2)
 
 
+    def _compose_scan_roi_preview(self, frame, annotated_roi, crop_box):
+        """Show the full camera frame while keeping detection inside the ROI."""
+        preview = cv2.convertScaleAbs(frame, alpha=0.35)
+        x1, y1, x2, y2 = crop_box
+        roi = cv2.resize(
+            annotated_roi,
+            (x2 - x1, y2 - y1),
+            interpolation=cv2.INTER_AREA,
+        )
+        preview[y1:y2, x1:x2] = roi
+        cv2.rectangle(preview, (x1, y1), (x2 - 1, y2 - 1), (0, 255, 255), 3)
+        cv2.putText(
+            preview,
+            "SCAN ROI",
+            (x1 + 8, max(24, y1 - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 255),
+            2,
+        )
+        return preview
+
     def _draw_mini_viewfinder(self, image, orig_frame, crop_box):
         """Fit the overview inside the preview and map ROI from source coordinates."""
         if crop_box is None or self.zoom_level <= 1.001:
@@ -996,10 +1018,16 @@ class RealTimeBrailleScanner:
                 preview_result = dict(preview_result, line_confirmation=[])
                 is_locked = False
                 decoded_text = ''
+            display_crop_box = crop_box
+            if self.scan_roi is not None and crop_box is not None:
+                annotated = self._compose_scan_roi_preview(frame, annotated, crop_box)
+                display_crop_box = None
             self._preview_image_size = (annotated.shape[1],
                 round(enhanced_frame.shape[0]*annotated.shape[1]/enhanced_frame.shape[1]))
-            self._preview_crop_box = crop_box
-            self._draw_mini_viewfinder(annotated, frame, crop_box)
+            if display_crop_box is None:
+                self._preview_image_size = annotated.shape[1], annotated.shape[0]
+            self._preview_crop_box = display_crop_box
+            self._draw_mini_viewfinder(annotated, frame, display_crop_box)
             if is_locked:
                 # Publish only after both confirmation and preview motion checks.
                 # Transient failed reads must not erase the previous confirmed text.
