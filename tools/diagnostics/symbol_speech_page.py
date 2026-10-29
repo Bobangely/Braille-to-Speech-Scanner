@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from finger_reader import CachedWavSpeaker  # noqa: E402
+from speech_cache import CachedWavSpeaker  # noqa: E402
 from speech_queue import UNKNOWN  # noqa: E402
 from thai_speech import SYMBOL_NAMES, THAI_CONSONANT_NAMES, tts_spelling  # noqa: E402
 
