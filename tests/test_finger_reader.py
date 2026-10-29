@@ -2,6 +2,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
@@ -295,6 +296,16 @@ class HybridSpeakerTests(unittest.TestCase):
         speaker.engine = 'piper'
         speaker.prepare_many(['ไก่'])
         self.assertEqual(piper.prepared[-1], ['ไก่'])
+
+    def test_piper_stands_in_when_the_online_voice_crashes(self):
+        from finger_reader import HybridSpeaker
+        online, piper = self.Fake(()), self.Fake({'กอไก่'})
+        online.prepare_many = mock.Mock(side_effect=RuntimeError('edge-tts env broken'))
+        speaker = HybridSpeaker(online, piper, fixed=None)
+        with self.assertLogs('finger_reader', 'WARNING'):
+            self.assertEqual(speaker.prepare_many(['กอไก่']), {'กอไก่'})
+        speaker.speak('กอไก่')
+        self.assertEqual(piper.spoken, ['กอไก่'])
 
     def test_piper_stands_in_when_the_online_voice_has_no_audio(self):
         from finger_reader import HybridSpeaker

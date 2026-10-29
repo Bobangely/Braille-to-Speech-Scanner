@@ -224,7 +224,10 @@ class HybridSpeaker:
         if self.engine == 'piper':  # synthesize Piper only when it is the chosen voice
             return self.piper.prepare_many(texts, lang) | {t for t in texts if t in self._online_ready}
         wanted = [t for t in texts if self.fixed is None or t in self.fixed]
-        self._online_ready = self._online_ready | self.online.prepare_many(wanted, lang)
+        try:
+            self._online_ready = self._online_ready | self.online.prepare_many(wanted, lang)
+        except Exception as error:  # a broken online voice must leave Piper to speak, not silence
+            log.warning('online voice failed, using Piper: %s', error)
         rest = [t for t in texts if t not in self._online_ready]
         return {t for t in texts if t in self._online_ready} | self.piper.prepare_many(rest, lang)
 

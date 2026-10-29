@@ -123,6 +123,12 @@ class SpeechQueueTests(unittest.TestCase):
                 worker.join(1)
         self.assertEqual(max(overlaps), 1)
 
+    def test_a_single_voice_reports_itself_and_cannot_switch(self):
+        self.speaker.backend = 'piper'  # CachedWavSpeaker alone: no Edge at all
+        self.assertEqual(self.queue.engine, 'piper')
+        with self.assertRaises(ValueError):
+            self.queue.set_audio_config(engine='edge')
+
     def test_failed_preparation_is_not_ready(self):
         self.speaker.fail = True
         with self.assertLogs('speech_queue', 'WARNING'):

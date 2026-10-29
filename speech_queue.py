@@ -36,7 +36,8 @@ class SpeechQueue:
 
     @property
     def engine(self) -> str:
-        return getattr(self.speaker, 'engine', 'edge')  # a plain speaker has one voice
+        # A HybridSpeaker can switch voices; a lone CachedWavSpeaker is its one backend.
+        return getattr(self.speaker, 'engine', None) or self.speaker.backend
 
     @property
     def volume(self) -> int:
@@ -47,6 +48,8 @@ class SpeechQueue:
         if engine not in (None, 'edge', 'piper'):
             raise ValueError(f'unknown voice engine: {engine}')
         if engine is not None and engine != self.engine:
+            if not hasattr(self.speaker, 'engine'):
+                raise ValueError(f'only {self.engine} is running: start with --symbol-voice edge to switch')
             self.speaker.engine = engine
             self._start(self._texts)
         if volume is not None:

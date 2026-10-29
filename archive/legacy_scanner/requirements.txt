@@ -1,0 +1,5 @@
+# Legacy hand-held scanner only (YOLO, pyttsx3/gTTS speech); install on top of ../../requirements.txt
+ultralytics>=8.0.0
+PyYAML>=6.0
+pyttsx3>=2.90
+gTTS>=2.5.0

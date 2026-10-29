@@ -205,6 +205,14 @@ class ServerTests(unittest.TestCase):
             urllib.request.urlopen(req, timeout=5)
         self.assertEqual(caught.exception.code, 400)
 
+    def test_unknown_voice_is_400(self):
+        self.speech.set_audio_config = mock.MagicMock(side_effect=ValueError('unknown voice engine: auto'))
+        req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "set_audio", "engine": "auto"}',
+                                     method='POST', headers={'Content-Type': 'application/json'})
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(req, timeout=5)
+        self.assertEqual(caught.exception.code, 400)
+
     def test_unknown_path_404(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self.get('/../panel_settings.py')
