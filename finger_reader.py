@@ -304,7 +304,8 @@ def main() -> int:
         while True:
             ok, frame = capture.read()
             if not ok or frame is None:
-                break
+                log.error('camera %s stopped returning frames (unplugged or used by another program?)', args.camera)
+                return 1
             frame_s = time.perf_counter() - started
             previous = reader.status
             status = reader.step(frame, frame_s)
