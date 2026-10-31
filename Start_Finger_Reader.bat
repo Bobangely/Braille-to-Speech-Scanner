@@ -32,6 +32,10 @@ rem Stop now if a voice library is missing, not in the middle of reading.
     exit /b 1
 )
 
+rem Start_Finger_Reader_Window.bat sets SHOW_WINDOW to keep the OpenCV preview.
+set HEADLESS=--headless
+if defined SHOW_WINDOW set HEADLESS=
+
 start "" http://localhost:8080
 
 "%PY%" finger_reader.py ^
@@ -39,7 +43,7 @@ start "" http://localhost:8080
     --tts-python "%PIPER_PY%" ^
     --symbol-voice edge --word-voice edge ^
     --edge-python "%EDGE_PY%" ^
-    --web 8080 --headless %*
+    --web 8080 %HEADLESS% %*
 
 if errorlevel 1 (
     echo.
