@@ -54,3 +54,4 @@ scratch/
 # Debug frames from --debug-dir and a local MediaPipe checkout
 output/live_debug/
 third_party/
+.claude/handoff/
