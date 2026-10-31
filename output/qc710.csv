@@ -1,0 +1,22 @@
+event,entered_s,played_s,latency_s
+"EnterCell(line_id=0, cell_index=14, name='สระอิ')",20.3034,20.8922,0.5887
+"EnterCell(line_id=0, cell_index=0, name='จอจาน')",24.9226,25.6177,0.6951
+"EnterCell(line_id=0, cell_index=1, name='สระอะ')",28.8114,29.4268,0.6155
+"EnterCell(line_id=0, cell_index=2, name='ดอเด็ก')",30.5509,31.2014,0.6505
+"EnterCell(line_id=0, cell_index=3, name='สระอู')",32.3179,32.9699,0.6520
+"EnterCell(line_id=0, cell_index=4, name='อออ่าง')",34.8028,35.4315,0.6287
+"EnterCell(line_id=0, cell_index=5, name='สระอี')",37.6407,38.3054,0.6646
+"EnterCell(line_id=0, cell_index=6, name='กอไก่')",40.6278,41.2913,0.6635
+"EnterCell(line_id=0, cell_index=7, name='สระอา')",43.2278,43.8939,0.6661
+"EnterCell(line_id=0, cell_index=9, name='ตอเต่า')",47.8932,48.6333,0.7400
+"EnterCell(line_id=0, cell_index=10, name='สระอา')",50.4241,51.1749,0.7508
+"EnterCell(line_id=0, cell_index=11, name='กอไก่')",53.4115,54.1576,0.7461
+"EnterCell(line_id=0, cell_index=12, name='สระอะ')",56.2736,57.0054,0.7318
+"EnterCell(line_id=0, cell_index=13, name='บอใบไม้')",58.5465,59.3821,0.8355
+"EnterCell(line_id=0, cell_index=14, name='สระอิ')",61.3456,62.1785,0.8328
+"EnterCell(line_id=0, cell_index=15, name='ดอเด็ก')",64.1358,65.0035,0.8677
+"EnterCell(line_id=0, cell_index=16, name='สระอา')",67.9015,68.7488,0.8473
+"EnterCell(line_id=2, cell_index=2, name='ชอช้าง')",124.8548,125.6752,0.8204
+"EnterCell(line_id=1, cell_index=0, name='อออ่าง')",127.5221,128.2929,0.7709
+"EnterCell(line_id=1, cell_index=0, name='อออ่าง')",129.3053,130.1781,0.8729
+"EnterCell(line_id=1, cell_index=1, name='สระอา')",130.2567,131.2023,0.9456
