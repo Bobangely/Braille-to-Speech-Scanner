@@ -35,12 +35,12 @@ class FingertipTrackerTests(unittest.TestCase):
         # Braille is read with the index finger; the middle finger made the lock flip between them.
         self.assertEqual(fingertip_pixels([hand()], 640, 480), [(0, 8, 320, 120)])
 
-    def test_reading_point_is_the_pad_not_the_nail(self):
-        # Braille is felt with the pad, between the tip (8) and the first joint (7) seen from above.
+    def test_reading_point_is_the_tip_and_can_move_toward_the_joint(self):
+        # The tip itself by default (team's choice); pad_fraction moves it toward the first joint (7).
         finger = hand(index_tip=(0.5, 0.25), index_dip=(0.5, 0.35))
-        # A tenth of the way by default (team's choice); halfway fell below the raised line on the real page.
-        self.assertEqual(fingertip_pixels([finger], 640, 480), [(0, 8, 320, 125)])
-        self.assertEqual(fingertip_pixels([finger], 640, 480, pad_fraction=0.0), [(0, 8, 320, 120)])
+        self.assertEqual(fingertip_pixels([finger], 640, 480), [(0, 8, 320, 120)])
+        # A tenth of the way; halfway fell below the raised line on the real page.
+        self.assertEqual(fingertip_pixels([finger], 640, 480, pad_fraction=0.1), [(0, 8, 320, 125)])
 
     def test_tracker_reports_the_pad(self):
         finger = hand(index_tip=(0.5, 0.25), index_dip=(0.5, 0.35))

@@ -218,7 +218,7 @@ def symbol_texts() -> list[str]:
 def main() -> int:
     import cv2
 
-    from fingertip import FingertipTracker
+    from fingertip import PAD_FRACTION, FingertipTracker
     from tools.diagnostics.hand_landmarker_spike import _open_camera, draw_hand_skeletons
 
     for stream in (sys.stdout, sys.stderr):
@@ -242,7 +242,7 @@ def main() -> int:
     parser.add_argument('--log-latency', type=Path, help='CSV of per-event timings in seconds')
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--marker-size-mm', type=float, help='printed marker side, as in the book template')
-    parser.add_argument('--pad-fraction', type=float, default=0.1,
+    parser.add_argument('--pad-fraction', type=float, default=PAD_FRACTION,
                         help='reading point from the fingertip toward the first joint: 0 = nail tip, 1 = joint')
     parser.add_argument('--debug-dir', type=Path, help='save the camera frame each time the status changes')
     parser.add_argument('--speech-mode', choices=['spell', 'word'],

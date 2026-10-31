@@ -14,7 +14,7 @@ from pathlib import Path
 import cv2
 
 TIP_LANDMARKS = (8,)
-PAD_FRACTION = 0.1  # reading point from the tip toward the first joint; 0.5 fell below the raised line
+PAD_FRACTION = 0.0  # reading point from the tip toward the first joint: the tip itself; 0.5 fell below the raised line
 DEFAULT_MODEL = Path(__file__).resolve().parent / "models" / "hand_landmarker.task"
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
