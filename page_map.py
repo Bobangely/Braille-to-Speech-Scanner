@@ -1,8 +1,7 @@
-"""Read the colored Braille lines of a calibrated page into a PageMap.
+"""อ่านบรรทัดเบรลล์สีของหน้าที่ปรับเทียบแล้วเป็น PageMap
 
-The page is first warped to a fixed scale, so dot spacing and cell pitch are
-known in millimetres (from ``PageFormat``). Only line positions come from the
-image: Word lays the lines out, and the team writes the raised line by hand.
+หน้าถูก warp เป็นมาตราส่วนคงที่ก่อน ระยะจุดและระยะเซลล์จึงรู้เป็นมิลลิเมตร (จาก ``PageFormat``)
+มีแค่ตำแหน่งบรรทัดที่มาจากภาพ เพราะ Word จัดบรรทัดสี และทีมเขียนบรรทัดนูนด้วยมือ
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ from thai_speech import symbol_name
 
 PX_PER_MM = 8.0
 UNKNOWN_WORD = 'ไม่ทราบ'
-_BAND_GAP_MM = 1.0  # clearance between a colored line and the raised band
+_BAND_GAP_MM = 1.0  # ระยะเว้นระหว่างบรรทัดสีกับแถบนูน
 
 
 def read_page(image, calibration: PageCalibration, fmt: PageFormat = DEFAULT_FORMAT) -> PageMap:
@@ -39,11 +38,11 @@ def read_page(image, calibration: PageCalibration, fmt: PageFormat = DEFAULT_FOR
 
 
 def _line_tops(points: np.ndarray, rows, spacing: float) -> list[float | None]:
-    """Row-1 y of each colored line, or None when it cannot be known.
+    """y ของแถว 1 ในแต่ละบรรทัดสี หรือ None ถ้ารู้ไม่ได้
 
-    A line with dots in all three rows fixes its own top. A line using only two
-    rows (no row-1 dot, or no row-3 dot) takes its top from the spacing of the
-    fully anchored lines, since Word prints the lines at an exact line spacing.
+    บรรทัดที่มีจุดครบสามแถวกำหนดขอบบนของตัวเองได้ บรรทัดที่ใช้แค่สองแถว
+    (ไม่มีจุดแถว 1 หรือแถว 3) ใช้ขอบบนจากระยะของบรรทัดที่ยึดได้ครบ
+    เพราะ Word พิมพ์บรรทัดด้วยระยะบรรทัดคงที่
     """
     spans = [np.ptp(points[members, 1]) for _, members in rows]
     full = [i for i, span in enumerate(spans) if span > 1.5 * spacing]
@@ -63,13 +62,13 @@ def _line_tops(points: np.ndarray, rows, spacing: float) -> list[float | None]:
 
 
 def _line_rows(points: np.ndarray, spacing: float) -> list[tuple[float, np.ndarray]]:
-    """Group dots into colored lines: (y of the highest dot, dot indices)."""
+    """จัดกลุ่มจุดเป็นบรรทัดสี: (y ของจุดบนสุด, index ของจุด)"""
     if not len(points):
         return []
     order = np.argsort(points[:, 1])
     lines, current = [], [order[0]]
     for index in order[1:]:
-        # A colored line spans at most 2 dot spacings (rows 1-3).
+        # บรรทัดสีหนึ่งกว้างไม่เกิน 2 ระยะจุด (แถว 1-3)
         if points[index, 1] - points[current[0], 1] < 2.5 * spacing:
             current.append(index)
         else:
@@ -81,7 +80,7 @@ def _line_rows(points: np.ndarray, spacing: float) -> list[tuple[float, np.ndarr
 
 def _line_cells(points: np.ndarray, top: float, fmt: PageFormat, words: list[str],
                 trusted: bool = True) -> tuple[CellSlot, ...]:
-    """Cells of one line; with ``trusted`` False the rows are unsure, so nothing is named."""
+    """เซลล์ของบรรทัดหนึ่ง ถ้า ``trusted`` เป็น False แปลว่าแถวไม่แน่นอน จึงไม่ตั้งชื่อ"""
     pitch, spacing = fmt.cell_pitch_mm, fmt.dot_spacing_mm
     origin = _column_origin(points[:, 0], pitch, spacing)
     offset = points[:, 0] - _local_origins(points[:, 0], origin, pitch, spacing)
@@ -105,7 +104,7 @@ def _line_cells(points: np.ndarray, top: float, fmt: PageFormat, words: list[str
                           dots=frozenset(patterns.get(first + k, ())), name=None, word_index=None))
     start = len(words)
     _decode_words(slots, words)
-    if not trusted:  # never guess: a row shift turns every symbol into another one
+    if not trusted:  # ห้ามเดา: แถวเลื่อนเพียงแถวเดียวทำให้ทุกสัญลักษณ์กลายเป็นตัวอื่น
         words[start:] = [UNKNOWN_WORD] * (len(words) - start)
         for slot in slots:
             slot['name'] = None
@@ -113,25 +112,24 @@ def _line_cells(points: np.ndarray, top: float, fmt: PageFormat, words: list[str
 
 
 def _column_origin(xs: np.ndarray, pitch: float, spacing: float) -> float:
-    """Left-column x of cell 0: the phase that puts every dot nearest a column."""
+    """x ของคอลัมน์ซ้ายในเซลล์ 0: ค่าที่ทำให้ทุกจุดใกล้คอลัมน์ที่สุด"""
     def error(origin):
         phase = np.mod(xs - origin, pitch)
         return np.minimum.reduce([phase, np.abs(phase - spacing), pitch - phase]).sum()
     candidates = [x - shift for x in xs for shift in (0.0, spacing)]
     origin = min(candidates, key=error)
-    # Cell 0 is the leftmost cell that holds a dot.
+    # เซลล์ 0 คือเซลล์ซ้ายสุดที่มีจุด
     leftmost = xs.min() - origin
     return origin + np.floor((leftmost + spacing / 2) / pitch) * pitch
 
 
 def _local_origins(xs: np.ndarray, origin: float, pitch: float, spacing: float) -> np.ndarray:
-    """Cell-0 origin seen from each dot's neighbourhood (about 2.5 cells each side).
+    """จุดเริ่มเซลล์ 0 เมื่อมองจากจุดข้างเคียงของแต่ละจุด (ข้างละราว 2.5 เซลล์)
 
-    Word adds 'Expanded' only between characters, so the cells inside a 2-cell
-    letter sit closer and a printed line can drift by more than half a cell.
-    Walking left to right, each origin is taken within half a cell of the
-    previous one, so cell indices follow the drift instead of jumping a cell;
-    ties (a lone column) keep the phase closest to the previous one.
+    Word เพิ่ม 'Expanded' เฉพาะระหว่างตัวอักษร เซลล์ในตัวอักษร 2 เซลล์จึงชิดกว่า
+    และบรรทัดที่พิมพ์อาจเพี้ยนเกินครึ่งเซลล์ เมื่อไล่จากซ้ายไปขวา จุดเริ่มแต่ละจุด
+    จะอยู่ไม่เกินครึ่งเซลล์จากจุดก่อนหน้า เลขเซลล์จึงตามการเพี้ยนแทนการกระโดดข้ามเซลล์
+    ถ้าเสมอกัน (คอลัมน์เดี่ยว) ใช้ค่าที่ใกล้จุดก่อนหน้าที่สุด
     """
     def error(near, candidate):
         phase = np.mod(near - candidate, pitch)
@@ -151,7 +149,7 @@ def _is_right(offset: np.ndarray, pitch: float, spacing: float) -> np.ndarray:
 
 
 def _decode_words(slots: list[dict], words: list[str]) -> None:
-    """Fill name and word_index in place; words split at empty cells."""
+    """เติม name และ word_index ลงใน slot โดยตัดคำที่เซลล์ว่าง"""
     groups, current = [], []
     for slot in slots:
         if slot['dots']:
@@ -168,7 +166,7 @@ def _decode_words(slots: list[dict], words: list[str]) -> None:
         unreadable = False
         for token in decode_cells_verbose(cells, 'thai'):
             if token.get('consumed'):
-                continue  # a prefix cell already named by its letter's token
+                continue  # เซลล์ตัวนำที่ได้ชื่อจาก token ของตัวอักษรแล้ว
             # พจนานุกรมรู้จักทั้งคำแล้ว คำเตือนว่ากฎไม่แน่ใจจึงไม่เกี่ยวกับชื่อเซลล์
             name = None if token.get('warning') and known is None else symbol_name(token['char'])
             unreadable |= name is None
@@ -180,10 +178,10 @@ def _decode_words(slots: list[dict], words: list[str]) -> None:
 
 
 def new_ink_dots(read: PageMap, learned: PageMap, fmt: PageFormat = DEFAULT_FORMAT, tolerance_mm: float = 1.2) -> int:
-    """Dots of ``read`` with no dot of ``learned`` nearby.
+    """จุดของ ``read`` ที่ไม่มีจุดของ ``learned`` อยู่ใกล้
 
-    A hand or a shadow only hides dots, so a covered page has none; a different
-    page shows ink where the learned one had paper.
+    มือหรือเงาทำได้แค่บังจุด หน้าที่ถูกบังจึงไม่มีจุดแบบนี้ ส่วนหน้าอื่น
+    จะมีหมึกตรงที่หน้าเดิมเป็นกระดาษเปล่า
     """
     known = _dot_points_mm(learned, fmt)
     if not len(known):
@@ -192,7 +190,7 @@ def new_ink_dots(read: PageMap, learned: PageMap, fmt: PageFormat = DEFAULT_FORM
 
 
 def _dot_points_mm(page: PageMap, fmt: PageFormat) -> np.ndarray:
-    """Measured dot centres (mm); rebuilt from the cells for a map made without them."""
+    """จุดกึ่งกลางที่วัดได้ (mm) ถ้าแผนที่ไม่มีข้อมูลนี้จะสร้างจากเซลล์"""
     if page.dots_mm:
         return np.array(page.dots_mm, dtype=float)
     spacing, pad = fmt.dot_spacing_mm, (fmt.cell_pitch_mm - fmt.dot_spacing_mm) / 2
@@ -203,12 +201,12 @@ def _dot_points_mm(page: PageMap, fmt: PageFormat) -> np.ndarray:
 
 
 def page_signature(page_map: PageMap):
-    """What a page says, ignoring sub-millimetre positions that jitter between frames."""
+    """เนื้อหาของหน้า โดยไม่สนตำแหน่งต่ำกว่ามิลลิเมตรที่สั่นระหว่างเฟรม"""
     return tuple(tuple(c.dots for c in line.cells) for line in page_map.lines)
 
 
 class PageLearner:
-    """Accept a page map once the same cells were read ``required`` times in a row."""
+    """รับแผนที่หน้าเมื่ออ่านเซลล์ได้เหมือนเดิมติดกันครบ ``required`` ครั้ง"""
 
     def __init__(self, required: int = 3):
         self.required = required

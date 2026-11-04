@@ -45,7 +45,7 @@ BRAILLE_TO_CHAR = {
     frozenset({1, 3, 5, 6}): 'z',
     # สัญลักษณ์พิเศษ
     frozenset({3, 4, 5, 6}): '#',
-    # Dot 6 is the capital indicator, handled by the English decoder.
+    # จุด 6 คือตัวบอกตัวพิมพ์ใหญ่ ตัวถอดภาษาอังกฤษเป็นผู้จัดการ
     frozenset({2}):          ',',
     frozenset({2, 3}):       ';',
     frozenset({2, 5}):       ':',

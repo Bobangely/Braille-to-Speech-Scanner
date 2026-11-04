@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from page_layout import CellSlot, LinePair, PageMap
 
 _EPS = 1e-9
-LINE_DWELL_S = 0.4  # a hand drifting over the next line must not start reading there
+LINE_DWELL_S = 0.4  # มือที่เฉียดบรรทัดถัดไปต้องไม่เริ่มอ่านที่บรรทัดนั้น
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,7 @@ class FinishWord:
 
 
 class FingerState:
-    """Turns fingertip positions (page mm) into speech events. Pure logic."""
+    """แปลงตำแหน่งปลายนิ้ว (mm บนหน้า) เป็นเหตุการณ์เสียง เป็นตรรกะล้วนไม่แตะกล้องหรือเสียง"""
 
     def __init__(self, page: PageMap, dwell_s: float = 0.3, hysteresis_mm: float = 0.5):
         self.page = page
@@ -37,21 +37,21 @@ class FingerState:
         self._active: tuple[LinePair, CellSlot] | None = None
         self._candidate: tuple[LinePair, CellSlot] | None = None
         self._since = 0.0
-        self.entered_s: float | None = None  # when the finger reached the last spoken cell
-        self._pending: dict[tuple[int, int], set[int]] = {}  # (line_id, word) entered -> cells read so far
-        self._line_id: int | None = None  # line of the last cell read, kept while the finger is lifted
+        self.entered_s: float | None = None  # เวลาที่นิ้วถึงเซลล์ที่พูดล่าสุด
+        self._pending: dict[tuple[int, int], set[int]] = {}  # (line_id, word) ที่เข้าแล้ว -> เซลล์ที่อ่านไปแล้ว
+        self._line_id: int | None = None  # บรรทัดของเซลล์ล่าสุดที่อ่าน เก็บไว้ตอนยกนิ้ว
 
     @property
     def active_cell(self) -> tuple[LinePair, CellSlot] | None:
-        """The cell whose symbol was spoken last, while the finger stays on it."""
+        """เซลล์ที่พูดชื่อล่าสุด ตราบที่นิ้วยังอยู่บนเซลล์นั้น"""
         return self._active
 
     def _locate(self, x, y):
-        """Return ('cell', line, cell), ('past', line) or None."""
+        """คืน ('cell', line, cell), ('past', line) หรือ None"""
         band = next((l for l in self.page.lines if l.raised_y1_mm <= y <= l.raised_y2_mm), None)
         if band is None:
             return None
-        for held in (self._active, self._candidate):  # hysteresis: keep current cell
+        for held in (self._active, self._candidate):  # hysteresis: อยู่เซลล์เดิมไว้ก่อน กันเสียงซ้ำเมื่อนิ้วสั่นตรงขอบ
             if held and held[0] is band:
                 c = held[1]
                 if c.x1_mm - self.hysteresis_mm <= x < c.x2_mm + self.hysteresis_mm:
@@ -88,13 +88,13 @@ class FingerState:
 
     @staticmethod
     def _word_left_of(line, index):
-        """Word of the nearest non-empty cell left of ``index`` on the line."""
+        """คำของเซลล์ที่มีจุดซึ่งอยู่ใกล้ที่สุดทางซ้ายของ ``index`` ในบรรทัด"""
         return next((c.word_index for c in reversed(line.cells[:index]) if c.word_index is not None), None)
 
     def _finish(self, line, word):
-        # Pending words are kept even when the finger drops out for a frame,
-        # so a lost frame or a lift onto the space still speaks the word.
-        # Only a word read to its end is spoken: a lift or jump mid-word must not give the answer away.
+        # คำที่ค้างอยู่ยังเก็บไว้แม้นิ้วหายไปหนึ่งเฟรม
+        # เฟรมที่หายหรือการยกนิ้วลงบนช่องว่างจึงยังพูดคำได้
+        # พูดเฉพาะคำที่อ่านจนจบ การยกหรือกระโดดกลางคำต้องไม่เฉลยคำตอบ
         key = (line.line_id, word)
         if word is not None and key in self._pending:
             read = self._pending.pop(key)
@@ -105,12 +105,12 @@ class FingerState:
     def _promote(self, line, cell):
         self._active, self._candidate = (line, cell), None
         self._line_id = line.line_id
-        # Moving to another line pair abandons the words started there.
+        # ย้ายไปบรรทัดอื่นจะทิ้งคำที่เริ่มอ่านค้างไว้
         self._pending = {key: read for key, read in self._pending.items() if key[0] == line.line_id}
         if cell.word_index is None:
             return self._finish(line, self._word_left_of(line, cell.index))
         events = []
-        # Slid over the space too fast to dwell on it: the word before is done (if read to its end).
+        # เลื่อนผ่านช่องว่างเร็วเกินกว่าจะหยุด: คำก่อนหน้าถือว่าจบ (ถ้าอ่านครบ)
         for key in [k for k in self._pending if k[1] != cell.word_index]:
             events += self._finish(line, key[1])
         self._pending.setdefault((line.line_id, cell.word_index), set()).add(cell.index)

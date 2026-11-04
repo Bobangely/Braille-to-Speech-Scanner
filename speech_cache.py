@@ -30,10 +30,10 @@ class CachedWavSpeaker:
 
     def __init__(self, model: Path, cache_dir: Path, python_executable: str | None = None,
                  backend: str = 'piper', synthesize=None, play=None, rate_of=lambda text: None):
-        if backend != 'edge' and not Path(model).exists():  # Edge is an online voice: no model file
+        if backend != 'edge' and not Path(model).exists():  # Edge เป็นเสียงออนไลน์ จึงไม่มีไฟล์โมเดล
             raise FileNotFoundError(f'Thai speech model not found: {model}')
         self.model, self.backend = Path(model or ''), backend
-        # Respellings are tuned per voice by ear.
+        # คำสะกดใหม่ปรับตามหูแยกตามเสียงแต่ละตัว
         table = {'piper': TTS_SPELLING, 'edge': EDGE_SPELLING}.get(backend, {})
         self.spell = lambda text: tts_spelling(text, table)
         self.cache_dir = Path(cache_dir)
@@ -48,14 +48,14 @@ class CachedWavSpeaker:
         return self._path(text).is_file()
 
     def _path(self, text: str) -> Path:
-        # Keyed by what is synthesized, so a new respelling makes new audio.
+        # ตั้งชื่อตามสิ่งที่สังเคราะห์จริง คำสะกดใหม่จึงได้เสียงใหม่
         rate = self.rate_of(text)
         tag = f'{self.backend}|{self.model}|{self.spell(text)}' + (f'|{rate}' if rate else '')
         return self.cache_dir / f'{hashlib.sha1(tag.encode("utf-8")).hexdigest()}.wav'
 
     def prepare_many(self, texts, lang: str = 'thai') -> set[str]:
-        """Synthesize the uncached texts in one batch; return the texts ready to play."""
-        texts = [t for t in texts if t.strip()]  # Piper writes no audio for blank text
+        """สังเคราะห์ข้อความที่ยังไม่มี cache ในชุดเดียว แล้วคืนข้อความที่พร้อมเล่น"""
+        texts = [t for t in texts if t.strip()]  # Piper ไม่เขียนเสียงให้ข้อความว่าง
         missing = [(t, self._path(t)) for t in dict.fromkeys(texts) if not self._path(t).is_file()]
         if missing:
             try:
@@ -66,13 +66,13 @@ class CachedWavSpeaker:
                 if path.is_file():
                     try:
                         trim_leading_silence(path)
-                    except (OSError, EOFError, wave.Error) as error:  # not a PCM WAV: play it untrimmed
+                    except (OSError, EOFError, wave.Error) as error:  # ไม่ใช่ PCM WAV: เล่นโดยไม่ตัดช่วงเงียบ
                         log.warning('cannot trim %s: %s', path.name, error)
         return {t for t in texts if self._path(t).is_file()}
 
     def speak(self, text: str, lang: str = 'thai') -> bool:
         path = self._path(text)
-        if not path.is_file():  # never synthesize inside the frame loop
+        if not path.is_file():  # ห้ามสังเคราะห์เสียงในลูปเฟรม
             log.warning('no prepared speech for %r', text)
             return False
         if self.volume > 0:
@@ -83,25 +83,25 @@ class CachedWavSpeaker:
         self._play(None)
 
     def _synthesize_in_tts_env(self, model: Path, jobs: list[tuple[str, Path, str | None]]) -> None:
-        # One process, one model load: synthesize_wav caches the loaded voice per model.
+        # process เดียว โหลดโมเดลครั้งเดียว: synthesize_wav เก็บเสียงที่โหลดแล้วต่อโมเดล
         payload = json.dumps(dict(model=str(model), backend=self.backend,
                                   jobs=[[text, str(path), rate] for text, path, rate in jobs]))
         done = subprocess.run([self.python, '-X', 'utf8', '-c', BATCH_SCRIPT % str(ROOT)],
                               input=payload.encode('utf-8'), capture_output=True)
         if done.returncode:
             raise RuntimeError(done.stderr.decode('utf-8', 'replace')[-500:])
-        if done.stderr.strip():  # texts that failed one by one; the rest are cached
+        if done.stderr.strip():  # ข้อความที่ล้มเหลวทีละข้อความ ส่วนที่เหลือเก็บ cache แล้ว
             log.warning('speech synthesis skipped: %s', done.stderr.decode('utf-8', 'replace')[-500:])
 
 
 class HybridSpeaker:
-    """Texts in ``fixed`` (or every text when it is None) in a clear online voice, cached;
-    the rest in Piper. A text without online audio (offline, service down) falls back to Piper."""
+    """ข้อความใน ``fixed`` (หรือทุกข้อความถ้าเป็น None) ใช้เสียงออนไลน์ที่ชัดและเก็บ cache
+    ที่เหลือใช้ Piper ข้อความที่ไม่มีเสียงออนไลน์ (ไม่มีเน็ต หรือบริการล่ม) จะกลับไปใช้ Piper"""
 
     def __init__(self, online, piper, fixed=None, engine='edge'):
         self.online, self.piper = online, piper
         self.fixed = None if fixed is None else set(fixed)
-        self.engine = engine  # 'edge': online first, Piper when it has no audio; 'piper': Piper first
+        self.engine = engine  # 'edge': ใช้เสียงออนไลน์ก่อน ถ้าไม่มีเสียงใช้ Piper, 'piper': ใช้ Piper ก่อน
         self._online_ready: set[str] = set()
 
     @property
@@ -114,12 +114,12 @@ class HybridSpeaker:
 
     def prepare_many(self, texts, lang: str = 'thai') -> set[str]:
         texts = list(texts)
-        if self.engine == 'piper':  # synthesize Piper only when it is the chosen voice
+        if self.engine == 'piper':  # สังเคราะห์ Piper เฉพาะตอนเลือกใช้เสียงนี้
             return self.piper.prepare_many(texts, lang) | {t for t in texts if t in self._online_ready}
         wanted = [t for t in texts if self.fixed is None or t in self.fixed]
         try:
             self._online_ready = self._online_ready | self.online.prepare_many(wanted, lang)
-        except Exception as error:  # a broken online voice must leave Piper to speak, not silence
+        except Exception as error:  # เสียงออนไลน์พังต้องให้ Piper พูดแทน ไม่ใช่เงียบ
             log.warning('online voice failed, using Piper: %s', error)
         rest = [t for t in texts if t not in self._online_ready]
         return {t for t in texts if t in self._online_ready} | self.piper.prepare_many(rest, lang)
@@ -130,11 +130,11 @@ class HybridSpeaker:
         return (self.online if text in self._online_ready else self.piper).speak(text, lang)
 
     def stop(self) -> None:
-        self.piper.stop()  # one shared player: stopping either stops playback
+        self.piper.stop()  # ใช้ตัวเล่นร่วมกัน หยุดตัวใดตัวหนึ่งก็หยุดเสียงแล้ว
 
 
 def trim_leading_silence(path: Path, keep_s: float = 0.02, threshold: float = 0.05) -> None:
-    """Cut the voice's silent lead-in (~0.25 s, up to 1 s) so playback starts with the sound."""
+    """ตัดช่วงเงียบต้นเสียง (ราว 0.25 วินาที สูงสุด 1 วินาที) ให้เล่นแล้วมีเสียงทันที"""
     import numpy as np
 
     with wave.open(str(path)) as source:
@@ -151,8 +151,8 @@ def trim_leading_silence(path: Path, keep_s: float = 0.02, threshold: float = 0.
             out.writeframes(samples[start:].tobytes())
 
 
-# Runs inside the Piper/MMS/Edge environment: one model load, one failed text never stops the rest.
-# Edge waits on the network, so its texts go 8 at a time (8 words: 1.1 s instead of ~7 s).
+# รันใน environment ของ Piper/MMS/Edge: โหลดโมเดลครั้งเดียว ข้อความเดียวที่พังไม่หยุดข้อความอื่น
+# Edge รอเครือข่าย จึงส่งครั้งละ 8 ข้อความ (8 คำ: 1.1 วินาที แทนที่จะเป็นราว 7 วินาที)
 BATCH_SCRIPT = '''import json, os, sys
 from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, %r)
@@ -175,7 +175,7 @@ _player: subprocess.Popen | None = None
 
 
 def _process_play(path: Path | None) -> None:
-    """macOS/Linux playback: one afplay/aplay process, killed when the next sound starts."""
+    """เล่นเสียงบน macOS/Linux: ใช้ process afplay/aplay เดียว และหยุดเมื่อเสียงถัดไปเริ่ม"""
     global _player
     if _player is not None and _player.poll() is None:
         _player.kill()
@@ -197,7 +197,7 @@ def _winsound_play(path: Path | None) -> None:
 
 
 def at_volume(path: Path, volume: int) -> Path:
-    """``path`` scaled to ``volume`` percent, cached beside it (winsound has no volume control)."""
+    """``path`` ที่ปรับเป็น ``volume`` เปอร์เซ็นต์ เก็บ cache ไว้ข้างกัน (winsound ปรับความดังไม่ได้)"""
     import numpy as np
 
     volume = round(max(0, min(100, int(volume))) / 5) * 5
@@ -208,7 +208,7 @@ def at_volume(path: Path, volume: int) -> Path:
         with wave.open(str(path)) as source:
             params, frames = source.getparams(), source.readframes(source.getnframes())
         samples = np.frombuffer(frames, np.int16).astype(np.float32) * (volume / 100)
-        partial = scaled.with_suffix('.tmp')  # a write cut short must never pass for a finished file
+        partial = scaled.with_suffix('.tmp')  # ไฟล์ที่เขียนไม่จบต้องไม่ถูกนับเป็นไฟล์สมบูรณ์
         with wave.open(str(partial), 'wb') as out:
             out.setparams(params)
             out.writeframes(np.clip(samples, -32768, 32767).astype(np.int16).tobytes())

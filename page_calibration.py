@@ -1,16 +1,15 @@
-"""Page format and 4-corner marker calibration for the mounted camera.
+"""รูปแบบหน้าและการปรับเทียบด้วย marker 4 มุม สำหรับกล้องที่ยึดอยู่กับที่
 
-Coordinate system (page space):
-  origin = top-left corner of the physical page, x to the right, y downward,
-  units = millimetres. ``to_page`` / ``to_image`` convert between camera
-  pixels and this space; ``warp_page`` renders it at a fixed px-per-mm.
+พิกัดบนหน้า:
+  จุดเริ่มคือมุมบนซ้ายของกระดาษจริง x ไปทางขวา y ลงล่าง หน่วยมิลลิเมตร
+  ``to_page`` / ``to_image`` แปลงระหว่างพิกเซลกล้องกับพิกัดนี้
+  ``warp_page`` วาดหน้าออกมาที่อัตรา px ต่อ mm คงที่
 
-Markers are black/white ArUco squares (DICT_4X4_50). They are unsaturated,
-so the blue HSV dot mask in ``colored_braille`` ignores them, and the
-marker ID fixes the corner (TL/TR/BR/BL) under any rotation.
+marker เป็นสี่เหลี่ยม ArUco ขาวดำ (DICT_4X4_50) ไม่มีสี mask จุดสีน้ำเงินแบบ HSV
+ใน ``colored_braille`` จึงไม่สนใจ และ ID ของ marker บอกมุม (TL/TR/BR/BL) ได้ทุกการหมุน
 
-A calibration is returned only when every check passes; otherwise
-``PageCalibration.ok`` is False and no transform is provided.
+จะคืนค่าปรับเทียบเมื่อผ่านทุกการตรวจเท่านั้น ถ้าไม่ผ่าน
+``PageCalibration.ok`` เป็น False และไม่มีการแปลงพิกัดให้ใช้
 """
 
 from __future__ import annotations
@@ -25,31 +24,31 @@ CORNERS = ("TL", "TR", "BR", "BL")
 
 @dataclass(frozen=True)
 class PageFormat:
-    """Physical page layout. All lengths in millimetres."""
+    """ผังหน้ากระดาษจริง ความยาวทั้งหมดเป็นมิลลิเมตร"""
 
-    width_mm: float = 210.0          # A5 landscape (half of a portrait A4)
+    width_mm: float = 210.0          # A5 แนวนอน (ครึ่งหนึ่งของ A4 แนวตั้ง)
     height_mm: float = 148.0
-    margin_mm: float = 10.0          # page edge -> marker outer edge
-    marker_size_mm: float = 10.0     # black border included
-    marker_ids: tuple[int, int, int, int] = (0, 1, 2, 3)  # TL, TR, BR, BL
+    margin_mm: float = 10.0          # ขอบกระดาษ -> ขอบนอกของ marker
+    marker_size_mm: float = 10.0     # รวมขอบดำแล้ว
+    marker_ids: tuple[int, int, int, int] = (0, 1, 2, 3)  # บนซ้าย บนขวา ล่างขวา ล่างซ้าย
     aruco_dictionary: int = cv2.aruco.DICT_4X4_50
-    # Colored Braille lines: SOV_braille_only 32.5 pt + 0.05 pt expanded in Word: the font's
-    # own cell (0.54 em) is the slate pitch, so no per-letter spacing (printed test fit the slate).
-    dot_spacing_mm: float = 2.52     # dot 1 -> dot 4 and dot 1 -> dot 2: 220 font units at 32.5 pt
-    cell_pitch_mm: float = 6.21      # cell to cell
+    # บรรทัดเบรลล์สี: SOV_braille_only 32.5 pt + Expanded 0.05 pt ใน Word: เซลล์ของฟอนต์
+    # (0.54 em) เท่ากับระยะ slate จึงไม่ต้องเว้นทีละตัว (พิมพ์ทดสอบแล้วตรง slate)
+    dot_spacing_mm: float = 2.52     # จุด 1 ถึงจุด 4 และจุด 1 ถึงจุด 2: 220 หน่วยฟอนต์ที่ 32.5 pt
+    cell_pitch_mm: float = 6.21      # ระยะเซลล์ถึงเซลล์
     dot_diameter_mm: float = 1.6
-    # Dot 1 of the first cell of each colored line. Slate rows are 10 mm apart and
-    # used alternately: colored line, raised line, so pairs repeat every 20 mm.
+    # จุด 1 ของเซลล์แรกในแต่ละบรรทัดสี แถว slate ห่างกัน 10 mm และ
+    # ใช้สลับกัน บรรทัดสี บรรทัดนูน คู่จึงซ้ำทุก 20 mm
     line_origins_mm: tuple[tuple[float, float], ...] = ((30.0, 33.0), (30.0, 53.0), (30.0, 73.0), (30.0, 93.0))
     cells_per_line: int = 24
-    raised_band_mm: float = 12.0     # height of the raised line under the last colored line
+    raised_band_mm: float = 12.0     # ความสูงของบรรทัดนูนใต้บรรทัดสีสุดท้าย
 
     @property
     def line_pairs(self) -> int:
         return len(self.line_origins_mm)
 
     def marker_corners_mm(self) -> dict[int, np.ndarray]:
-        """Each marker's 4 corners (ArUco order TL,TR,BR,BL) in page mm."""
+        """มุมทั้ง 4 ของ marker แต่ละตัว (ลำดับ ArUco: TL,TR,BR,BL) เป็น mm บนหน้า"""
         s, m = self.marker_size_mm, self.margin_mm
         origins = (
             (m, m),
@@ -61,7 +60,7 @@ class PageFormat:
         return {mid: square + o for mid, o in zip(self.marker_ids, origins)}
 
     def cell_slots_mm(self, cell_index: int, line: int = 0) -> dict[int, tuple[float, float]]:
-        """Six dot-slot centres of one cell in page mm (dots 1-3 left, 4-6 right)."""
+        """จุดกึ่งกลางช่องจุดทั้ง 6 ของเซลล์เป็น mm (จุด 1-3 ซ้าย, 4-6 ขวา)"""
         if not 0 <= cell_index < self.cells_per_line:
             raise IndexError(cell_index)
         x0 = self.line_origins_mm[line][0] + cell_index * self.cell_pitch_mm
@@ -73,7 +72,7 @@ class PageFormat:
         }
 
     def cell_box_mm(self, cell_index: int, line: int = 0) -> tuple[float, float, float, float]:
-        """Cell bounding box (x1, y1, x2, y2) in mm, half a gap of padding."""
+        """กรอบเซลล์ (x1, y1, x2, y2) เป็น mm เผื่อขอบครึ่งช่องว่าง"""
         slots = np.array(list(self.cell_slots_mm(cell_index, line).values()))
         pad_x = (self.cell_pitch_mm - self.dot_spacing_mm) / 2
         pad_y = self.dot_spacing_mm / 2
@@ -96,7 +95,7 @@ DEFAULT_FORMAT = PageFormat()
 
 
 def page_format(marker_size_mm: float | None = None) -> PageFormat:
-    """The book format with the marker size actually printed; template and reader must agree."""
+    """รูปแบบหนังสือตามขนาด marker ที่พิมพ์จริง แม่แบบกับตัวอ่านต้องตรงกัน"""
     if marker_size_mm is None:
         return DEFAULT_FORMAT
     fmt = replace(DEFAULT_FORMAT, marker_size_mm=marker_size_mm)
@@ -108,10 +107,10 @@ def page_format(marker_size_mm: float | None = None) -> PageFormat:
 class PageCalibration:
     ok: bool
     reason: str | None = None
-    homography: np.ndarray | None = None   # image px -> page mm
-    inverse: np.ndarray | None = None      # page mm -> image px
+    homography: np.ndarray | None = None   # พิกเซลภาพ -> mm บนหน้า
+    inverse: np.ndarray | None = None      # mm บนหน้า -> พิกเซลภาพ
     reprojection_error_mm: float | None = None
-    markers: dict[str, np.ndarray] = field(default_factory=dict)  # corner name -> 4x2 px
+    markers: dict[str, np.ndarray] = field(default_factory=dict)  # ชื่อมุม -> พิกเซล 4x2
 
     def to_page(self, points) -> np.ndarray:
         return _apply(self._require(self.homography), points)
@@ -138,7 +137,7 @@ def _detector(fmt: PageFormat):
 
 
 def detect_markers(image, fmt: PageFormat = DEFAULT_FORMAT) -> dict[int, list[np.ndarray]]:
-    """All detections of the format's marker ids (lists keep duplicates)."""
+    """ผลตรวจจับทุกตัวของ marker id ในรูปแบบนี้ (list เก็บตัวซ้ำไว้ด้วย)"""
     gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     corners, ids, _ = _detector(fmt).detectMarkers(gray)
     found: dict[int, list[np.ndarray]] = {}
@@ -157,7 +156,7 @@ def calibrate(
     max_error_mm: float = 1.0,
     max_size_ratio: float = 4.0,
 ) -> PageCalibration:
-    """Detect all four markers and fit image->page homography, or fail safely."""
+    """ตรวจ marker ครบสี่ตัวและคำนวณ homography จากภาพเป็นหน้า หรือคืนค่าล้มเหลวอย่างปลอดภัย"""
     found = detect_markers(image, fmt)
     missing = [CORNERS[i] for i, mid in enumerate(fmt.marker_ids) if mid not in found]
     if missing:
@@ -169,17 +168,17 @@ def calibrate(
     quads = {mid: found[mid][0] for mid in fmt.marker_ids}
     markers = {CORNERS[i]: quads[mid] for i, mid in enumerate(fmt.marker_ids)}
 
-    # Marker apparent size must be comparable (rejects a stray tiny/huge print).
+    # ขนาดของ marker ที่เห็นต้องใกล้เคียงกัน (ตัดรอยพิมพ์ที่เล็กหรือใหญ่ผิดปกติ)
     sides = [np.linalg.norm(np.roll(q, -1, axis=0) - q, axis=1).mean() for q in quads.values()]
     if min(sides) <= 2 or max(sides) / min(sides) > max_size_ratio:
         return PageCalibration(False, "inconsistent_marker_size", markers=markers)
 
-    # Marker centres in TL,TR,BR,BL order must form a convex, non-mirrored quad.
+    # จุดกึ่งกลาง marker ตามลำดับ บนซ้าย บนขวา ล่างขวา ล่างซ้าย ต้องเป็นสี่เหลี่ยมนูนที่ไม่กลับด้าน
     centres = np.float32([quads[mid].mean(axis=0) for mid in fmt.marker_ids])
     if not cv2.isContourConvex(centres) or cv2.contourArea(centres) <= 0:
         return PageCalibration(False, "invalid_corner_order", markers=markers)
     edge1, edge2 = centres[1] - centres[0], centres[3] - centres[0]
-    if edge1[0] * edge2[1] - edge1[1] * edge2[0] <= 0:  # image y-down: TL->TR x TL->BL > 0
+    if edge1[0] * edge2[1] - edge1[1] * edge2[0] <= 0:  # แกน y ของภาพชี้ลง: TL->TR x TL->BL > 0
         return PageCalibration(False, "mirrored_page", markers=markers)
 
     reference = fmt.marker_corners_mm()
@@ -202,7 +201,7 @@ def calibrate(
 
 def warp_page(image, calibration: PageCalibration, fmt: PageFormat = DEFAULT_FORMAT,
               px_per_mm: float = 4.0):
-    """Render the calibrated page into fixed page space (px = mm * px_per_mm)."""
+    """วาดหน้าที่ปรับเทียบแล้วลงพิกัดคงที่ (px = mm * px_per_mm)"""
     scale = np.diag([px_per_mm, px_per_mm, 1.0])
     size = (round(fmt.width_mm * px_per_mm), round(fmt.height_mm * px_per_mm))
     return cv2.warpPerspective(image, scale @ calibration._require(calibration.homography),
@@ -211,11 +210,11 @@ def warp_page(image, calibration: PageCalibration, fmt: PageFormat = DEFAULT_FOR
 
 def render_page(fmt: PageFormat = DEFAULT_FORMAT, cells=None, px_per_mm: float = 4.0,
                 dot_color=(255, 0, 0), lines=None):
-    """Printable template: markers + colored Braille lines.
+    """แม่แบบพิมพ์: marker + บรรทัดเบรลล์สี
 
-    ``lines`` holds one list of dot sets per colored line (e.g. ``[[{1}, {1, 2}]]``);
-    ``cells`` is the single-line shorthand. Empty sets are spaces. Only active
-    dots are drawn, plus a light-grey guide box per cell.
+    ``lines`` เก็บ list ของชุดจุดต่อหนึ่งบรรทัดสี (เช่น ``[[{1}, {1, 2}]]``)
+    ``cells`` คือรูปย่อสำหรับบรรทัดเดียว ชุดว่างคือช่องว่าง วาดเฉพาะจุดที่มี
+    และกรอบเทาจางนำสายตาหนึ่งกรอบต่อเซลล์
     """
     fmt.validate()
     w, h = round(fmt.width_mm * px_per_mm), round(fmt.height_mm * px_per_mm)
@@ -241,13 +240,12 @@ def render_page(fmt: PageFormat = DEFAULT_FORMAT, cells=None, px_per_mm: float =
 
 
 class CalibrationTracker:
-    """Keep the last good calibration while markers are covered; flag page changes.
+    """เก็บค่าปรับเทียบล่าสุดที่ดีไว้ตอน marker ถูกบัง และแจ้งเมื่อหน้าเปลี่ยน
 
-    A camera on a stand does not move, so a hand over some markers keeps the
-    previous calibration. Every full calibration replaces it (the page map is in
-    page millimetres, so a nudged page still maps correctly). The page counts as
-    changed when the markers jump by more than ``move_mm`` between two full
-    calibrations, or when no marker at all has been seen for ``lost_s`` seconds.
+    กล้องบนขาตั้งไม่ขยับ มือที่บัง marker บางตัวจึงใช้ค่าเดิมต่อได้ การปรับเทียบครบทุกครั้ง
+    จะแทนค่าเดิม (แผนที่หน้าอยู่ในหน่วย mm ของหน้า หน้าที่ถูกดันจึงยังตรง) ถือว่าหน้าเปลี่ยน
+    เมื่อ marker กระโดดเกิน ``move_mm`` ระหว่างการปรับเทียบครบสองครั้ง
+    หรือไม่เห็น marker เลยนาน ``lost_s`` วินาที
     """
 
     def __init__(self, fmt: PageFormat = DEFAULT_FORMAT, move_mm: float = 3.0, lost_s: float = 2.0):
@@ -266,7 +264,7 @@ class CalibrationTracker:
                 return found, True
             centres_px = np.array([found.markers[c].mean(axis=0) for c in CORNERS])
             drift = np.linalg.norm(self.current.to_page(centres_px) - self._centres_mm, axis=1).max()
-            # A small nudge is the same page: follow it, since half a cell is ~3 mm.
+            # ขยับเล็กน้อยถือว่าหน้าเดิม ให้ตามไป เพราะครึ่งเซลล์ราว 3 mm
             self.current = found
             return found, drift > self.move_mm
         if self.current is not None and now_s - self._seen_s > self.lost_s:
@@ -275,5 +273,5 @@ class CalibrationTracker:
         return self.current, False
 
 
-# Generic demo pattern (not a specific Thai word); replace with real cells.
+# รูปแบบตัวอย่างทั่วไป ไม่ใช่คำไทยเฉพาะ ให้แทนด้วยเซลล์จริง
 SAMPLE_CELLS = [{1}, {1, 2}, {1, 4}, {1, 4, 5}, {1, 5}, set(), {1, 2, 4}, {1, 2, 4, 5}]

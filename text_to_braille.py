@@ -16,7 +16,7 @@ def text_to_braille_cells(text, lang='english'):
             elif char in THAI_CHAR_TO_BRAILLE:
                 pattern = THAI_CHAR_TO_BRAILLE[char]
                 if isinstance(pattern, tuple):
-                    # Multi-cell (e.g. prefix 6 + base)
+                    # หลายเซลล์ (เช่น ตัวนำ 6 + ตัวหลัก)
                     cells.extend(pattern)
                 else:
                     cells.append(pattern)

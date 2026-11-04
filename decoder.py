@@ -1,4 +1,4 @@
-"""Decode ordered Thai/English Braille cells while preserving reading failures."""
+"""ถอดเซลล์เบรลล์ไทยและอังกฤษตามลำดับ โดยเก็บข้อมูลเซลล์ที่อ่านไม่ได้ไว้ด้วย"""
 
 from config import BRAILLE_TO_CHAR
 from thai_decoder import _break_before, cell_read_warning, decode_thai, normalize_thai, thai_verbose
@@ -85,8 +85,8 @@ def decode_cells(cells, lang='english', *, compatibility=False):
     if language in ('thai', 'th'):
         return decode_thai(cells, compatibility=compatibility)
     if language == 'thai-legacy':
-        # Historical image fixtures have different mappings. Load that decoder
-        # only for an explicit legacy request, never in the live Thai pipeline.
+        # ภาพทดสอบรุ่นเก่าใช้ตารางคนละชุด จึงโหลดตัวถอดนั้น
+        # เฉพาะตอนขอแบบ legacy เท่านั้น ไม่ใช้ในเส้นทางอ่านภาษาไทยจริง
         from archive.legacy_decoder import decode_cells_thai_legacy
         return decode_cells_thai_legacy(cells)
     if language in ('english', 'en'):

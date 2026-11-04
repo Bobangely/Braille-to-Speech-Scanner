@@ -1,7 +1,7 @@
-"""Thai uncontracted Braille tables for NEW input and datasets.
+"""ตารางเบรลล์ไทยแบบไม่ย่อ สำหรับข้อความใหม่และชุดข้อมูล
 
-Consonants and signs: liblouis tables/th-g0.utb (2023-06-01).
-Compound vowels: World Braille Usage, 3rd ed. (2013), printed pp. 140-141.
+พยัญชนะและเครื่องหมาย: liblouis tables/th-g0.utb (2023-06-01)
+สระประสม: World Braille Usage, 3rd ed. (2013), printed pp. 140-141
 """
 
 
@@ -41,7 +41,7 @@ THAI_TONE_MARKS = {dots(k): v for k, v in {
 }.items()}
 THAI_SPECIAL_MARKS = {dots(k): v for k, v in {
     '356': '์', '3': '็', '2': 'ๆ', '5': 'ํ',
-    # Standalone hyphen; complete adjacent 36-prefix consonants still win.
+    # ขีดกลางเดี่ยว ถ้ามีพยัญชนะที่ขึ้นต้นด้วย 36 ครบอยู่ติดกันจะใช้พยัญชนะก่อน
     '36': '-',
 }.items()}
 THAI_MULTI_CELL = {}
@@ -53,15 +53,15 @@ THAI_MULTI_CELL.update({(dots(a), dots(b)): char for a, b, char in [
     ('156', '2', 'ใ'), ('1235', '2', 'ฤ'), ('123', '2', 'ฦ'),
     ('56', '23', 'ฯ'), ('4', '12', '฿'), ('5', '16', 'ๅ'),
 ]})
-# The book uses Thai-prefixed punctuation (Liblouis tables/th-g1.utb).
-# Keep the existing synthetic vocabulary stable; extend the reading table only.
+# หนังสือใช้เครื่องหมายวรรคตอนแบบมีตัวนำของไทย (Liblouis tables/th-g1.utb)
+# คงคำศัพท์ชุดข้อมูลจำลองเดิม และเพิ่มเฉพาะตารางสำหรับอ่าน
 THAI_READING_MULTI_CELL = dict(THAI_MULTI_CELL)
 THAI_READING_MULTI_CELL.update({(dots('456'), dots(body)): char for body, char in {
     '2': ',', '23': ';', '25': ':', '256': '.', '235': '!', '236': '?',
 }.items()})
 
-# Display output and spoken labels share one symbol definition. Extend the
-# existing reading table so every consumer sees the same multi-cell mapping.
+# ข้อความที่แสดงกับชื่อที่พูดใช้นิยามสัญลักษณ์ชุดเดียวกัน เพิ่มเข้า
+# ตารางอ่านเดิม เพื่อให้ทุกส่วนเห็นการจับคู่หลายเซลล์แบบเดียวกัน
 THAI_MULTI_CELL_SYMBOLS = {
     (dots('5'), dots('126')): dict(
         id='open_parenthesis', output='(', tts='วงเล็บเปิด', type='punctuation'),

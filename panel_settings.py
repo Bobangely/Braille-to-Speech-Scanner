@@ -1,7 +1,7 @@
-"""Settings the teacher panel can change while the reader runs. See docs/web-api.md.
+"""ค่าตั้งที่หน้าเว็บครูเปลี่ยนได้ขณะระบบทำงาน ดู docs/web-api.md
 
-The web server calls ``apply_settings``; a wrong value raises ValueError with a Thai
-message for the page, and changes nothing.
+web server เรียก ``apply_settings`` ถ้าค่าผิดจะเกิด ValueError พร้อมข้อความไทยสำหรับหน้าเว็บ
+และไม่เปลี่ยนค่าใดเลย
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ _lock = threading.Lock()
 
 
 def validate(partial: dict, current: dict) -> dict:
-    """Return ``current`` updated with ``partial``, or raise ValueError if any value is wrong."""
+    """คืน ``current`` ที่อัปเดตด้วย ``partial`` หรือเกิด ValueError ถ้ามีค่าผิด"""
     if not isinstance(partial, dict):
         raise ValueError('ค่าตั้งต้องเป็น JSON object')
     unknown = set(partial) - set(DEFAULTS)
@@ -29,7 +29,7 @@ def validate(partial: dict, current: dict) -> dict:
     if 'mode' in partial and partial['mode'] not in MODES:
         raise ValueError('mode ต้องเป็น "spell" หรือ "word"')
     cells = partial.get('spell_max_cells', 1)
-    if type(cells) is not int or not 1 <= cells <= 5:  # bool is an int subclass: reject it
+    if type(cells) is not int or not 1 <= cells <= 5:  # bool เป็น subclass ของ int จึงต้องปฏิเสธเอง
         raise ValueError('spell_max_cells ต้องเป็นจำนวนเต็ม 1–5')
     if 'camera' in partial and type(partial['camera']) is not bool:
         raise ValueError('camera ต้องเป็น true หรือ false')
@@ -37,18 +37,18 @@ def validate(partial: dict, current: dict) -> dict:
 
 
 def load(path: Path) -> dict:
-    """Saved settings, or the defaults when the file is missing or broken."""
+    """ค่าตั้งที่บันทึกไว้ หรือค่าเริ่มต้นถ้าไฟล์หายหรือเสีย"""
     try:
         return validate(json.loads(path.read_text(encoding='utf-8')), DEFAULTS)
     except FileNotFoundError:
         return dict(DEFAULTS)
-    except (OSError, ValueError) as error:  # JSONDecodeError is a ValueError
+    except (OSError, ValueError) as error:  # JSONDecodeError เป็นชนิดย่อยของ ValueError
         log.warning('ignoring settings file %s: %s', path, error)
         return dict(DEFAULTS)
 
 
 def save(path: Path, settings: dict) -> None:
-    """Write through a temporary file so a power cut never leaves a half-written file."""
+    """เขียนผ่านไฟล์ชั่วคราว ไฟดับจึงไม่ทิ้งไฟล์ที่เขียนค้างครึ่งเดียว"""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix('.tmp')
     tmp.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -60,9 +60,9 @@ def apply_to(speech, settings: dict) -> None:
 
 
 def apply_settings(speech, path: Path, partial: dict) -> dict:
-    """Validate ``partial`` against the saved settings, apply it to ``speech``, save, and return all settings."""
-    with _lock:  # the server may handle two requests at once; neither change may be lost
+    """ตรวจ ``partial`` เทียบกับค่าที่บันทึกไว้ ตั้งค่าให้ ``speech`` บันทึก แล้วคืนค่าทั้งหมด"""
+    with _lock:  # server อาจรับสองคำขอพร้อมกัน ค่าที่เปลี่ยนต้องไม่หาย
         settings = validate(partial, load(path))
-        save(path, settings)  # before apply_to: a failed save leaves speech and file in agreement
+        save(path, settings)  # บันทึกก่อน apply_to: ถ้าบันทึกไม่ได้ เสียงกับไฟล์จะยังตรงกัน
         apply_to(speech, settings)
     return settings

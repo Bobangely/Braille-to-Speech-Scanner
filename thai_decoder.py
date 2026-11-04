@@ -1,4 +1,4 @@
-"""Public Thai decoding API: raw Braille parser followed by Thai rendering."""
+"""API ถอดภาษาไทย: parser เบรลล์ดิบ แล้วแปลงเป็นข้อความไทย"""
 
 import re
 import unicodedata
@@ -12,12 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 def tokenize_thai(cells):
-    """Physical-cell labels for overlays/debug; not the parser's semantic input."""
+    """ป้ายของเซลล์จริงสำหรับวาดภาพและ debug ไม่ใช่ข้อมูลเข้าเชิงความหมายของ parser"""
     return lex_braille(cells)[1]
 
 
 def normalize_thai(text):
-    """Reorder marks without changing a recognized vowel into a guessed tone."""
+    """จัดลำดับเครื่องหมายใหม่ โดยไม่เปลี่ยนสระที่รู้แล้วให้เป็นวรรณยุกต์ที่เดาเอง"""
     for _ in range(2):
         text = re.sub(r'([่้๊๋์])([ัิีึืุู็ํ])', r'\2\1', text)
         text = re.sub(r'([าำๅ])([่้๊๋])', r'\2\1', text)
@@ -39,15 +39,15 @@ def decode_thai(cells, *, compatibility=False):
 
 
 def thai_verbose(cells, *, compatibility=False):
-    """Preserve overlay labels/spans; attach composition decisions for diagnostics."""
+    """เก็บป้ายและช่วงเซลล์สำหรับวาดภาพ และแนบการตัดสินใจประกอบคำไว้วิเคราะห์"""
     result = decode_thai_details(cells, compatibility=compatibility)
     tokens = result['raw_tokens']
     for syllable in result['syllables']:
         token = tokens[syllable['indices'][0]]
         token['composition'] = syllable
         if syllable['needs_review']:
-            # Text segmentation cannot invalidate an already known cell label.
-            # Keep its review channel separate from detection/mapping errors.
+            # การตัดคำเปลี่ยนป้ายเซลล์ที่รู้แล้วให้ผิดไม่ได้
+            # แยกช่องทางตรวจทานออกจากข้อผิดพลาดการตรวจจับและการจับคู่
             if (syllable['status'] == syllable.get('boundary_status')
                     and syllable.get('boundary_indices')):
                 token['composition_warning'] = syllable['status']

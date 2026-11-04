@@ -1,4 +1,4 @@
-"""Speech-only names for independent Thai consonants, without TTS dependencies."""
+"""ชื่อพยัญชนะไทยสำหรับการพูด โดยไม่ขึ้นกับ TTS"""
 import re
 import unicodedata
 
@@ -33,7 +33,7 @@ def _lesson_number(match):
 
 def expand_thai_speech_units(text):
     def consonant(match):
-        # Combining marks belong to their base even when Unicode \w excludes them.
+        # เครื่องหมายที่ประกอบกับตัวหลักเป็นส่วนของตัวหลัก แม้ Unicode \w จะไม่นับ
         neighbors = (text[match.start()-1] if match.start() else '', text[match.end():match.end()+1])
         if any(c and (c.isalpha() or unicodedata.category(c).startswith('M')) for c in neighbors):
             return match[0]
@@ -41,7 +41,7 @@ def expand_thai_speech_units(text):
     return _LESSON_NUMBER.sub(_lesson_number, _LETTERS.sub(consonant, text))
 
 
-# Names spoken for one symbol under the fingertip; consonants use THAI_CONSONANT_NAMES.
+# ชื่อที่พูดสำหรับสัญลักษณ์เดียวใต้ปลายนิ้ว พยัญชนะใช้ THAI_CONSONANT_NAMES
 SYMBOL_NAMES = {
     '่': 'ไม้เอก', '้': 'ไม้โท', '๊': 'ไม้ตรี', '๋': 'ไม้จัตวา', '์': 'ไม้ทัณฑฆาต',
     '็': 'ไม้ไต่คู้', 'ะ': 'สระอะ', 'ั': 'ไม้หันอากาศ', 'า': 'สระอา', 'ำ': 'สระอำ',
@@ -51,8 +51,8 @@ SYMBOL_NAMES = {
 }
 
 
-# What the Piper voice is given for names it mispronounces (heard by the team);
-# names stay as they are everywhere else. Spaces split syllables the voice runs together.
+# คำสะกดที่ส่งให้เสียง Piper สำหรับชื่อที่ออกเสียงผิด (ทีมฟังเอง)
+# ชื่อในส่วนอื่นคงเดิม ช่องว่างแยกพยางค์ที่เสียงพูดติดกัน
 TTS_SPELLING = {
     'งองู': 'งอ งู', 'ชอช้าง': 'ชอ ช้าง', 'ชอเฌอ': 'ชอ เชอ', 'ถอฐาน': 'ถอ สัน ถาน',
     'ทอมณโฑ': 'ทอ นาง มน โท', 'รอเรือ': 'รอ เรือ', 'หอหีบ': 'หอ หีบ', 'อออ่าง': 'ออ อ่าง',
@@ -61,7 +61,7 @@ TTS_SPELLING = {
 }
 
 
-# The same for the Edge voice, which reads most names right (heard by the team).
+# แบบเดียวกันสำหรับเสียง Edge ซึ่งอ่านชื่อส่วนใหญ่ถูก (ทีมฟังเอง)
 EDGE_SPELLING = {
     'ผอผึ้ง': 'พ๋อ ผึ้ง', 'ฮอนกฮูก': 'ฮอ นก ฮูก',
     **{name: 'สะ ละ ' + name[3:] for name in SYMBOL_NAMES.values() if name.startswith('สระ')},
@@ -69,10 +69,10 @@ EDGE_SPELLING = {
 
 
 def tts_spelling(text, spelling=TTS_SPELLING):
-    """Text to synthesize for ``text``: every known name in it respelled for the voice."""
+    """ข้อความที่ใช้สังเคราะห์ของ ``text``: เปลี่ยนชื่อที่รู้จักทุกตัวเป็นคำสะกดของเสียงนั้น"""
     return ' '.join(spelling.get(part, part) for part in text.split(' '))
 
 
 def symbol_name(text):
-    """Spoken name of one decoded Braille symbol; unknown text is spoken as is."""
+    """ชื่อที่พูดของสัญลักษณ์เบรลล์หนึ่งตัว ข้อความที่ไม่รู้จักจะพูดตามเดิม"""
     return SYMBOL_NAMES.get(text) or THAI_CONSONANT_NAMES.get(text, text)

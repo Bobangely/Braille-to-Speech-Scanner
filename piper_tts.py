@@ -9,11 +9,11 @@ EDGE_VOICES = {'thai': 'th-TH-NiwatNeural', 'english': 'en-US-JennyNeural'}
 EDGE_RATE = '-20%'
 
 
-_LOADED_VOICES = {}  # (voice class, model path) -> loaded voice, per process
+_LOADED_VOICES = {}  # (ชนิดเสียง, path โมเดล) -> เสียงที่โหลดแล้ว ต่อหนึ่ง process
 
 
 def synthesize_wav(model, text, output, backend='piper', voice=None, rate=None):
-    """Return PCM WAV and timings; Edge requires an internet connection."""
+    """สร้าง PCM WAV และคืนเวลาที่ใช้ เสียง Edge ต้องต่ออินเทอร์เน็ต"""
     started = time.perf_counter()
     if backend == 'edge':
         import asyncio

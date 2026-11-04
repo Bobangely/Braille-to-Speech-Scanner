@@ -1,9 +1,8 @@
-"""Fingertip tracking for the finger reader (MediaPipe Hand Landmarker).
+"""ติดตามปลายนิ้วสำหรับเครื่องอ่าน (MediaPipe Hand Landmarker)
 
-Only the index fingertip (landmark 8) reads: braille is read with the index finger,
-and also tracking the middle finger made the lock flip between the two.
-The first one that stays still for the dwell becomes the reading finger and
-is followed until it disappears.
+อ่านด้วยปลายนิ้วชี้เท่านั้น (landmark 8) เพราะเบรลล์อ่านด้วยนิ้วชี้
+และการตามนิ้วกลางด้วยทำให้การล็อกสลับไปมาระหว่างสองนิ้ว
+นิ้วแรกที่นิ่งครบเวลาจะเป็นนิ้วอ่าน และถูกตามจนกว่าจะหายไป
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ import sys
 import cv2
 
 TIP_LANDMARKS = (8,)
-PAD_FRACTION = 0.0  # reading point from the tip toward the first joint: the tip itself; 0.5 fell below the raised line
+PAD_FRACTION = 0.0  # จุดอ่านจากปลายนิ้วไปทางข้อนิ้วแรก: ใช้สุดปลายนิ้ว เพราะค่า 0.5 ตกต่ำกว่าบรรทัดนูน
 DEFAULT_MODEL = Path(__file__).resolve().parent / "models" / "hand_landmarker.task"
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
@@ -38,7 +37,7 @@ def open_camera(camera_id: int, width: int, height: int, fps: int):
 
 
 def draw_hand_skeletons(frame, hand_landmarks) -> None:
-    """Draw every detected hand with the complete MediaPipe hand topology."""
+    """วาดทุกมือที่ตรวจพบด้วยโครงมือครบของ MediaPipe"""
     import mediapipe as mp
 
     for landmarks in hand_landmarks:
@@ -74,7 +73,7 @@ def fingertip_pixels(hand_landmarks, width: int, height: int,
 
 
 class ActiveFingertipLock:
-    """Lock the first fingertip that remains stable for the dwell period."""
+    """ล็อกปลายนิ้วแรกที่นิ่งครบเวลาที่กำหนด"""
 
     def __init__(self, dwell_ms: int, radius_px: int):
         self.dwell_ms = dwell_ms
@@ -115,7 +114,7 @@ class ActiveFingertipLock:
 
 def labelled_fingertips(result, width: int, height: int,
                         pad_fraction: float = PAD_FRACTION) -> list[tuple[str, int, int, int]]:
-    """(hand label, landmark, x, y) for every reading fingertip in a detection."""
+    """(ชื่อมือ, landmark, x, y) ของปลายนิ้วอ่านทุกนิ้วในผลตรวจจับ"""
     candidates = []
     for hand_index, landmark_index, x, y in fingertip_pixels(result.hand_landmarks, width, height, pad_fraction):
         handedness = result.handedness[hand_index]
@@ -125,14 +124,14 @@ def labelled_fingertips(result, width: int, height: int,
 
 
 class FingertipTracker:
-    """Return the locked reading fingertip in frame pixels, or None."""
+    """คืนปลายนิ้วที่ล็อกไว้เป็นพิกเซลในเฟรม หรือ None"""
 
     def __init__(self, model_path: Path = DEFAULT_MODEL, dwell_ms: int = 250, radius_px: int = 20,
                  detector=None, grace_ms: int = 300, pad_fraction: float = PAD_FRACTION):
         self._detector = detector or _create_detector(model_path)
         self._lock = ActiveFingertipLock(dwell_ms, radius_px)
         self.pad_fraction = pad_fraction
-        self.grace_ms = grace_ms  # keep the lock through short detection drop-outs
+        self.grace_ms = grace_ms  # คงการล็อกไว้ตอนตรวจจับหายไปชั่วครู่
         self._seen_ms = 0
         self.hand_present, self.hand_landmarks = False, []
 
@@ -142,7 +141,7 @@ class FingertipTracker:
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         result = self._detector.detect_for_video(
             mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb), max(1, int(now_ms)))
-        self.hand_landmarks = result.hand_landmarks  # for the skeleton preview
+        self.hand_landmarks = result.hand_landmarks  # ใช้วาดโครงมือในภาพตัวอย่าง
         self.hand_present = bool(result.hand_landmarks)
         height, width = frame_bgr.shape[:2]
         candidates = labelled_fingertips(result, width, height, self.pad_fraction)
@@ -154,7 +153,7 @@ class FingertipTracker:
                 self._seen_ms = now_ms
                 return x, y
         if now_ms - self._seen_ms > self.grace_ms:
-            self._lock.reset()  # the reading finger left the frame
+            self._lock.reset()  # นิ้วที่อ่านออกนอกภาพแล้ว
         return None
 
 

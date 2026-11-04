@@ -1,4 +1,4 @@
-"""Positive-only lexical evidence for structurally validated Thai paths."""
+"""หลักฐานจากพจนานุกรมแบบเพิ่มความมั่นใจอย่างเดียว สำหรับเส้นทางไทยที่ผ่านการตรวจโครงสร้างแล้ว"""
 from copy import deepcopy
 from functools import lru_cache
 import logging
@@ -14,7 +14,7 @@ _LONGEST_PIECE = 30  # เซลล์ของคำย่อยยาวสุ
 
 @lru_cache(maxsize=1)
 def default_lexicon():
-    """Load the packaged general word list once; never fetch data at runtime."""
+    """โหลดรายการคำที่มากับแพ็กเกจครั้งเดียว และไม่ดึงข้อมูลตอนรันจริง"""
     try:
         from pythainlp.corpus import thai_words
         return frozenset(unicodedata.normalize('NFC', word) for word in thai_words() if word)
@@ -54,10 +54,10 @@ def word_from_cells(cells):
 
 
 def _coverage(parts, words):
-    """Best known-character coverage at syllable boundaries, allowing unknowns.
+    """ความครอบคลุมตัวอักษรที่รู้จักสูงสุดที่ขอบพยางค์ โดยยอมให้มีส่วนที่ไม่รู้จัก
 
-    No substring match inside a syllable and no negative score for a new name.
-    Whole words may span several syllables, but never a parser run boundary.
+    ไม่จับคู่สตริงย่อยภายในพยางค์ และไม่หักคะแนนชื่อใหม่
+    คำเต็มอาจคร่อมหลายพยางค์ได้ แต่ห้ามข้ามขอบ run ของ parser
     """
     best = [(0, []) for _ in range(len(parts) + 1)]
     for start in range(len(parts)-1, -1, -1):
@@ -73,10 +73,10 @@ def _coverage(parts, words):
 
 
 def rank_segmentations(parsed, lexicon, render_unit, confidence_threshold=None):
-    """Rank validated paths; resolve only complete multiword lexical support.
+    """จัดอันดับเส้นทางที่ผ่านการตรวจ และตัดสินเฉพาะเมื่อพจนานุกรมยืนยันครบหลายคำ
 
-    Rivals remain valid possibilities in the trace, including unseen names.
-    Single-word, partial, tied, or raw-unverified evidence remains reviewed.
+    ตัวเลือกอื่นยังเก็บไว้ใน trace รวมถึงชื่อที่ไม่เคยเห็น
+    หลักฐานคำเดียว ไม่ครบ เสมอกัน หรือยังไม่ยืนยันเซลล์ดิบ จะยังอยู่ในสถานะรอตรวจ
     """
     runs = parsed.get('segmentation_runs', [])
     if not runs:
@@ -96,8 +96,8 @@ def rank_segmentations(parsed, lexicon, render_unit, confidence_threshold=None):
                 try:
                     parts = [render_unit(unit) for unit in path['syllables']]
                 except ValueError:
-                    # A renderer-level structural failure cannot gain validity
-                    # from lexical support either.
+                    # ความผิดพลาดเชิงโครงสร้างระดับ renderer
+                    # จะกลายเป็นถูกเพราะพจนานุกรมไม่ได้
                     continue
                 score, matches = _coverage(parts, words)
                 text = ''.join(parts)
@@ -124,16 +124,16 @@ def rank_segmentations(parsed, lexicon, render_unit, confidence_threshold=None):
             reason = ('UNIQUE_STRUCTURAL_PATH' if len(candidates) == 1 else
                       'NO_LEXICAL_EVIDENCE' if highest == 0 else
                       'LEXICON_TIE' if len(best) > 1 else 'LEXICON_SUPPORTED_DISPLAY')
-            # With no evidence, preserve the structural display preference.
-            # On a tie keep it when it is among the strongest candidates.
+            # ถ้าไม่มีหลักฐาน ให้คงตัวเลือกการแสดงผลตามโครงสร้างไว้
+            # ถ้าคะแนนเสมอ ให้คงไว้เมื่ออยู่ในกลุ่มตัวเลือกที่แข็งแรงที่สุด
             try:
                 original_text = ''.join(render_unit(unit) for unit in original)
             except ValueError:
                 pass
             if highest or any(c['accepted_mode'] != candidates[0]['accepted_mode'] for c in candidates):
                 selected = next((c for c in best if c['text'] == original_text), best[0])
-        # Require phrase context and a word spanning syllables, not a lone name
-        # or a sequence of short dictionary particles.
+        # ต้องมีบริบทวลีและคำที่คร่อมหลายพยางค์ ไม่ใช่ชื่อเดี่ยว
+        # หรือคำเล็กๆ จากพจนานุกรมเรียงกัน
         complete = [c for c in candidates if c['standard_valid'] and c['accepted_mode'] == 'standard'
                     and c['coverage'] == 1 and len(c['matches']) >= 2
                     and any(m['end']-m['start'] > 1 for m in c['matches'])]
@@ -148,7 +148,7 @@ def rank_segmentations(parsed, lexicon, render_unit, confidence_threshold=None):
         if resolved:
             selected = complete[0]
             reason = 'UNIQUE_COMPLETE_LEXICAL_SUPPORT'
-        # Keep the original evidence when lexical support is insufficient.
+        # คงหลักฐานเดิมไว้เมื่อพจนานุกรมยืนยันไม่พอ
         units = deepcopy(selected['syllables'] if selected and selected['text'] != original_text else original)
         review = not resolved and (not run['generation_complete'] or len(candidates) > 1
                   or any(u.get('boundary_review') for u in original))
@@ -159,7 +159,7 @@ def rank_segmentations(parsed, lexicon, render_unit, confidence_threshold=None):
                 unit['boundary_status'] = None
                 unit['boundary_evidence'] = 'UNIQUE_COMPLETE_LEXICAL_SUPPORT'
         if review and units:
-            # Preserve the original evidence; rank scores never clear a warning.
+            # คงหลักฐานเดิมไว้ คะแนนจัดอันดับลบคำเตือนไม่ได้
             origin = next((u for u in original if u.get('boundary_candidates')), original[0])
             owner = next((u for u in units if origin['indices'][0] in u['indices']), units[0])
             for key in ('boundary_indices', 'boundary_patterns', 'boundary_source_cells',

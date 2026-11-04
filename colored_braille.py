@@ -1,15 +1,15 @@
-"""Read only chromatic Braille dots; unpainted relief never proposes a cell."""
+"""อ่านเฉพาะจุดเบรลล์ที่มีสี รอยนูนที่ไม่ได้ลงสีจะไม่ถูกนับเป็นเซลล์"""
 
 import cv2
 import numpy as np
 
 
-# OpenCV HSV hue is 0..179. Neutral paper/shadows are excluded by saturation.
+# ค่า hue ของ HSV ใน OpenCV อยู่ที่ 0..179 ส่วนกระดาษและเงาไม่มีสีจึงถูกกรองด้วย saturation
 BLUE_HUE = (100, 145)
 
 
 class UnreadableBrailleFrame(ValueError):
-    """The image cannot provide a reliable cell grid; retry with a new frame."""
+    """ภาพนี้ให้ตารางเซลล์ที่เชื่อถือได้ไม่ได้ ให้ลองใหม่กับเฟรมถัดไป"""
 
 
 def _spacing(points, diameters):
@@ -20,7 +20,7 @@ def _spacing(points, diameters):
     for start in range(0, len(points), 128):
         delta = points[start:start+128, None, :] - points[None, :, :]
         distances = np.linalg.norm(delta, axis=2)
-        # Residual duplicate centres inside a dot cannot define grid pitch.
+        # จุดกึ่งกลางซ้ำภายในจุดเดียวกันใช้กำหนดระยะตารางไม่ได้
         within_dot = .8*np.minimum(diameters[start:start+128, None], diameters[None, :])
         distances[(distances < 1.0) | (distances < within_dot)] = np.inf
         nearest.extend(distances.min(axis=1))
@@ -29,13 +29,13 @@ def _spacing(points, diameters):
 
 
 def split_color_components(dots, mask, *, max_dots=1536):
-    """Separate two ink lobes joined by a thin neck before grid acquisition.
+    """แยกก้อนหมึกสองก้อนที่ติดกันด้วยคอบางๆ ก่อนหาตารางเซลล์
 
-    Both cores must exist in the current mask, at a measured dot spacing.
-    A solid wide mark has one core and must never invent a second dot.
+    ทั้งสองแกนกลางต้องมีอยู่จริงใน mask และห่างกันเท่าระยะจุดที่วัดได้
+    รอยกว้างทึบมีแกนกลางเดียว จึงต้องไม่สร้างจุดที่สองขึ้นมาเอง
     """
     if len(dots) > max_dots:
-        return dots  # Preserve the detector's frame budget before pairwise fitting.
+        return dots  # รักษาเวลาต่อเฟรมของตัวตรวจจับ ก่อนเริ่มจับคู่จุดทุกคู่
     reference = [d for d in dots if
         max(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1]) <=
         3*min(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1])]
@@ -56,7 +56,7 @@ def split_color_components(dots, mask, *, max_dots=1536):
             continue
         x1, y1, x2, y2 = dot['bbox']
         patch = np.pad(mask[y1:y2, x1:x2], 1)
-        # Do not include a different component enclosed by an irregular bbox.
+        # ไม่นับชิ้นอื่นที่บังเอิญอยู่ในกรอบของรูปทรงไม่สม่ำเสมอ
         if cv2.connectedComponents(patch)[0] != 2:
             refined.append(dot)
             continue
@@ -70,8 +70,8 @@ def split_color_components(dots, mask, *, max_dots=1536):
         yy, xx = np.nonzero(patch)
         pixels = np.column_stack((xx, yy))
         nearest = np.linalg.norm(pixels[:, None]-centers[None, 1:], axis=2).argmin(axis=1)
-        # Paint size can differ between lines. Judge the two pieces against
-        # neighbouring marks, not only the whole page's median ink area.
+        # ขนาดหมึกอาจต่างกันในแต่ละบรรทัด จึงตัดสินสองชิ้นนี้โดยเทียบกับ
+        # จุดข้างเคียง ไม่ใช่เทียบแค่ค่ากลางของหมึกทั้งหน้า
         nearby = np.linalg.norm(points-dot['center'], axis=1)
         neighbours = areas[(nearby > 0) & (nearby < 4*spacing)]
         local_area = float(np.median(neighbours)) if len(neighbours) >= 3 else typical
@@ -105,15 +105,15 @@ class ColoredCellStream:
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, (0, 60, 15), (179, 255, 255))
         mask &= cv2.inRange(hsv[:, :, 0], *BLUE_HUE)
-        # Closing joins small breaks in painted edges; no opening that erases small dots.
+        # closing เชื่อมรอยขาดเล็กๆ ของขอบหมึก และไม่ใช้ opening เพราะจะลบจุดเล็ก
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE,
                                cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
         count, _, stats, centers = cv2.connectedComponentsWithStats(mask)
-        # Estimate scale from marks that already pass the original safety
-        # limit. At small scales quantisation can leave a real dot with 4-5
-        # pixels while its neighbours have 6-7; do not discard it before the
-        # relative/local ink filter can examine it. Isolated one-pixel noise
-        # cannot lower this limit, and normal-size pages keep the old floor.
+        # ประมาณขนาดจากจุดที่ผ่านเกณฑ์ความปลอดภัยเดิมอยู่แล้ว
+        # ที่ขนาดเล็ก การปัดเศษพิกเซลอาจทำให้จุดจริงเหลือ 4-5 พิกเซล
+        # ขณะที่จุดข้างๆ มี 6-7 พิกเซล จึงห้ามทิ้งก่อนที่
+        # ตัวกรองแบบเทียบกับหมึกรอบข้างจะได้ตรวจ จุดรบกวนพิกเซลเดียว
+        # ลดเกณฑ์นี้ไม่ได้ และหน้าขนาดปกติยังใช้ขั้นต่ำเดิม
         reference_areas = [area for x, y, width, height, area in stats[1:]
                            if self.min_area <= area <= self.max_area
                            and max(width, height) <= 3*min(width, height)
@@ -131,14 +131,14 @@ class ColoredCellStream:
                              source='color', color_pixels=area))
         if min_area < self.min_area and len(dots) > 6*self.max_cells:
             raise UnreadableBrailleFrame('Too many small colored components for scale estimation')
-        # Reject small speckles relative to actual ink marks while retaining partial dots.
+        # ตัดจุดรบกวนเล็กๆ โดยเทียบกับหมึกจริง แต่เก็บจุดที่เห็นไม่เต็มไว้
         normal_areas = [d['area'] for d in dots if
             max(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1]) <=
             3*min(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1])]
         if len(normal_areas) >= 4:
             floor = max(min_area, .12*float(np.median(normal_areas)))
-            # Ink size may differ between text lines. Only reconsider marks
-            # below the page-wide floor when nearby dots support their size.
+            # ขนาดหมึกอาจต่างกันระหว่างบรรทัด จึงพิจารณาจุดที่เล็กกว่า
+            # เกณฑ์ทั้งหน้าใหม่ก็ต่อเมื่อจุดข้างเคียงยืนยันขนาดเดียวกัน
             if any(dot['area'] < max(floor, self.min_area) for dot in dots):
                 points = np.asarray([dot['center'] for dot in dots])
                 areas = np.asarray([dot['area'] for dot in dots])
@@ -151,21 +151,21 @@ class ColoredCellStream:
                             continue
                         distance = np.linalg.norm(points-points[index], axis=1)
                         neighbours = areas[distance <= 2.5*spacing]
-                        # Only rescue few-pixel marks in a supported
-                        # neighbourhood. An isolated 2-5 pixel speck must not
-                        # become a new cell just because the page is small.
+                        # ช่วยจุดไม่กี่พิกเซลเฉพาะตอนที่
+                        # มีจุดข้างเคียงยืนยัน จุดเดี่ยวขนาด 2-5 พิกเซล
+                        # ต้องไม่กลายเป็นเซลล์ใหม่เพียงเพราะหน้ากระดาษดูเล็ก
                         if dot['area'] < self.min_area and len(neighbours) < 3:
                             continue
-                        # The candidate plus two nearby marks is enough to
-                        # support a sparse cell at the end of a small-dot line.
+                        # จุดนี้กับจุดใกล้เคียงอีกสองจุดก็พอ
+                        # ยืนยันเซลล์ที่มีจุดน้อยตอนท้ายบรรทัดจุดเล็กได้
                         local_floor = (max(min_area, .12*float(np.median(neighbours)))
                                        if len(neighbours) >= 3 else floor)
                         if dot['area'] >= local_floor:
                             keep.append(dot)
                     dots = keep
-        # A component clipped by the camera boundary is not a reliable dot.
-        # Also discard only tiny nearby fragments of the same off-frame mark,
-        # using the measured dot diameter instead of a frame-specific threshold.
+        # ชิ้นที่ถูกขอบกล้องตัดเชื่อถือเป็นจุดไม่ได้
+        # ทิ้งเฉพาะเศษเล็กๆ ใกล้จุดเดียวกันที่ล้นออกนอกภาพด้วย
+        # โดยใช้เส้นผ่านศูนย์กลางจุดที่วัดได้ แทนค่าตายตัวตามขนาดเฟรม
         regular_sizes = [min(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1])
                          for d in dots if
                          max(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1]) <=
@@ -183,8 +183,8 @@ class ColoredCellStream:
                                   width-x2 < edge_margin or height-y2 < edge_margin))
                 return clipped or tiny_fragment
             dots = [dot for dot in dots if not clipped_or_near_edge(dot)]
-        # A joined pair can be wider than one dot. Apply the original aspect
-        # limit AFTER attempting a pixel-supported split; unsplit lines stay out.
+        # จุดสองจุดที่ติดกันอาจกว้างกว่าจุดเดียว จึงใช้เกณฑ์สัดส่วนเดิม
+        # หลังลองแยกตามพิกเซลแล้วเท่านั้น เส้นที่แยกไม่ได้จะถูกตัดออก
         dots = split_color_components(dots, mask, max_dots=6*self.max_cells)
         dots = [d for d in dots if max(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1]) <=
                 3*min(d['bbox'][2]-d['bbox'][0], d['bbox'][3]-d['bbox'][1])]

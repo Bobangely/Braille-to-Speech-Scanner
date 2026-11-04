@@ -1,8 +1,7 @@
-"""Teacher-panel web server (docs/web-api.md), run in a background thread of finger_reader.py.
+"""web server ของหน้าเว็บครู (docs/web-api.md) รันใน background thread ของ finger_reader.py
 
-The main loop calls ``PanelState.update`` every frame and ``set_frame`` only when
-``wants_frame`` says a viewer is watching; the server never touches the camera or
-the reader, so a broken request can never stop reading.
+ลูปหลักเรียก ``PanelState.update`` ทุกเฟรม และเรียก ``set_frame`` เฉพาะเมื่อ ``wants_frame``
+บอกว่ามีคนดู server ไม่แตะกล้องหรือตัวอ่าน คำขอที่ผิดจึงหยุดการอ่านไม่ได้
 """
 
 from __future__ import annotations
@@ -22,13 +21,13 @@ import cv2
 import panel_settings
 
 INDEX = Path(__file__).resolve().parent / 'web' / 'index.html'
-STREAM_FPS = 5  # each streamed frame costs a resize + JPEG encode on the reader's CPU
+STREAM_FPS = 5  # ภาพที่ส่งแต่ละเฟรมต้องย่อและเข้ารหัส JPEG ใช้ CPU เครื่องอ่าน
 STREAM_WIDTH = 960
 log = logging.getLogger(__name__)
 
 
 def _lines(page) -> list[list[dict]]:
-    """Each line's words in reading order, as {index, text}."""
+    """คำของแต่ละบรรทัดตามลำดับการอ่าน ในรูป {index, text}"""
     lines = []
     for line in page.lines:
         words = dict.fromkeys(c.word_index for c in line.cells if c.word_index is not None)
@@ -37,7 +36,7 @@ def _lines(page) -> list[list[dict]]:
 
 
 class PanelState:
-    """The latest reader state and camera frame, shared between the main loop and the server."""
+    """สถานะล่าสุดและภาพกล้อง ที่ลูปหลักกับ server ใช้ร่วมกัน"""
 
     def __init__(self, settings: dict, stream_fps: float = STREAM_FPS):
         self.settings = settings
@@ -54,7 +53,7 @@ class PanelState:
 
     def update(self, reader, fps: float, last_spoken: str | None) -> None:
         page = reader.page
-        if page is not self._page:  # rebuild the word list only when a new page is learned
+        if page is not self._page:  # สร้างรายการคำใหม่เฉพาะตอนจำหน้าใหม่
             self._page, self._page_lines = page, _lines(page) if page else []
         active = reader.active_cell
         cell = active[1] if active else None
@@ -84,7 +83,7 @@ class PanelState:
             self._new_frame.notify_all()
 
     def next_frame(self, after_id: int, timeout_s: float = 2.0):
-        """Wait for a frame newer than ``after_id``; returns (frame, id), or (None, after_id) on timeout."""
+        """รอเฟรมที่ใหม่กว่า ``after_id`` คืน (frame, id) หรือ (None, after_id) เมื่อหมดเวลา"""
         with self._new_frame:
             self._new_frame.wait_for(lambda: self._frame_id != after_id, timeout_s)
             return (self._frame, self._frame_id) if self._frame_id != after_id else (None, after_id)
@@ -116,15 +115,15 @@ def lan_ip() -> str | None:
 
 def start(port: int, state: PanelState, speech, settings_path: Path, host: str = '127.0.0.1',
           pin: str | None = None) -> ThreadingHTTPServer:
-    """Serve the panel on ``host:port`` from a daemon thread. Port in use raises OSError at once.
+    """เปิดหน้าเว็บที่ ``host:port`` ใน daemon thread ถ้าพอร์ตถูกใช้จะเกิด OSError ทันที
 
-    With ``pin``, only the page itself opens without it. HTTP keeps the PIN out of casual reach,
-    not away from someone capturing the network's traffic.
+    เมื่อมี ``pin`` จะเปิดได้แค่ตัวหน้าเว็บโดยไม่ต้องใช้ PIN ส่วน HTTP กันคนทั่วไปได้
+    แต่ไม่กันคนที่ดักข้อมูลในเครือข่าย
     """
     login_lock = threading.Lock()  # ลองผิดได้ครั้งละหนึ่งทั้งเครื่อง จึงเดา PIN รัวๆ ไม่ได้
 
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self, fmt, *args):  # keep the reader's console readable
+        def log_message(self, fmt, *args):  # ให้หน้าจอ console ของเครื่องอ่านดูง่าย
             log.debug('%s ' + fmt, self.address_string(), *args)
 
         def _unlocked(self) -> bool:
@@ -260,7 +259,7 @@ def start(port: int, state: PanelState, speech, settings_path: Path, host: str =
                     except (ConnectionError, OSError):
                         break
             except (ConnectionError, OSError):
-                pass  # the page closed or the network dropped
+                pass  # ปิดหน้าเว็บหรือเครือข่ายหลุด
             finally:
                 state.add_viewer(-1)
 
