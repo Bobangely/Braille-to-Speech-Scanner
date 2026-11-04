@@ -61,6 +61,15 @@ class ReadPageTests(unittest.TestCase):
         self.assertEqual([c.dots for c in page.lines[0].cells], expected)
         self.assertNotIn('ไม่ทราบ', page.words)
 
+    def test_word_the_rules_get_wrong_is_read_from_the_dictionary(self):
+        # ะ กับ ั ใช้เซลล์เดียวกัน และ ็ ในคำยาวทำให้กฎอ่านผิดหรือไม่แน่ใจ
+        page = read(page_lines(('พระองค์ เสด็จ', 'เป็นคดี', 'วิเคราะห์')))
+        self.assertEqual(page.words, ('พระองค์', 'เสด็จ', 'เป็นคดี', 'วิเคราะห์'))
+        self.assertEqual(page.lines[1].cells[0].name, 'สระเอ')  # ชื่อเซลล์ยังพูดได้แม้กฎไม่แน่ใจทั้งคำ
+
+    def test_word_outside_the_dictionary_keeps_the_rules_reading(self):
+        self.assertEqual(read(page_lines(('บาวอน',))).words, ('บาวอน',))
+
     def test_cell_boxes_follow_the_measured_dots_when_a_line_drifts(self):
         page = word_like_page('ก ข ฃ ค ฅ ฆ ง จ ฉ ช ซ')
         cells = page.lines[0].cells

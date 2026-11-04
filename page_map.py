@@ -13,6 +13,7 @@ from colored_braille import ColoredCellStream
 from decoder import decode_cells, decode_cells_verbose
 from page_calibration import DEFAULT_FORMAT, PageCalibration, PageFormat, warp_page
 from page_layout import CellSlot, LinePair, PageMap
+from thai_lexicon import word_from_cells
 from thai_speech import symbol_name
 
 PX_PER_MM = 8.0
@@ -163,17 +164,19 @@ def _decode_words(slots: list[dict], words: list[str]) -> None:
     for group in groups:
         cells = [dict(dots=slot['dots'], line_id=0, x=float(i), y=0.0, center=(float(i), 0.0))
                  for i, slot in enumerate(group)]
+        known = word_from_cells(slot['dots'] for slot in group)
         unreadable = False
         for token in decode_cells_verbose(cells, 'thai'):
             if token.get('consumed'):
                 continue  # a prefix cell already named by its letter's token
-            name = None if token.get('warning') else symbol_name(token['char'])
+            # พจนานุกรมรู้จักทั้งคำแล้ว คำเตือนว่ากฎไม่แน่ใจจึงไม่เกี่ยวกับชื่อเซลล์
+            name = None if token.get('warning') and known is None else symbol_name(token['char'])
             unreadable |= name is None
             for slot in group[token['cell_start']:token['cell_end'] + 1]:
                 slot['name'] = name
         for slot in group:
             slot['word_index'] = len(words)
-        words.append(UNKNOWN_WORD if unreadable else decode_cells(cells, 'thai'))
+        words.append(known or (UNKNOWN_WORD if unreadable else decode_cells(cells, 'thai')))
 
 
 def new_ink_dots(read: PageMap, learned: PageMap, fmt: PageFormat = DEFAULT_FORMAT, tolerance_mm: float = 1.2) -> int:
