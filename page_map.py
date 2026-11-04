@@ -88,16 +88,20 @@ def _line_cells(points: np.ndarray, top: float, fmt: PageFormat, words: list[str
     right = _is_right(offset, pitch, spacing)
     row = np.clip(np.round((points[:, 1] - top) / spacing), 0, 2).astype(int)
     patterns: dict[int, set[int]] = {}
-    for k, r, c in zip(index, right, row):
+    lefts: dict[int, list[float]] = {}
+    for x, k, r, c in zip(points[:, 0], index, right, row):
         patterns.setdefault(int(k), set()).add(int(c) + 1 + 3 * int(r))
+        lefts.setdefault(int(k), []).append(x - r * spacing)
     first = min(patterns)
     count = max(patterns) - first + 1
-    pad = (pitch - spacing) / 2
+    # กรอบตามจุดที่วัดได้จริง เพราะระยะเซลล์บนกระดาษเพี้ยนสะสมตามบรรทัด เซลล์ว่างเฉลี่ยจากเซลล์ข้างเคียง
+    known = sorted(lefts)
+    centers = np.interp(range(first, first + count), known, [np.median(lefts[k]) for k in known]) + spacing / 2
+    edges = [centers[0] - pitch / 2, *((centers[:-1] + centers[1:]) / 2), centers[-1] + pitch / 2]
     slots = []
     for k in range(count):
-        x1 = origin + (first + k) * pitch - pad
-        slots.append(dict(index=k, x1_mm=x1, x2_mm=x1 + pitch, dots=frozenset(patterns.get(first + k, ())),
-                          name=None, word_index=None))
+        slots.append(dict(index=k, x1_mm=float(edges[k]), x2_mm=float(edges[k + 1]),
+                          dots=frozenset(patterns.get(first + k, ())), name=None, word_index=None))
     start = len(words)
     _decode_words(slots, words)
     if not trusted:  # never guess: a row shift turns every symbol into another one

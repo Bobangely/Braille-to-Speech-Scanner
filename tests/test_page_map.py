@@ -61,6 +61,16 @@ class ReadPageTests(unittest.TestCase):
         self.assertEqual([c.dots for c in page.lines[0].cells], expected)
         self.assertNotIn('ไม่ทราบ', page.words)
 
+    def test_cell_boxes_follow_the_measured_dots_when_a_line_drifts(self):
+        page = word_like_page('ก ข ฃ ค ฅ ฆ ง จ ฉ ช ซ')
+        cells = page.lines[0].cells
+        for x, _ in page.dots_mm:
+            cell = next(c for c in cells if c.x1_mm <= x < c.x2_mm)
+            self.assertTrue(cell.dots)
+            self.assertGreater(min(x - cell.x1_mm, cell.x2_mm - x), 1.0)  # จุดทั้งเม็ดอยู่ในกรอบ
+        for left, right in zip(cells, cells[1:]):
+            self.assertAlmostEqual(left.x2_mm, right.x1_mm, places=6)
+
     def test_drift_beyond_half_a_cell_keeps_every_space(self):
         # Seven 2-cell letters each 0.5 mm short (a 30 pt page without Replace): 3.5 mm over the line.
         # 32.5 pt pages are ~0.04 mm short per letter; dots 2.52 mm apart fail beyond ~0.55 mm per letter.
