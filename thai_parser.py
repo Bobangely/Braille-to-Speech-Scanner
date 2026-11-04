@@ -119,8 +119,9 @@ def _implicit_closed_span(atoms, index):
             or _starts_syllable(atoms, final_index, onset_context=True)):
         return None
     end = final_index + 1
-    while end < len(atoms) and atoms[end]['kind'] == 'tone':
-        end += 1
+    # พยัญชนะที่มีวรรณยุกต์ตามหลังไม่ใช่ตัวสะกด เช่น กล้วย ไม่ใช่ ก้ล + วย
+    if end < len(atoms) and atoms[end]['kind'] == 'tone':
+        return None
     if end < len(atoms):
         preposed = (atoms[end]['kind'] == 'leading' and end+1 < len(atoms)
                     and _is_consonant(atoms[end+1]))
@@ -244,6 +245,9 @@ def _final_role(atoms, index, vowel, *, current=None, compare_boundaries=True):
     # Written ั needs a coda before the next onset can form a cluster.
     if vowel == 'ั':
         return dict(role='CODA_CONTEXT', review=False)
+    # พยัญชนะที่มีวรรณยุกต์ตามหลังเป็นต้นพยางค์ใหม่ เช่น ม ใน มะม่วง
+    if index+1 < len(atoms) and atoms[index+1]['kind'] == 'tone':
+        return dict(role='NEXT_EXPLICIT_ONSET', review=False)
     if compare_boundaries and current is not None:
         decision = _compound_boundary(atoms, index, current)
         if decision is not None:
