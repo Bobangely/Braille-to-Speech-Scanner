@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
+import re
 import sys
 import time
 from pathlib import Path
@@ -241,6 +242,8 @@ def main() -> int:
     parser.add_argument('--symbol-cache', type=Path, default=ROOT / 'output' / 'symbol_voice_edge')
     parser.add_argument('--log-latency', type=Path, help='CSV of per-event timings in seconds')
     parser.add_argument('--headless', action='store_true')
+    parser.add_argument('--resolution', default='1920x1080', metavar='WxH',
+                        help='camera size; 1280x720 on slow machines (e.g. ARM mini PC)')
     parser.add_argument('--marker-size-mm', type=float, help='printed marker side, as in the book template')
     parser.add_argument('--pad-fraction', type=float, default=PAD_FRACTION,
                         help='reading point from the fingertip toward the first joint: 0 = nail tip, 1 = joint')
@@ -251,7 +254,7 @@ def main() -> int:
     parser.add_argument('--settings', type=Path, default=panel_settings.DEFAULT_PATH,
                         help='teacher-panel settings file; the options above override it and are saved')
     parser.add_argument('--web', type=int, metavar='PORT',
-                        help='serve the teacher panel on this port to every device on the network (docs/web-api.md)')
+                        help='serve the teacher panel on this port, this machine only unless --web-host (docs/web-api.md)')
     parser.add_argument('--web-host', default='127.0.0.1',
                         help='0.0.0.0 opens the panel to other devices on the network (no login)')
     parser.add_argument('--web-fps', type=int, default=5, metavar='N',
@@ -259,6 +262,8 @@ def main() -> int:
     args = parser.parse_args()
     if not 1 <= args.web_fps <= 30:
         parser.error('--web-fps ต้องอยู่ระหว่าง 1–30')
+    if not re.fullmatch(r'[1-9]\d*x[1-9]\d*', args.resolution.lower()):
+        parser.error('--resolution ต้องเป็นรูปแบบ WxH เช่น 1280x720')
     # Check settings before the slow voice preparation, so a typo fails at once.
     cli_settings = {key: value for key, value in
                     (('mode', args.speech_mode), ('spell_max_cells', args.spell_max_cells)) if value is not None}
@@ -288,7 +293,8 @@ def main() -> int:
         server = web_panel.start(args.web, panel, speech, args.settings, host=args.web_host)  # port in use: OSError now
         print(f'teacher panel: http://localhost:{server.server_address[1]}'
               + (f'  (other devices: http://<this IP>:{args.web})' if args.web_host != '127.0.0.1' else ''))
-    capture = _open_camera(args.camera, 1920, 1080, 30)
+    width, height = map(int, args.resolution.lower().split('x'))
+    capture = _open_camera(args.camera, width, height, 30)
     if not capture.isOpened():
         raise RuntimeError(f'Cannot open camera {args.camera}')
     latency = None
