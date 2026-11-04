@@ -62,7 +62,7 @@ class ReadPageTests(unittest.TestCase):
         self.assertNotIn('ไม่ทราบ', page.words)
 
     def test_word_the_rules_get_wrong_is_read_from_the_dictionary(self):
-        # ะ กับ ั ใช้เซลล์เดียวกัน และ ็ ในคำยาวทำให้กฎอ่านผิดหรือไม่แน่ใจ
+        # กฎอ่าน ะ ที่มีพยัญชนะตามเป็น ั และ ็ ในคำยาวทำให้กฎไม่แน่ใจ
         page = read(page_lines(('พระองค์ เสด็จ', 'เป็นคดี', 'วิเคราะห์')))
         self.assertEqual(page.words, ('พระองค์', 'เสด็จ', 'เป็นคดี', 'วิเคราะห์'))
         self.assertEqual(page.lines[1].cells[0].name, 'สระเอ')  # ชื่อเซลล์ยังพูดได้แม้กฎไม่แน่ใจทั้งคำ
