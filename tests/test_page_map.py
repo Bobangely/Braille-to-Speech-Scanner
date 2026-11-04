@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from generate_test import text_to_braille_cells
+from text_to_braille import text_to_braille_cells
 from page_calibration import DEFAULT_FORMAT as FMT, calibrate, render_page
 from page_map import PageLearner, read_page
 from tests.test_page_calibration import camera_view, rotated_corners

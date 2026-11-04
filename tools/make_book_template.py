@@ -27,7 +27,7 @@ from docx.oxml.ns import nsdecls, qn
 from docx.shared import Mm, Pt, RGBColor
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from generate_test import text_to_braille_cells  # noqa: E402
+from text_to_braille import text_to_braille_cells  # noqa: E402
 from page_calibration import CORNERS, DEFAULT_FORMAT, PageFormat, page_format  # noqa: E402
 from tools.export_markers import export_markers  # noqa: E402
 

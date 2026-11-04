@@ -219,8 +219,7 @@ def symbol_texts() -> list[str]:
 def main() -> int:
     import cv2
 
-    from fingertip import PAD_FRACTION, FingertipTracker
-    from tools.diagnostics.hand_landmarker_spike import _open_camera, draw_hand_skeletons
+    from fingertip import PAD_FRACTION, FingertipTracker, draw_hand_skeletons, open_camera
 
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, 'reconfigure'):
@@ -294,7 +293,7 @@ def main() -> int:
         print(f'teacher panel: http://localhost:{server.server_address[1]}'
               + (f'  (other devices: http://<this IP>:{args.web})' if args.web_host != '127.0.0.1' else ''))
     width, height = map(int, args.resolution.lower().split('x'))
-    capture = _open_camera(args.camera, width, height, 30)
+    capture = open_camera(args.camera, width, height, 30)
     if not capture.isOpened():
         raise RuntimeError(f'Cannot open camera {args.camera}')
     latency = None

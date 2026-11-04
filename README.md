@@ -128,7 +128,7 @@ py -3.12 -m venv .venv
 | `web_panel.py`, `web/index.html`, `panel_settings.py` | หน้าเว็บครู web server และค่าตั้งโหมดเสียง |
 | `speech_queue.py`, `thai_speech.py` | เลือกข้อความที่จะพูด และคำสะกดสำหรับเสียงแต่ละแบบ |
 | `decoder.py`, `thai_parser.py` | ถอดรหัสเบรลล์ไทย |
-| `tools/make_book_template.py` | สร้างไฟล์ Word ต้นแบบพร้อม marker |
+| `tools/make_book_template.py`, `text_to_braille.py` | สร้างไฟล์ Word ต้นแบบพร้อม marker |
 | `tools/diagnostics/symbol_speech_page.py` | หน้าฟังเสียงชื่อสัญลักษณ์ทั้งหมดเทียบ Piper กับ Edge |
 | `tools/diagnostics/page_map_accuracy.py` | วัดความแม่นการอ่านจากภาพถ่ายเทียบข้อความเฉลย |
 | `archive/legacy_scanner/` | ระบบสแกนรุ่นก่อน (ถือกล้องสแกน + YOLO) เก็บไว้อ้างอิง |

@@ -6,7 +6,6 @@ import numpy as np
 
 from decoder import decode_cells, decode_cells_verbose
 from thai_decoder import normalize_thai
-from generate_test import generate_braille_image
 
 
 CASES = [

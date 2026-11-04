@@ -2,21 +2,34 @@
 
 Consonants and signs: liblouis tables/th-g0.utb (2023-06-01).
 Compound vowels: World Braille Usage, 3rd ed. (2013), printed pp. 140-141.
-Legacy synthetic images use config_thai_legacy explicitly; never mix labels.
 """
-
-from config_thai_legacy import (
-    THAI_CONSONANTS, THAI_CONSONANTS_PREFIX6, THAI_CONSONANTS_PREFIX36,
-    THAI_CONSONANTS_PREFIX356, THAI_DIGIT_MAP, PREFIX_6, PREFIX_36,
-    PREFIX_356, NUMBER_INDICATOR,
-)
 
 
 def dots(numbers):
     return frozenset(int(n) for n in numbers)
 
 
-THAI_VOWELS = {dots(k): v for k, v in {
+THAI_CONSONANTS = {dots(k): v for k, v in {
+    '1245': 'ก', '13': 'ข', '136': 'ค', '12456': 'ง',
+    '245': 'จ', '34': 'ฉ', '346': 'ช', '2346': 'ซ',
+    '145': 'ด', '1256': 'ต', '2345': 'ถ', '23456': 'ท', '1345': 'น',
+    '1236': 'บ', '12346': 'ป', '1234': 'ผ', '1346': 'ฝ', '1456': 'พ', '1246': 'ฟ', '134': 'ม',
+    '13456': 'ย', '1235': 'ร', '123': 'ล', '2456': 'ว', '234': 'ส', '125': 'ห', '135': 'อ', '123456': 'ฮ',
+}.items()}
+# พยัญชนะ 2 เซลล์: เซลล์นำ (prefix) ตามด้วยเซลล์ในตารางนี้
+PREFIX_6, PREFIX_36, PREFIX_356 = dots('6'), dots('36'), dots('356')
+THAI_CONSONANTS_PREFIX6 = {dots(k): v for k, v in {
+    '136': 'ฆ', '346': 'ฌ', '13456': 'ญ', '145': 'ฎ', '1256': 'ฏ', '2345': 'ฐ',
+    '23456': 'ฑ', '1345': 'ณ', '1456': 'ภ', '234': 'ศ', '123': 'ฬ',
+}.items()}
+THAI_CONSONANTS_PREFIX36 = {dots(k): v for k, v in {'136': 'ฅ', '23456': 'ฒ', '234': 'ษ'}.items()}
+THAI_CONSONANTS_PREFIX356 = {dots(k): v for k, v in {'13': 'ฃ', '23456': 'ธ'}.items()}
+NUMBER_INDICATOR = dots('3456')
+THAI_DIGIT_MAP = {dots(k): v for k, v in {
+    '1': '1', '12': '2', '14': '3', '145': '4', '15': '5',
+    '124': '6', '1245': '7', '125': '8', '24': '9', '245': '0',
+}.items()}
+THAI_VOWELS ={dots(k): v for k, v in {
     '1': 'ะ', '345': 'ั', '16': 'า', '12': 'ิ', '23': 'ี',
     '246': 'ึ', '26': 'ื', '14': 'ุ', '25': 'ู',
     '124': 'เ', '126': 'แ', '24': 'โ', '156': 'ไ', '1356': 'ำ',
