@@ -6,7 +6,7 @@ Coordinate system (page space):
   pixels and this space; ``warp_page`` renders it at a fixed px-per-mm.
 
 Markers are black/white ArUco squares (DICT_4X4_50). They are unsaturated,
-so the blue/red HSV dot mask in ``colored_braille`` ignores them, and the
+so the blue HSV dot mask in ``colored_braille`` ignores them, and the
 marker ID fixes the corner (TL/TR/BR/BL) under any rotation.
 
 A calibration is returned only when every check passes; otherwise

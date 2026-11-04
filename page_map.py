@@ -20,10 +20,9 @@ UNKNOWN_WORD = 'ไม่ทราบ'
 _BAND_GAP_MM = 1.0  # clearance between a colored line and the raised band
 
 
-def read_page(image, calibration: PageCalibration, fmt: PageFormat = DEFAULT_FORMAT,
-              color: str = 'blue') -> PageMap:
+def read_page(image, calibration: PageCalibration, fmt: PageFormat = DEFAULT_FORMAT) -> PageMap:
     flat = warp_page(image, calibration, fmt, px_per_mm=PX_PER_MM)
-    dots, _ = ColoredCellStream(color).find_dots(flat)
+    dots, _ = ColoredCellStream().find_dots(flat)
     points = np.array([d['center'] for d in dots], dtype=float).reshape(-1, 2) / PX_PER_MM
     rows = _line_rows(points, fmt.dot_spacing_mm)
     tops = _line_tops(points, rows, fmt.dot_spacing_mm)
