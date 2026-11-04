@@ -2,70 +2,165 @@
 
 พยัญชนะและเครื่องหมาย: liblouis tables/th-g0.utb (2023-06-01)
 สระประสม: World Braille Usage, 3rd ed. (2013), printed pp. 140-141
+
+หนึ่งเซลล์มี 6 จุด เรียงเลขแบบนี้:
+    (1) (4)
+    (2) (5)
+    (3) (6)
+
+แต่ละแถวอ่านว่า จุดเหล่านี้คือตัวอักษรนี้ เช่น frozenset({1, 2, 4, 5}) คือ ก
+ใช้ frozenset เพราะลำดับจุดไม่มีผล และแก้ค่าไม่ได้ จึงเป็น key ของ dict ได้
 """
 
+THAI_CONSONANTS = {
+    # ก - ง
+    frozenset({1, 2, 4, 5}):       'ก',  # กอไก่
+    frozenset({1, 3}):             'ข',  # ขอไข่
+    frozenset({1, 3, 6}):          'ค',  # คอควาย
+    frozenset({1, 2, 4, 5, 6}):    'ง',  # งองู
+    # จ - ซ
+    frozenset({2, 4, 5}):          'จ',  # จอจาน
+    frozenset({3, 4}):             'ฉ',  # ฉอฉิ่ง
+    frozenset({3, 4, 6}):          'ช',  # ชอช้าง
+    frozenset({2, 3, 4, 6}):       'ซ',  # ซอโซ่
+    # ด - น
+    frozenset({1, 4, 5}):          'ด',  # ดอเด็ก
+    frozenset({1, 2, 5, 6}):       'ต',  # ตอเต่า
+    frozenset({2, 3, 4, 5}):       'ถ',  # ถอถุง
+    frozenset({2, 3, 4, 5, 6}):    'ท',  # ทอทหาร
+    frozenset({1, 3, 4, 5}):       'น',  # นอหนู
+    # บ - ม
+    frozenset({1, 2, 3, 6}):       'บ',  # บอใบไม้
+    frozenset({1, 2, 3, 4, 6}):    'ป',  # ปอปลา
+    frozenset({1, 2, 3, 4}):       'ผ',  # ผอผึ้ง
+    frozenset({1, 3, 4, 6}):       'ฝ',  # ฝอฝา
+    frozenset({1, 4, 5, 6}):       'พ',  # พอพาน
+    frozenset({1, 2, 4, 6}):       'ฟ',  # ฟอฟัน
+    frozenset({1, 3, 4}):          'ม',  # มอม้า
+    # ย - ฮ
+    frozenset({1, 3, 4, 5, 6}):    'ย',  # ยอยักษ์
+    frozenset({1, 2, 3, 5}):       'ร',  # รอเรือ
+    frozenset({1, 2, 3}):          'ล',  # ลอลิง
+    frozenset({2, 4, 5, 6}):       'ว',  # วอแหวน
+    frozenset({2, 3, 4}):          'ส',  # สอเสือ
+    frozenset({1, 2, 5}):          'ห',  # หอหีบ
+    frozenset({1, 3, 5}):          'อ',  # อออ่าง
+    frozenset({1, 2, 3, 4, 5, 6}): 'ฮ',  # ฮอนกฮูก
+}
 
-def dots(numbers):
-    return frozenset(int(n) for n in numbers)
-
-
-THAI_CONSONANTS = {dots(k): v for k, v in {
-    '1245': 'ก', '13': 'ข', '136': 'ค', '12456': 'ง',
-    '245': 'จ', '34': 'ฉ', '346': 'ช', '2346': 'ซ',
-    '145': 'ด', '1256': 'ต', '2345': 'ถ', '23456': 'ท', '1345': 'น',
-    '1236': 'บ', '12346': 'ป', '1234': 'ผ', '1346': 'ฝ', '1456': 'พ', '1246': 'ฟ', '134': 'ม',
-    '13456': 'ย', '1235': 'ร', '123': 'ล', '2456': 'ว', '234': 'ส', '125': 'ห', '135': 'อ', '123456': 'ฮ',
-}.items()}
 # พยัญชนะ 2 เซลล์: เซลล์นำ (prefix) ตามด้วยเซลล์ในตารางนี้
-PREFIX_6, PREFIX_36, PREFIX_356 = dots('6'), dots('36'), dots('356')
-THAI_CONSONANTS_PREFIX6 = {dots(k): v for k, v in {
-    '136': 'ฆ', '346': 'ฌ', '13456': 'ญ', '145': 'ฎ', '1256': 'ฏ', '2345': 'ฐ',
-    '23456': 'ฑ', '1345': 'ณ', '1456': 'ภ', '234': 'ศ', '123': 'ฬ',
-}.items()}
-THAI_CONSONANTS_PREFIX36 = {dots(k): v for k, v in {'136': 'ฅ', '23456': 'ฒ', '234': 'ษ'}.items()}
-THAI_CONSONANTS_PREFIX356 = {dots(k): v for k, v in {'13': 'ฃ', '23456': 'ธ'}.items()}
-NUMBER_INDICATOR = dots('3456')
-THAI_DIGIT_MAP = {dots(k): v for k, v in {
-    '1': '1', '12': '2', '14': '3', '145': '4', '15': '5',
-    '124': '6', '1245': '7', '125': '8', '24': '9', '245': '0',
-}.items()}
-THAI_VOWELS ={dots(k): v for k, v in {
-    '1': 'ะ', '345': 'ั', '16': 'า', '12': 'ิ', '23': 'ี',
-    '246': 'ึ', '26': 'ื', '14': 'ุ', '25': 'ู',
-    '124': 'เ', '126': 'แ', '24': 'โ', '156': 'ไ', '1356': 'ำ',
-    '235': 'เ◌า', '146': 'เ◌อ', '12356': 'เ◌ีย',
-    '12345': 'เ◌ือ', '15': '◌ัว',
-}.items()}
-THAI_TONE_MARKS = {dots(k): v for k, v in {
-    '35': '่', '256': '้', '2356': '๊', '236': '๋',
-}.items()}
-THAI_SPECIAL_MARKS = {dots(k): v for k, v in {
-    '356': '์', '3': '็', '2': 'ๆ', '5': 'ํ',
+PREFIX_6 = frozenset({6})
+PREFIX_36 = frozenset({3, 6})
+PREFIX_356 = frozenset({3, 5, 6})
+THAI_CONSONANTS_PREFIX6 = {
+    frozenset({1, 3, 6}):       'ฆ',  # คอระฆัง
+    frozenset({3, 4, 6}):       'ฌ',  # ชอเฌอ
+    frozenset({1, 3, 4, 5, 6}): 'ญ',  # ยอหญิง
+    frozenset({1, 4, 5}):       'ฎ',  # ดอชฎา
+    frozenset({1, 2, 5, 6}):    'ฏ',  # ตอปฏัก
+    frozenset({2, 3, 4, 5}):    'ฐ',  # ถอฐาน
+    frozenset({2, 3, 4, 5, 6}): 'ฑ',  # ทอมณโฑ
+    frozenset({1, 3, 4, 5}):    'ณ',  # นอเณร
+    frozenset({1, 4, 5, 6}):    'ภ',  # พอสำเภา
+    frozenset({2, 3, 4}):       'ศ',  # สอศาลา
+    frozenset({1, 2, 3}):       'ฬ',  # ลอจุฬา
+}
+THAI_CONSONANTS_PREFIX36 = {
+    frozenset({1, 3, 6}):       'ฅ',  # คอคน
+    frozenset({2, 3, 4, 5, 6}): 'ฒ',  # ทอผู้เฒ่า
+    frozenset({2, 3, 4}):       'ษ',  # สอฤๅษี
+}
+THAI_CONSONANTS_PREFIX356 = {
+    frozenset({1, 3}):          'ฃ',  # ขอขวด
+    frozenset({2, 3, 4, 5, 6}): 'ธ',  # ทอธง
+}
+
+# ตัวเลข: เซลล์นำตัวเลขตามด้วยเซลล์ในตารางนี้
+NUMBER_INDICATOR = frozenset({3, 4, 5, 6})
+THAI_DIGIT_MAP = {
+    frozenset({1}):          '1',
+    frozenset({1, 2}):       '2',
+    frozenset({1, 4}):       '3',
+    frozenset({1, 4, 5}):    '4',
+    frozenset({1, 5}):       '5',
+    frozenset({1, 2, 4}):    '6',
+    frozenset({1, 2, 4, 5}): '7',
+    frozenset({1, 2, 5}):    '8',
+    frozenset({2, 4}):       '9',
+    frozenset({2, 4, 5}):    '0',
+}
+
+THAI_VOWELS = {
+    frozenset({1}):             'ะ',  # สระอะ
+    frozenset({3, 4, 5}):       'ั',  # ไม้หันอากาศ
+    frozenset({1, 6}):          'า',  # สระอา
+    frozenset({1, 2}):          'ิ',  # สระอิ
+    frozenset({2, 3}):          'ี',  # สระอี
+    frozenset({2, 4, 6}):       'ึ',  # สระอึ
+    frozenset({2, 6}):          'ื',  # สระอือ
+    frozenset({1, 4}):          'ุ',  # สระอุ
+    frozenset({2, 5}):          'ู',  # สระอู
+    frozenset({1, 2, 4}):       'เ',  # สระเอ
+    frozenset({1, 2, 6}):       'แ',  # สระแอ
+    frozenset({2, 4}):          'โ',  # สระโอ
+    frozenset({1, 5, 6}):       'ไ',  # สระไอ
+    frozenset({1, 3, 5, 6}):    'ำ',  # สระอำ
+    frozenset({2, 3, 5}):       'เ◌า',  # สระเอา
+    frozenset({1, 4, 6}):       'เ◌อ',  # สระเออ
+    frozenset({1, 2, 3, 5, 6}): 'เ◌ีย',  # สระเอีย
+    frozenset({1, 2, 3, 4, 5}): 'เ◌ือ',  # สระเอือ
+    frozenset({1, 5}):          '◌ัว',  # สระอัว
+}
+
+THAI_TONE_MARKS = {
+    frozenset({3, 5}):       '่',  # ไม้เอก
+    frozenset({2, 5, 6}):    '้',  # ไม้โท
+    frozenset({2, 3, 5, 6}): '๊',  # ไม้ตรี
+    frozenset({2, 3, 6}):    '๋',  # ไม้จัตวา
+}
+
+THAI_SPECIAL_MARKS = {
+    frozenset({3, 5, 6}): '์',  # ไม้ทัณฑฆาต
+    frozenset({3}):       '็',  # ไม้ไต่คู้
+    frozenset({2}):       'ๆ',  # ไม้ยมก
+    frozenset({5}):       'ํ',  # นิคหิต
     # ขีดกลางเดี่ยว ถ้ามีพยัญชนะที่ขึ้นต้นด้วย 36 ครบอยู่ติดกันจะใช้พยัญชนะก่อน
-    '36': '-',
-}.items()}
+    frozenset({3, 6}):    '-',  # ขีดกลาง
+}
+
+# ตัวอักษรหลายเซลล์: รวมพยัญชนะ 2 เซลล์จากตารางด้านบน แล้วเพิ่มตัวอื่น
 THAI_MULTI_CELL = {}
 for prefix, mapping in [(PREFIX_6, THAI_CONSONANTS_PREFIX6),
                         (PREFIX_36, THAI_CONSONANTS_PREFIX36),
                         (PREFIX_356, THAI_CONSONANTS_PREFIX356)]:
     THAI_MULTI_CELL.update({(prefix, pattern): char for pattern, char in mapping.items()})
-THAI_MULTI_CELL.update({(dots(a), dots(b)): char for a, b, char in [
-    ('156', '2', 'ใ'), ('1235', '2', 'ฤ'), ('123', '2', 'ฦ'),
-    ('56', '23', 'ฯ'), ('4', '12', '฿'), ('5', '16', 'ๅ'),
-]})
+THAI_MULTI_CELL.update({
+    (frozenset({1, 5, 6}), frozenset({2})):    'ใ',  # สระใอ
+    (frozenset({1, 2, 3, 5}), frozenset({2})): 'ฤ',  # รึ
+    (frozenset({1, 2, 3}), frozenset({2})):    'ฦ',  # ลึ
+    (frozenset({5, 6}), frozenset({2, 3})):    'ฯ',  # ไปยาลน้อย
+    (frozenset({4}), frozenset({1, 2})):       '฿',  # เครื่องหมายบาท
+    (frozenset({5}), frozenset({1, 6})):       'ๅ',  # ลากข้าง
+})
+
 # หนังสือใช้เครื่องหมายวรรคตอนแบบมีตัวนำของไทย (Liblouis tables/th-g1.utb)
 # คงคำศัพท์ชุดข้อมูลจำลองเดิม และเพิ่มเฉพาะตารางสำหรับอ่าน
 THAI_READING_MULTI_CELL = dict(THAI_MULTI_CELL)
-THAI_READING_MULTI_CELL.update({(dots('456'), dots(body)): char for body, char in {
-    '2': ',', '23': ';', '25': ':', '256': '.', '235': '!', '236': '?',
-}.items()})
+THAI_READING_MULTI_CELL.update({
+    (frozenset({4, 5, 6}), frozenset({2})):       ',',  # จุลภาค
+    (frozenset({4, 5, 6}), frozenset({2, 3})):    ';',  # อัฒภาค
+    (frozenset({4, 5, 6}), frozenset({2, 5})):    ':',  # ทวิภาค
+    (frozenset({4, 5, 6}), frozenset({2, 5, 6})): '.',  # มหัพภาค
+    (frozenset({4, 5, 6}), frozenset({2, 3, 5})): '!',  # อัศเจรีย์
+    (frozenset({4, 5, 6}), frozenset({2, 3, 6})): '?',  # ปรัศนี
+})
 
 # ข้อความที่แสดงกับชื่อที่พูดใช้นิยามสัญลักษณ์ชุดเดียวกัน เพิ่มเข้า
 # ตารางอ่านเดิม เพื่อให้ทุกส่วนเห็นการจับคู่หลายเซลล์แบบเดียวกัน
 THAI_MULTI_CELL_SYMBOLS = {
-    (dots('5'), dots('126')): dict(
+    (frozenset({5}), frozenset({1, 2, 6})): dict(
         id='open_parenthesis', output='(', tts='วงเล็บเปิด', type='punctuation'),
-    (dots('5'), dots('345')): dict(
+    (frozenset({5}), frozenset({3, 4, 5})): dict(
         id='close_parenthesis', output=')', tts='วงเล็บปิด', type='punctuation'),
 }
 THAI_READING_MULTI_CELL.update({sequence: symbol['output']
