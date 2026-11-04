@@ -1,7 +1,7 @@
 """Speech audio for the finger reader: synthesize each text once to a WAV cache, play it at once.
 
-Synthesis runs in the Piper or Edge Python environment through a subprocess;
-playback uses winsound, the one Windows-only part to replace on a Linux board.
+สังเคราะห์เสียงใน Python environment ของ Piper หรือ Edge ผ่าน subprocess
+เล่นเสียงด้วย winsound บน Windows และ afplay/aplay บนระบบอื่น
 """
 
 from __future__ import annotations
@@ -24,8 +24,7 @@ log = logging.getLogger(__name__)
 class CachedWavSpeaker:
     """Synthesize each text once to a WAV file on disk; play cached files at once.
 
-    Synthesis runs in the Piper/MMS Python environment (``python_executable``),
-    the same way ``piper_tts`` does; playback uses winsound.
+    สังเคราะห์เสียงใน Python environment ที่ ``python_executable`` ชี้ไว้
     """
 
     def __init__(self, model: Path, cache_dir: Path, python_executable: str | None = None,

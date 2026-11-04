@@ -157,35 +157,25 @@ def start(port: int, state: PanelState, speech, settings_path: Path, host: str =
                         return
                     action = body.get('action')
                     if action == 'replay':
-                        last = getattr(speech, 'last_spoken', None) or 'พร้อม'
-                        if hasattr(speech, 'say'):
-                            speech.say(last)
+                        last = speech.last_spoken or 'พร้อม'
+                        speech.say(last)
                         self._json(200, {'ok': True, 'action': 'replay', 'last_spoken': last})
                     elif action == 'speak':
                         text = str(body.get('text', '')).strip()
-                        if text and hasattr(speech, 'say'):
+                        if text:
                             speech.say(text)
                         self._json(200, {'ok': True, 'action': 'speak', 'text': text})
-                    elif action == 'mute':
-                        val = bool(body.get('value', True))
-                        if speech is not None:
-                            speech.muted = val
-                            if val and hasattr(speech, 'speaker') and hasattr(speech.speaker, 'stop'):
-                                speech.speaker.stop()
-                        self._json(200, {'ok': True, 'muted': getattr(speech, 'muted', False)})
                     elif action == 'toggle_mute':
-                        if speech is not None:
-                            speech.muted = not getattr(speech, 'muted', False)
-                            if speech.muted and hasattr(speech, 'speaker') and hasattr(speech.speaker, 'stop'):
-                                speech.speaker.stop()
-                        self._json(200, {'ok': True, 'muted': getattr(speech, 'muted', False)})
+                        speech.muted = not speech.muted
+                        if speech.muted:
+                            speech.speaker.stop()
+                        self._json(200, {'ok': True, 'muted': speech.muted})
                     elif action == 'set_audio':
                         preview = bool(body.get('preview', False))
                         state.audio_config.update(speech.set_audio_config(engine=body.get('engine'),
                                                                           volume=body.get('volume')))
-                        if preview and speech is not None and hasattr(speech, 'say'):
-                            sample = getattr(speech, 'last_spoken', None) or 'พร้อม'
-                            speech.say(sample)
+                        if preview:
+                            speech.say(speech.last_spoken or 'พร้อม')
                         self._json(200, {'ok': True, 'audio_config': state.audio_config})
                     else:
                         self._json(400, {'error': f'ไม่รู้จักคำสั่ง: {action}'})

@@ -26,8 +26,7 @@ def fingertip_pixels(hand_landmarks, width: int, height: int,
                      pad_fraction: float = PAD_FRACTION) -> list[tuple[int, int, int, int]]:
     """Map the reading point of each reading finger to clamped frame pixels.
 
-    Braille is felt with the pad, not the tip the camera sees: the point moves
-    ``pad_fraction`` of the way from the tip toward the next joint down the finger.
+    ``pad_fraction`` เลื่อนจุดอ่านจากปลายนิ้วเข้าหาข้อนิ้ว ค่าเริ่มต้น 0 คืออ่านที่สุดปลายนิ้ว
     """
     points = []
     for hand_index, landmarks in enumerate(hand_landmarks):

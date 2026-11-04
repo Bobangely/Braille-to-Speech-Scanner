@@ -178,7 +178,8 @@ class ServerTests(unittest.TestCase):
             self.assertTrue(data['ok'])
         self.speech.say.assert_called_with('ช้าง')
 
-        # test mute / toggle_mute
+        # test toggle_mute
+        self.speech.speaker = mock.MagicMock()
         req = urllib.request.Request(self.base + '/api/action', data=b'{"action": "toggle_mute"}', method='POST',
                                      headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=5) as r:
@@ -186,6 +187,7 @@ class ServerTests(unittest.TestCase):
             data = json.loads(r.read())
             self.assertTrue(data['muted'])
         self.assertTrue(self.speech.muted)
+        self.speech.speaker.stop.assert_called_once()
 
         # test set_audio
         self.speech.set_audio_config = mock.MagicMock(return_value={'engine': 'piper', 'volume': 80})

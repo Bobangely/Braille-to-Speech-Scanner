@@ -107,7 +107,8 @@ def make_template(out: Path, cell_pitch_mm: float, line_pitch_mm: float,
         for index, paragraph in enumerate(front):
             paragraph.style = doc.styles[COLOR_STYLE if index % 2 == 0 else RAISED_STYLE]
             if sheet is not None and index % 2 == 0 and index // 2 < len(sheet):
-                _add_braille_text(paragraph, sheet[index // 2], cell_pitch_mm)
+                # ที่ 32.5 pt ความกว้างเซลล์ของฟอนต์เท่าระยะ slate จึงไม่ต้องเพิ่มระยะห่าง
+                paragraph.add_run(sheet[index // 2])
         back = _side(doc, 2 * rows, gap_mm, rows, last=number == len(sheets) - 1)
         for index, paragraph in enumerate(back):
             paragraph.style = doc.styles[RAISED_STYLE]
@@ -138,15 +139,6 @@ def make_template(out: Path, cell_pitch_mm: float, line_pitch_mm: float,
             answer = out.with_name(f'{out.stem}_page{page}.txt')
             answer.write_text('\n'.join(lines[start:start + half]) + '\n', encoding='utf-8')
     return out
-
-
-def _add_braille_text(paragraph, text: str, cell_pitch_mm: float) -> None:
-    """Add the text as one run in the style's spacing.
-
-    At 32.5 pt the font's own cell is the slate pitch, so wide letters, vowels and
-    tone marks need no extra spacing (Word adds 'Expanded' per cluster, not per cell).
-    """
-    paragraph.add_run(text)
 
 
 def _side(doc, count: int, gap_mm: float, rows: int, last: bool) -> list:
