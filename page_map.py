@@ -97,14 +97,15 @@ def _line_cells(points: np.ndarray, top: float, fmt: PageFormat, words: list[str
     slots = []
     for k in range(count):
         x1 = origin + (first + k) * pitch - pad
-        slots.append([k, x1, x1 + pitch, frozenset(patterns.get(first + k, ())), None, None])
+        slots.append(dict(index=k, x1_mm=x1, x2_mm=x1 + pitch, dots=frozenset(patterns.get(first + k, ())),
+                          name=None, word_index=None))
     start = len(words)
     _decode_words(slots, words)
     if not trusted:  # never guess: a row shift turns every symbol into another one
         words[start:] = [UNKNOWN_WORD] * (len(words) - start)
-        for s in slots:
-            s[4] = None
-    return tuple(CellSlot(*s) for s in slots)
+        for slot in slots:
+            slot['name'] = None
+    return tuple(CellSlot(**slot) for slot in slots)
 
 
 def _column_origin(xs: np.ndarray, pitch: float, spacing: float) -> float:
@@ -145,11 +146,11 @@ def _is_right(offset: np.ndarray, pitch: float, spacing: float) -> np.ndarray:
     return np.abs(phase - spacing) < np.minimum(phase, pitch - phase)
 
 
-def _decode_words(slots: list[list], words: list[str]) -> None:
+def _decode_words(slots: list[dict], words: list[str]) -> None:
     """Fill name and word_index in place; words split at empty cells."""
     groups, current = [], []
     for slot in slots:
-        if slot[3]:
+        if slot['dots']:
             current.append(slot)
         elif current:
             groups.append(current)
@@ -157,18 +158,18 @@ def _decode_words(slots: list[list], words: list[str]) -> None:
     if current:
         groups.append(current)
     for group in groups:
-        cells = [dict(dots=s[3], line_id=0, x=float(i), y=0.0, center=(float(i), 0.0))
-                 for i, s in enumerate(group)]
+        cells = [dict(dots=slot['dots'], line_id=0, x=float(i), y=0.0, center=(float(i), 0.0))
+                 for i, slot in enumerate(group)]
         unreadable = False
         for token in decode_cells_verbose(cells, 'thai'):
             if token.get('consumed'):
                 continue  # a prefix cell already named by its letter's token
             name = None if token.get('warning') else symbol_name(token['char'])
             unreadable |= name is None
-            for s in group[token['cell_start']:token['cell_end'] + 1]:
-                s[4] = name
-        for s in group:
-            s[5] = len(words)
+            for slot in group[token['cell_start']:token['cell_end'] + 1]:
+                slot['name'] = name
+        for slot in group:
+            slot['word_index'] = len(words)
         words.append(UNKNOWN_WORD if unreadable else decode_cells(cells, 'thai'))
 
 
