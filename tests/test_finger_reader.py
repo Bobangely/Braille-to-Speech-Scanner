@@ -90,7 +90,7 @@ class FingerReaderTests(unittest.TestCase):
         self.learn()
         self.tracker.hand_present, self.tracker.tip = True, (13, 25)
         self.reader.step(FRAME, 1.0)
-        self.reader.step(FRAME, 1.2)
+        self.reader.step(FRAME, 1.3)
         self.assertEqual(self.speaker.spoken[-1], 'สระไอ')
         self.assertEqual(self.reader.last_events, [EnterCell(0, 0, 'สระไอ')])
         self.assertAlmostEqual(self.reader.entered_s, 1.0)  # latency is measured from here
@@ -102,7 +102,7 @@ class FingerReaderTests(unittest.TestCase):
         self.assertEqual(self.reader.step(FRAME, 2.0), 'reading')
         self.tracker.hand_present, self.tracker.tip = True, (13, 25)
         self.reader.step(FRAME, 2.1)
-        self.reader.step(FRAME, 2.3)
+        self.reader.step(FRAME, 2.4)
         self.assertEqual(self.reader.last_events, [EnterCell(0, 0, 'สระไอ')])
 
     def test_moved_page_with_new_ink_is_learned_again_at_once(self):
@@ -150,7 +150,7 @@ class FingerReaderTests(unittest.TestCase):
         self.learn()
         self.tracker.hand_present, self.tracker.tip = True, (13, 55)  # line 2's raised band is 50-60 mm
         self.reader.step(FRAME, 1.0)
-        self.reader.step(FRAME, 1.2)
+        self.reader.step(FRAME, 1.3)
         self.assertEqual(self.reader.last_events, [EnterCell(1, 0, 'สระไอ')])
 
     def test_relearning_says_why(self):
@@ -177,7 +177,7 @@ class FingerReaderTests(unittest.TestCase):
         self.learn()
         self.tracker.hand_present, self.tracker.tip = True, (13, 25)
         self.reader.step(FRAME, 1.0)
-        self.reader.step(FRAME, 1.2)
+        self.reader.step(FRAME, 1.3)
         self.assertEqual(self.reader.tip, (13, 25))
         line, cell = self.reader.active_cell
         self.assertEqual((line.line_id, cell.index), (0, 0))

@@ -22,7 +22,7 @@ class FinishWord:
 class FingerState:
     """Turns fingertip positions (page mm) into speech events. Pure logic."""
 
-    def __init__(self, page: PageMap, dwell_s: float = 0.15, hysteresis_mm: float = 0.5):
+    def __init__(self, page: PageMap, dwell_s: float = 0.3, hysteresis_mm: float = 0.5):
         self.page = page
         self.dwell_s = dwell_s
         self.hysteresis_mm = hysteresis_mm

@@ -29,7 +29,12 @@ def run(fs, steps, y=25.0, hold=0.2, tick=0.05):
 
 class FingerStateTest(unittest.TestCase):
     def setUp(self):
-        self.fs = FingerState(PAGE)
+        self.fs = FingerState(PAGE, dwell_s=0.15)  # เทสต์ตรรกะ ไม่ผูกกับค่าที่ใช้จริง
+
+    def test_default_dwell_speaks_after_three_tenths_of_a_second(self):
+        fs = FingerState(PAGE)
+        self.assertEqual(fs.update((13, 25), 0.0) + fs.update((13, 25), 0.29), [])
+        self.assertEqual(fs.update((13, 25), 0.3), [EnterCell(0, 0, "สระไอ")])
 
     def test_reading_kai_then_space(self):
         self.assertEqual(
@@ -87,7 +92,7 @@ class FingerStateTest(unittest.TestCase):
 
     def test_unreadable_cell_reports_none_name(self):
         c = CellSlot(0, 0, 6, frozenset(), None, 0)
-        fs = FingerState(PageMap((LinePair(0, 20, 30, (c,)),), ("?",)))
+        fs = FingerState(PageMap((LinePair(0, 20, 30, (c,)),), ("?",)), dwell_s=0.15)
         self.assertEqual(run(fs, [3]), [EnterCell(0, 0, None)])
 
     def test_dropped_frame_entering_space_still_finishes_word(self):
@@ -133,7 +138,7 @@ class FingerStateTest(unittest.TestCase):
         self.assertNotIn(FinishWord(0, "ไก่"), ev)
 
     def test_unfinished_word_is_not_spoken_past_line_end(self):
-        fs = FingerState(PageMap((LinePair(0, 20, 30, PAGE.lines[0].cells[:3]),), ("ไก่",)))
+        fs = FingerState(PageMap((LinePair(0, 20, 30, PAGE.lines[0].cells[:3]),), ("ไก่",)), dwell_s=0.15)
         ev = run(fs, [13, 19, None, 70])
         self.assertEqual(ev, [EnterCell(0, 0, "สระไอ"), EnterCell(0, 1, "กอไก่")])
 

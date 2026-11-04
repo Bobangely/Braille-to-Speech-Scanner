@@ -12,7 +12,7 @@ import math
 from pathlib import Path
 from statistics import median
 
-WINDOW_S = 0.15  # เท่ากับเวลาที่นิ้วต้องอยู่บนเซลล์ก่อนพูด (FingerState.dwell_s)
+WINDOW_S = 0.3  # เท่ากับเวลาที่นิ้วต้องอยู่บนเซลล์ก่อนพูด (FingerState.dwell_s)
 GAP_S = 0.3  # ไม่เห็นนิ้วนานเท่านี้ เซลล์ถัดไปคือการวางนิ้วใหม่
 BASE_S = 1.0  # ขนาดมือช่วงก่อนหน้านี้ ใช้เป็นฐานเทียบว่ามือใหญ่ขึ้นแค่ไหน
 
