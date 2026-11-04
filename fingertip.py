@@ -49,6 +49,14 @@ def draw_hand_skeletons(frame, hand_landmarks) -> None:
         )
 
 
+def hand_size_px(hand_landmarks, tip, width: int, height: int) -> float | None:
+    """ระยะข้อมือถึงโคนนิ้วกลาง (px) ของมือที่อ่าน มือที่ยกเข้าหากล้องจะดูใหญ่ขึ้น"""
+    if tip is None or not hand_landmarks:
+        return None
+    hand = min(hand_landmarks, key=lambda h: math.hypot(h[8].x * width - tip[0], h[8].y * height - tip[1]))
+    return math.hypot((hand[0].x - hand[9].x) * width, (hand[0].y - hand[9].y) * height)
+
+
 def fingertip_pixels(hand_landmarks, width: int, height: int,
                      pad_fraction: float = PAD_FRACTION) -> list[tuple[int, int, int, int]]:
     """Map the reading point of each reading finger to clamped frame pixels.

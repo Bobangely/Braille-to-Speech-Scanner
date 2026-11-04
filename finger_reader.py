@@ -220,7 +220,7 @@ def symbol_texts() -> list[str]:
 def main() -> int:
     import cv2
 
-    from fingertip import PAD_FRACTION, FingertipTracker, draw_hand_skeletons, open_camera
+    from fingertip import PAD_FRACTION, FingertipTracker, draw_hand_skeletons, hand_size_px, open_camera
 
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, 'reconfigure'):
@@ -241,6 +241,8 @@ def main() -> int:
     parser.add_argument('--edge-python', help='Python executable of the edge-tts environment')
     parser.add_argument('--symbol-cache', type=Path, default=ROOT / 'output' / 'symbol_voice_edge')
     parser.add_argument('--log-latency', type=Path, help='CSV of per-event timings in seconds')
+    parser.add_argument('--log-finger', type=Path,
+                        help='CSV of the fingertip every frame, for tools/diagnostics/finger_lift.py')
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--resolution', default='1920x1080', metavar='WxH',
                         help='camera size; 1280x720 on slow machines (e.g. ARM mini PC)')
@@ -313,6 +315,12 @@ def main() -> int:
         latency = csv.writer(log_file)
         # entered_s: frame where the fingertip first reached the cell; played_s: playback started.
         latency.writerow(['event', 'entered_s', 'played_s', 'latency_s'])
+    finger_log = None
+    if args.log_finger:
+        args.log_finger.parent.mkdir(parents=True, exist_ok=True)
+        finger_file = args.log_finger.open('w', newline='', encoding='utf-8')
+        finger_log = csv.writer(finger_file)
+        finger_log.writerow(['t_s', 'x_mm', 'y_mm', 'hand_px', 'entered'])
     started = time.perf_counter()
     fps, last_frame_s = 0.0, 0.0
     try:
@@ -331,6 +339,12 @@ def main() -> int:
             if latency is not None and reader.last_events and isinstance(reader.last_events[-1], EnterCell):
                 latency.writerow([repr(reader.last_events[-1]), f'{reader.entered_s:.4f}', f'{done_s:.4f}',
                                   f'{done_s - reader.entered_s:.4f}'])
+            if finger_log is not None:
+                tip, calibration = reader.tip, reader.calibration
+                point = calibration.to_page([tip])[0] if tip is not None and calibration is not None else ('', '')
+                size = hand_size_px(reader.tracker.hand_landmarks, tip, frame.shape[1], frame.shape[0])
+                entered = next((e.name or UNKNOWN for e in reader.last_events if isinstance(e, EnterCell)), '')
+                finger_log.writerow([f'{frame_s:.4f}', *point, '' if size is None else f'{size:.1f}', entered])
             if panel is not None:
                 fps = 0.9 * fps + 0.1 / max(frame_s - last_frame_s, 1e-3)
                 last_frame_s = frame_s
@@ -354,6 +368,8 @@ def main() -> int:
         cv2.destroyAllWindows()
         if latency is not None:
             log_file.close()
+        if finger_log is not None:
+            finger_file.close()
     return 0
 
 
