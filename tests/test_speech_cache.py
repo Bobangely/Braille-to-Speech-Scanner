@@ -83,8 +83,8 @@ class CachedWavSpeakerTests(unittest.TestCase):
         model.write_bytes(b'')
 
         def synthesize(model, jobs):
-            batches.append([text for text, _ in jobs])
-            for text, output in jobs:
+            batches.append([text for text, _, _ in jobs])
+            for text, output, _ in jobs:
                 if text not in fail:
                     Path(output).write_bytes(b'RIFF')
 
@@ -129,10 +129,21 @@ class CachedWavSpeakerTests(unittest.TestCase):
             batches = []
 
             def synthesize(model, jobs):
-                batches.append([text for text, _ in jobs])
+                batches.append([text for text, _, _ in jobs])
 
             CachedWavSpeaker(None, Path(cache), backend='edge', synthesize=synthesize).prepare_many(['งองู', 'สระอิ'])
             self.assertEqual(batches, [['งองู', 'สะ ละ อิ']])  # Edge has its own, shorter respelling list
+
+    def test_rate_goes_with_each_text_and_keeps_its_own_cache_file(self):
+        with tempfile.TemporaryDirectory() as cache:
+            sent = []
+            speaker = CachedWavSpeaker(None, Path(cache), backend='edge', synthesize=lambda _, jobs: sent.extend(jobs),
+                                       rate_of=lambda text: None if text == 'กอไก่' else '-35%')
+            plain = CachedWavSpeaker(None, Path(cache), backend='edge')
+            speaker.prepare_many(['กอไก่', 'พระองค์'])
+            self.assertEqual([rate for _, _, rate in sent], [None, '-35%'])
+            self.assertEqual(speaker._path('กอไก่'), plain._path('กอไก่'))  # ชื่อเซลล์ใช้ cache เดิมได้
+            self.assertNotEqual(speaker._path('พระองค์'), plain._path('พระองค์'))
 
     def test_leading_silence_is_trimmed_after_synthesis(self):
         import wave

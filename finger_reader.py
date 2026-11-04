@@ -23,7 +23,7 @@ import panel_settings
 from finger_state import EnterCell, FingerState
 from page_calibration import DEFAULT_FORMAT, CalibrationTracker, PageFormat, page_format
 from page_map import PageLearner, new_ink_dots, read_page as read_colored_page
-from speech_cache import CachedWavSpeaker, HybridSpeaker
+from speech_cache import WORD_RATE, CachedWavSpeaker, HybridSpeaker
 from speech_queue import UNKNOWN, SpeechQueue
 from thai_speech import SYMBOL_NAMES, THAI_CONSONANT_NAMES
 
@@ -282,8 +282,10 @@ def main() -> int:
 
     speaker = CachedWavSpeaker(args.tts_thai_model, args.cache, args.tts_python, args.tts_thai_backend)
     if args.symbol_voice == 'edge':
-        online = CachedWavSpeaker(None, args.symbol_cache, args.edge_python, 'edge')
-        speaker = HybridSpeaker(online, speaker, fixed=None if args.word_voice == 'edge' else symbol_texts())
+        fixed = set(symbol_texts())
+        online = CachedWavSpeaker(None, args.symbol_cache, args.edge_python, 'edge',
+                                  rate_of=lambda text: None if text in fixed else WORD_RATE)
+        speaker = HybridSpeaker(online, speaker, fixed=None if args.word_voice == 'edge' else fixed)
     print('preparing fixed phrases...')
     missing = [t for t in symbol_texts() if t not in speaker.prepare_many(symbol_texts())]
     if missing:  # fail at startup, never silently while reading

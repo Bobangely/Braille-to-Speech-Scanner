@@ -12,7 +12,7 @@ EDGE_RATE = '-20%'
 _LOADED_VOICES = {}  # (voice class, model path) -> loaded voice, per process
 
 
-def synthesize_wav(model, text, output, backend='piper', voice=None):
+def synthesize_wav(model, text, output, backend='piper', voice=None, rate=None):
     """Return PCM WAV and timings; Edge requires an internet connection."""
     started = time.perf_counter()
     if backend == 'edge':
@@ -43,9 +43,9 @@ def synthesize_wav(model, text, output, backend='piper', voice=None):
         try:
             edge_voice = voice or EDGE_VOICES['thai']
             spoken = expand_thai_speech_units(text) if edge_voice.startswith('th-TH-') else text
-            asyncio.run(edge_tts.Communicate(spoken, voice=edge_voice, rate=EDGE_RATE).save(str(mp3)))
-            samples, rate = soundfile.read(mp3, dtype='int16')
-            soundfile.write(output, samples, rate, subtype='PCM_16')
+            asyncio.run(edge_tts.Communicate(spoken, voice=edge_voice, rate=rate or EDGE_RATE).save(str(mp3)))
+            samples, sample_rate = soundfile.read(mp3, dtype='int16')
+            soundfile.write(output, samples, sample_rate, subtype='PCM_16')
         finally:
             mp3.unlink(missing_ok=True)
     else:

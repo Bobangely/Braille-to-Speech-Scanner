@@ -19,6 +19,7 @@ from thai_speech import EDGE_SPELLING, TTS_SPELLING, tts_spelling
 
 ROOT = Path(__file__).resolve().parent
 log = logging.getLogger(__name__)
+WORD_RATE = '-25%'  # คำตอบให้ฟังชัด ส่วนชื่อเซลล์คงเดิมเพื่อให้ทันนิ้วที่เลื่อนต่อ
 
 
 class CachedWavSpeaker:
@@ -28,7 +29,7 @@ class CachedWavSpeaker:
     """
 
     def __init__(self, model: Path, cache_dir: Path, python_executable: str | None = None,
-                 backend: str = 'piper', synthesize=None, play=None):
+                 backend: str = 'piper', synthesize=None, play=None, rate_of=lambda text: None):
         if backend != 'edge' and not Path(model).exists():  # Edge is an online voice: no model file
             raise FileNotFoundError(f'Thai speech model not found: {model}')
         self.model, self.backend = Path(model or ''), backend
@@ -40,6 +41,7 @@ class CachedWavSpeaker:
         self.python = str(Path(python_executable).absolute()) if python_executable else sys.executable
         self._synthesize = synthesize or self._synthesize_in_tts_env
         self._play = play or _winsound_play
+        self.rate_of = rate_of  # ความเร็วของแต่ละข้อความ None คือค่าปกติของเสียงนั้น
         self.volume = 100
 
     def ready(self, text: str) -> bool:
@@ -47,8 +49,9 @@ class CachedWavSpeaker:
 
     def _path(self, text: str) -> Path:
         # Keyed by what is synthesized, so a new respelling makes new audio.
-        key = hashlib.sha1(f'{self.backend}|{self.model}|{self.spell(text)}'.encode('utf-8')).hexdigest()
-        return self.cache_dir / f'{key}.wav'
+        rate = self.rate_of(text)
+        tag = f'{self.backend}|{self.model}|{self.spell(text)}' + (f'|{rate}' if rate else '')
+        return self.cache_dir / f'{hashlib.sha1(tag.encode("utf-8")).hexdigest()}.wav'
 
     def prepare_many(self, texts, lang: str = 'thai') -> set[str]:
         """Synthesize the uncached texts in one batch; return the texts ready to play."""
@@ -56,7 +59,7 @@ class CachedWavSpeaker:
         missing = [(t, self._path(t)) for t in dict.fromkeys(texts) if not self._path(t).is_file()]
         if missing:
             try:
-                self._synthesize(self.model, [(self.spell(t), path) for t, path in missing])
+                self._synthesize(self.model, [(self.spell(t), path, self.rate_of(t)) for t, path in missing])
             except Exception as error:
                 log.warning('speech synthesis failed: %s', error)
             for _, path in missing:
@@ -79,10 +82,10 @@ class CachedWavSpeaker:
     def stop(self) -> None:
         self._play(None)
 
-    def _synthesize_in_tts_env(self, model: Path, jobs: list[tuple[str, Path]]) -> None:
+    def _synthesize_in_tts_env(self, model: Path, jobs: list[tuple[str, Path, str | None]]) -> None:
         # One process, one model load: synthesize_wav caches the loaded voice per model.
         payload = json.dumps(dict(model=str(model), backend=self.backend,
-                                  jobs=[[text, str(path)] for text, path in jobs]))
+                                  jobs=[[text, str(path), rate] for text, path, rate in jobs]))
         done = subprocess.run([self.python, '-X', 'utf8', '-c', BATCH_SCRIPT % str(ROOT)],
                               input=payload.encode('utf-8'), capture_output=True)
         if done.returncode:
@@ -156,10 +159,10 @@ sys.path.insert(0, %r)
 from piper_tts import synthesize_wav
 job = json.load(sys.stdin)
 def one(item):
-    text, out = item
+    text, out, rate = item
     tmp = out + ".tmp.wav"
     try:
-        synthesize_wav(job["model"], text, tmp, backend=job["backend"])
+        synthesize_wav(job["model"], text, tmp, backend=job["backend"], rate=rate)
         os.replace(tmp, out)
     except Exception as error:
         print(repr(text), error, file=sys.stderr)
