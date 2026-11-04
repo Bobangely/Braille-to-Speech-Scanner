@@ -14,6 +14,7 @@ import argparse
 import csv
 import logging
 import re
+import socket
 import sys
 import time
 from pathlib import Path
@@ -255,12 +256,17 @@ def main() -> int:
     parser.add_argument('--web', type=int, metavar='PORT',
                         help='serve the teacher panel on this port, this machine only unless --web-host (docs/web-api.md)')
     parser.add_argument('--web-host', default='127.0.0.1',
-                        help='0.0.0.0 opens the panel to other devices on the network (no login)')
+                        help='0.0.0.0 opens the panel to other devices on the network; needs --web-pin')
+    parser.add_argument('--web-pin', metavar='PIN', help='6 digits the teacher types once on each device')
     parser.add_argument('--web-fps', type=int, default=5, metavar='N',
                         help='camera frames per second sent to the panel (1-30); more is smoother but costs CPU')
     args = parser.parse_args()
     if not 1 <= args.web_fps <= 30:
         parser.error('--web-fps ต้องอยู่ระหว่าง 1–30')
+    # เครือข่ายร่วมเห็นภาพกล้องและสั่งเครื่องพูดได้ จึงห้ามเปิดโดยไม่มี PIN
+    needs_pin = args.web_host not in ('127.0.0.1', 'localhost')
+    if (needs_pin or args.web_pin is not None) and not re.fullmatch(r'\d{6}', args.web_pin or ''):
+        parser.error('--web-pin ต้องเป็นเลข 6 หลัก และต้องใส่เมื่อใช้ --web-host กับเครื่องอื่น')
     if not re.fullmatch(r'[1-9]\d*x[1-9]\d*', args.resolution.lower()):
         parser.error('--resolution ต้องเป็นรูปแบบ WxH เช่น 1280x720')
     # Check settings before the slow voice preparation, so a typo fails at once.
@@ -289,9 +295,13 @@ def main() -> int:
     if args.web is not None:
         import web_panel
         panel = web_panel.PanelState(settings, stream_fps=args.web_fps)
-        server = web_panel.start(args.web, panel, speech, args.settings, host=args.web_host)  # port in use: OSError now
-        print(f'teacher panel: http://localhost:{server.server_address[1]}'
-              + (f'  (other devices: http://<this IP>:{args.web})' if args.web_host != '127.0.0.1' else ''))
+        server = web_panel.start(args.web, panel, speech, args.settings, host=args.web_host,
+                                 pin=args.web_pin)  # port in use: OSError now
+        port = server.server_address[1]
+        print(f'teacher panel: http://localhost:{port}')
+        if needs_pin:
+            print(f'phone or iPad on the same network: http://{web_panel.lan_ip() or "<this IP>"}:{port}'
+                  f'  or  http://{socket.gethostname()}.local:{port}')
     width, height = map(int, args.resolution.lower().split('x'))
     capture = open_camera(args.camera, width, height, 30)
     if not capture.isOpened():

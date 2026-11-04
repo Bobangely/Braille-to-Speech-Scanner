@@ -36,6 +36,12 @@ rem Start_Finger_Reader_Window.bat sets SHOW_WINDOW to keep the OpenCV preview.
 set HEADLESS=--headless
 if defined SHOW_WINDOW set HEADLESS=
 
+rem station_pin.txt holds a 6-digit PIN and opens the panel to phones and iPads on this network.
+set WEB_PIN=
+set WEB_NET=
+if exist station_pin.txt set /p WEB_PIN=<station_pin.txt
+if defined WEB_PIN set WEB_NET=--web-host 0.0.0.0 --web-pin %WEB_PIN%
+
 start "" http://localhost:8080
 
 "%PY%" finger_reader.py ^
@@ -43,7 +49,7 @@ start "" http://localhost:8080
     --tts-python "%PIPER_PY%" ^
     --symbol-voice edge --word-voice edge ^
     --edge-python "%EDGE_PY%" ^
-    --web 8080 %HEADLESS% %*
+    --web 8080 %WEB_NET% %HEADLESS% %*
 
 if errorlevel 1 (
     echo.

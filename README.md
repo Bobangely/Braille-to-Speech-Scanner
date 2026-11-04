@@ -108,12 +108,22 @@ py -3.12 -m venv .venv
 ![หน้าเว็บครู: ภาพกล้องสด ตัวอักษรใต้นิ้ว โหมดเสียง และข้อความทั้งหน้า](docs/images/teacher-panel.webp)
 
 เพิ่ม `--web 8080` (ไฟล์ .bat ใส่ให้แล้ว) แล้วเปิด http://localhost:8080 จากเครื่องเดียวกัน
-หรือ `http://<IP เครื่อง>:8080` จากมือถือใน WiFi เดียวกัน (ดู IP ด้วย `ipconfig`; Windows Firewall ต้องอนุญาต Python ใน Private network)
+
+**เปิดจากมือถือหรือ iPad:**
+
+1. สร้างไฟล์ `station_pin.txt` ข้างไฟล์ .bat ใส่เลข 6 หลักบรรทัดเดียว (ไฟล์นี้ไม่ขึ้น git)
+2. อนุญาตพอร์ตใน Windows Firewall ครั้งเดียว โดยเปิด PowerShell แบบ Administrator แล้วรัน
+   `netsh advfirewall firewall add rule name="Braille Station" dir=in action=allow protocol=TCP localport=8080 profile=private,public`
+3. ต่อเครื่องอ่านกับมือถือหรือ iPad เข้า WiFi หรือ hotspot วงเดียวกัน แล้วเปิดโปรแกรม
+4. เปิดที่อยู่ที่โปรแกรมพิมพ์ในบรรทัด `phone or iPad on the same network` แล้วใส่ PIN ครั้งแรก
+
+IP เปลี่ยนเมื่อเปลี่ยนเครือข่าย WiFi บางแห่งบล็อกไม่ให้อุปกรณ์คุยกัน ถ้าเปิดไม่ได้ให้ใช้ hotspot มือถือ
 
 - ดูภาพกล้องสด ตัวอักษรใต้นิ้ว คำที่กำลังอ่าน และข้อความทั้งหน้า
 - เปลี่ยนโหมดเสียงและจำนวนเซลล์ได้ทันที เปิด/ปิดภาพกล้องเพื่อลดภาระ CPU
 - `--web-fps N` (1–30, ค่าเริ่มต้น 5): ภาพลื่นขึ้นแต่กิน CPU มากขึ้น บนบอร์ดเล็กให้ใช้ค่าต่ำ
-- ไม่มีรหัสผ่าน: ทุกเครื่องใน WiFi เดียวกันเปิดและเปลี่ยนค่าได้
+- PIN กันคนทั่วไปในวงเดียวกัน แต่เป็น HTTP จึงไม่กันคนที่ดักข้อมูลในเครือข่าย
+- เสียง Edge TTS ใช้เน็ตตอนเตรียมเสียงครั้งแรกเท่านั้น ไฟล์ละราว 70 KB แล้วเก็บ cache ถ้าไม่มีเน็ตจะใช้เสียง Piper แทน
 - ดูหน้าเว็บโดยไม่ต่อกล้อง: `.\.venv\Scripts\python.exe -m http.server 8765 --directory web` แล้วเปิด http://localhost:8765/?demo
 - API สำหรับพัฒนาต่อ: [docs/web-api.md](docs/web-api.md)
 

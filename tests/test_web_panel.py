@@ -1,7 +1,10 @@
 """Teacher-panel web server: the routes and JSON of docs/web-api.md, on a real socket."""
 import json
+import subprocess
+import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -75,6 +78,65 @@ class PanelStateTests(unittest.TestCase):
         self.assertTrue(state.wants_frame(0.2))
         state.settings = {**DEFAULTS, 'camera': False}
         self.assertFalse(state.wants_frame(1.0))
+
+
+class PinTests(unittest.TestCase):
+    PIN = '482913'
+
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        self.speech = SimpleNamespace(mode='spell', spell_max_cells=2, muted=False)
+        self.server = start(0, PanelState(dict(DEFAULTS)), self.speech, Path(self._dir.name) / 's.json', pin=self.PIN)
+        self.base = f'http://127.0.0.1:{self.server.server_address[1]}'
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self._dir.cleanup()
+
+    def call(self, path, body=None, cookie=None):
+        request = urllib.request.Request(self.base + path, data=body, headers={'Cookie': cookie} if cookie else {})
+        try:
+            with urllib.request.urlopen(request, timeout=5) as r:
+                return r.status, r.headers.get('Set-Cookie')
+        except urllib.error.HTTPError as error:
+            return error.code, None
+
+    def test_everything_but_the_page_needs_the_pin(self):
+        self.assertEqual(self.call('/')[0], 200)
+        for path, body in (('/api/state', None), ('/stream.mjpg', None), ('/api/settings', b'{"mode": "word"}'),
+                           ('/api/action', b'{"action": "toggle_mute"}')):
+            with self.subTest(path=path):
+                self.assertEqual(self.call(path, body)[0], 401)
+        self.assertEqual((self.speech.muted, self.speech.mode), (False, 'spell'))
+
+    def test_right_pin_gives_a_cookie_that_opens_the_api(self):
+        status, cookie = self.call('/api/login', json.dumps({'pin': self.PIN}).encode())
+        self.assertEqual(status, 200)
+        self.assertIn('HttpOnly', cookie)
+        self.assertIn('SameSite=Strict', cookie)
+        self.assertEqual(self.call('/api/state', cookie=cookie.split(';')[0])[0], 200)
+
+    def test_wrong_pin_is_refused_and_slowed_down(self):
+        started = time.monotonic()
+        for body in (b'{"pin": "000000"}', b'{"pin": "\xe0\xb8\x81"}', b'[1]', b'not json'):
+            with self.subTest(body=body):
+                self.assertIn(self.call('/api/login', body)[0], (400, 401))
+        self.assertGreaterEqual(time.monotonic() - started, 1.0)
+        self.assertEqual(self.call('/api/state', cookie='pin=000000')[0], 401)
+
+
+class WebOptionTests(unittest.TestCase):
+    def run_reader(self, *options):
+        return subprocess.run([sys.executable, 'finger_reader.py', '--tts-thai-model', 'x', '--web', '8080', *options],
+                              capture_output=True, cwd=Path(__file__).resolve().parent.parent, timeout=60)
+
+    def test_network_access_refuses_to_start_without_a_six_digit_pin(self):
+        for options in (['--web-host', '0.0.0.0'], ['--web-host', '0.0.0.0', '--web-pin', '1234']):
+            with self.subTest(options=options):
+                done = self.run_reader(*options)
+                self.assertEqual(done.returncode, 2)
+                self.assertIn(b'error: --web-pin', done.stderr)
 
 
 class ServerTests(unittest.TestCase):

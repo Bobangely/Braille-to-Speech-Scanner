@@ -120,7 +120,7 @@
   .btn-bar { display: flex; gap: 8px; margin-top: 12px; }
   .btn-action {
     flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px;
+    min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px;
     background: var(--card); color: var(--text); font-weight: 600; font-size: 14px;
   }
   .btn-action:hover { background: #f1f4f9; border-color: #cfd6df; }
@@ -130,12 +130,12 @@
   .btn-action.primary:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
 
   .seg { display: flex; border: 1px solid #cfd6df; border-radius: 8px; overflow: hidden; margin: 4px 0 10px; }
-  .seg button { flex: 1; padding: 7px 0; border: 0; background: var(--card); color: var(--text); font-size: 13px; font-weight: 500; }
+  .seg button { flex: 1; min-height: 44px; padding: 7px 0; border: 0; background: var(--card); color: var(--text); font-size: 13px; font-weight: 500; }
   .seg button[aria-pressed="true"] { background: var(--blue); color: #fff; font-weight: 700; }
   .stepper { display: flex; align-items: center; gap: 8px; }
   .stepper.dim { opacity: .45; }
   .stepper button, .toggle {
-    min-width: 40px; padding: 6px 12px; border: 1px solid #cfd6df; border-radius: 8px;
+    min-width: 44px; min-height: 44px; padding: 6px 12px; border: 1px solid #cfd6df; border-radius: 8px;
     background: var(--card); color: var(--text); font-weight: 600;
   }
   .toggle[aria-pressed="true"] { background: #16a34a; border-color: #16a34a; color: #fff; }
@@ -149,8 +149,7 @@
   .range-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
   .val-badge { font-size: 13px; color: var(--blue); font-weight: 700; }
   .slider {
-    width: 100%; height: 6px; border-radius: 3px; background: #e2e8f0;
-    outline: none; accent-color: var(--blue); cursor: pointer; margin: 4px 0;
+    width: 100%; height: 44px; accent-color: var(--blue); cursor: pointer; margin: 0;
   }
   .range-ticks {
     display: flex; justify-content: space-between; font-size: 11px; color: var(--muted);
@@ -180,13 +179,16 @@
   #lines { padding-top: 4px; }
   #lines p { margin: 8px 0; font-size: 22px; line-height: 1.6; }
   .word-span {
-    display: inline-block; padding: 2px 8px; margin: 2px 3px; border-radius: 6px;
-    background: #f7f9fb; border: 1px solid transparent; cursor: pointer;
+    display: inline-block; min-width: 44px; padding: 4px 8px; margin: 2px 3px; border-radius: 6px;
+    background: #f7f9fb; border: 1px solid transparent; cursor: pointer; text-align: center;
     user-select: none; transition: all .15s ease;
   }
-  .word-span:hover {
-    background: var(--blue-soft); border-color: var(--blue-border); color: var(--blue);
-    transform: translateY(-1px);
+  /* จอสัมผัสจะค้างสถานะ hover หลังแตะ */
+  @media (hover: hover) {
+    .word-span:hover {
+      background: var(--blue-soft); border-color: var(--blue-border); color: var(--blue);
+      transform: translateY(-1px);
+    }
   }
   .word-span.active {
     background: var(--blue-soft); color: var(--blue); font-weight: 700;
@@ -199,6 +201,12 @@
     0% { background: #ffe4b5; transform: scale(1.1); }
     100% { background: var(--blue-soft); transform: scale(1); }
   }
+
+  /* หน้าใส่ PIN: ตัวอักษร 16px ขึ้นไป iPhone จึงไม่ซูมเข้าเองตอนแตะช่องกรอก */
+  #pin-form { display: flex; flex-direction: column; gap: 10px; max-width: 360px; margin: 32px auto; }
+  #pin-form label { font-weight: 700; }
+  #pin { min-height: 44px; padding: 8px 12px; border: 1px solid #cfd6df; border-radius: 8px; font: inherit; font-size: 20px; letter-spacing: 4px; }
+  #pin-error { color: var(--bad); font-size: 14px; min-height: 1.3em; margin: 0; }
 
   @media (max-width: 860px) {
     main { grid-template-columns: 1fr; padding: 12px; }
@@ -220,6 +228,13 @@
   </div>
 </header>
 <div id="offline" role="alert">ขาดการเชื่อมต่อกับสถานี กำลังพยายามเชื่อมต่อใหม่…</div>
+
+<form class="card" id="pin-form" hidden>
+  <label for="pin">ใส่ PIN ของเครื่องอ่าน</label>
+  <input id="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" required>
+  <button class="btn-action primary">เข้าใช้งาน</button>
+  <p id="pin-error" role="alert"></p>
+</form>
 
 <main>
   <!-- Camera stream preview -->
@@ -312,7 +327,7 @@
     <div class="card-header">
       <div>
         <span class="label">ข้อความทั้งหน้า</span>
-        <span class="page-hint">คลิกที่คำเพื่อสั่งให้อ่านออกเสียงคำนั้นได้ทันที</span>
+        <span class="page-hint">แตะที่คำเพื่อสั่งให้อ่านออกเสียงคำนั้นได้ทันที</span>
       </div>
       <span class="page-stats" id="page-stats">รอหน้าหนังสือ</span>
     </div>
@@ -325,6 +340,7 @@ const DEMO = location.protocol === 'file:' || new URLSearchParams(location.searc
 const STATUS = {waiting_page: 'รอหน้าหนังสือ', learning: 'กำลังจำหน้า', reading: 'กำลังอ่าน'};
 const $ = id => document.getElementById(id);
 
+let locked = null;  // null: ยังไม่รู้จนกว่าจะถาม server ครั้งแรก
 let settings = {mode: 'spell', spell_max_cells: 2, camera: true};
 let audioConfig = {engine: 'edge', volume: 100};
 let muted = false;
@@ -403,9 +419,30 @@ if (DEMO) setInterval(demo.tick, 1000);
 async function getState() {
   if (DEMO) return demo.state();
   const r = await fetch('/api/state', {cache: 'no-store'});
+  if (r.status === 401) return null;
   if (!r.ok) throw new Error(r.status);
   return r.json();
 }
+
+function setLocked(value) {
+  if (locked === value) return;
+  locked = value;
+  $('pin-form').hidden = !locked;
+  document.querySelector('main').hidden = locked;
+  document.querySelector('.chips').hidden = locked;
+  if (locked) $('pin').focus();
+  showSettings();
+}
+
+$('pin-form').onsubmit = async e => {
+  e.preventDefault();
+  const r = await fetch('/api/login', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({pin: $('pin').value})
+  }).catch(() => null);
+  $('pin-error').textContent = !r ? 'เชื่อมต่อไม่ได้' : r.ok ? '' : 'PIN ไม่ถูกต้อง';
+  $('pin').value = '';
+};
 
 async function postSettings(partial) {
   if (DEMO) return {...settings, ...partial};
@@ -482,7 +519,7 @@ function showSettings() {
   $('less').disabled = settings.spell_max_cells <= 1;
   $('more').disabled = settings.spell_max_cells >= 5;
   const img = $('stream');
-  const live = Boolean(settings.camera && !DEMO);
+  const live = Boolean(settings.camera && !DEMO && locked === false);
   if (live) {
     img.hidden = false;
     $('cam-note').hidden = true;
@@ -548,7 +585,7 @@ $('stream').onerror = () => {
     note.textContent = 'กำลังเชื่อมต่อสัญญาณกล้อง…';
   }
   setTimeout(() => {
-    if (settings.camera && !DEMO) openStream();
+    if (settings.camera && !DEMO && locked === false) openStream();
   }, 1200);
 };
 
@@ -587,7 +624,7 @@ function render(s) {
           span.textContent = w.text;
           span.dataset.index = w.index;
           span.dataset.text = w.text;
-          span.title = `คลิกเพื่อให้อ่านคำว่า "${w.text}"`;
+          span.title = `แตะเพื่อให้อ่านคำว่า "${w.text}"`;
           span.onclick = () => {
             span.classList.add('flash');
             setTimeout(() => span.classList.remove('flash'), 400);
@@ -615,7 +652,9 @@ function render(s) {
 
 async function poll() {
   try {
-    render(await getState());
+    const state = await getState();
+    setLocked(!state);
+    if (state) render(state);
     const banner = $('offline');
     if (banner.classList.contains('show') && !$('stream').hidden) openStream();
     banner.classList.remove('show');

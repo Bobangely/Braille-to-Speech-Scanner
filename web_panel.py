@@ -7,9 +7,13 @@ the reader, so a broken request can never stop reading.
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
+import socket
 import threading
+import time
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -100,15 +104,53 @@ def _jpeg(frame) -> bytes:
     return data.tobytes()
 
 
-def start(port: int, state: PanelState, speech, settings_path: Path, host: str = '127.0.0.1') -> ThreadingHTTPServer:
+def lan_ip() -> str | None:
+    """IP ของเครื่องนี้ในวง WiFi หรือ hotspot ปัจจุบัน UDP connect แค่เลือกเส้นทาง ไม่ส่งข้อมูลจริง"""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect(('10.255.255.255', 1))
+            return probe.getsockname()[0]
+        except OSError:
+            return None
+
+
+def start(port: int, state: PanelState, speech, settings_path: Path, host: str = '127.0.0.1',
+          pin: str | None = None) -> ThreadingHTTPServer:
     """Serve the panel on ``host:port`` from a daemon thread. Port in use raises OSError at once.
 
-    No login: the default host keeps it to this computer; '0.0.0.0' lets anyone on the LAN speak through it.
+    With ``pin``, only the page itself opens without it. HTTP keeps the PIN out of casual reach,
+    not away from someone capturing the network's traffic.
     """
+    login_lock = threading.Lock()  # ลองผิดได้ครั้งละหนึ่งทั้งเครื่อง จึงเดา PIN รัวๆ ไม่ได้
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):  # keep the reader's console readable
             log.debug('%s ' + fmt, self.address_string(), *args)
+
+        def _unlocked(self) -> bool:
+            if pin is None:
+                return True
+            cookie = SimpleCookie(self.headers.get('Cookie', '')).get('pin')
+            return cookie is not None and hmac.compare_digest(cookie.value.encode(), pin.encode())
+
+        def _login(self) -> None:
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
+                given = str(body['pin'])
+            except (ValueError, KeyError, TypeError):
+                self._json(400, {'error': 'คำขอไม่ถูกต้อง'})
+                return
+            with login_lock:
+                ok = pin is None or hmac.compare_digest(given.encode(), pin.encode())
+                if not ok:
+                    time.sleep(1)
+            if not ok:
+                self._json(401, {'error': 'PIN ไม่ถูกต้อง'})
+                return
+            self.send_response(200)
+            self.send_header('Set-Cookie', f'pin={pin}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Strict')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
 
         def _send(self, code: int, body: bytes, kind: str) -> None:
             self.send_response(code)
@@ -125,6 +167,8 @@ def start(port: int, state: PanelState, speech, settings_path: Path, host: str =
             path = self.path.split('?', 1)[0]
             if path == '/':
                 self._send(200, INDEX.read_bytes(), 'text/html; charset=utf-8')
+            elif not self._unlocked():
+                self._json(401, {'error': 'ต้องใส่ PIN'})
             elif path == '/api/state':
                 self._json(200, state.snapshot())
             elif path == '/stream.mjpg':
@@ -134,7 +178,11 @@ def start(port: int, state: PanelState, speech, settings_path: Path, host: str =
 
         def do_POST(self):
             path = self.path.split('?', 1)[0]
-            if path == '/api/settings':
+            if path == '/api/login':
+                self._login()
+            elif not self._unlocked():
+                self._json(401, {'error': 'ต้องใส่ PIN'})
+            elif path == '/api/settings':
                 try:
                     partial = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'null')
                     state.settings = panel_settings.apply_settings(speech, settings_path, partial)

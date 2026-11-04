@@ -45,6 +45,7 @@ runs/
 yolov8n.pt
 models/*.task
 scratch/
+station_pin.txt
 *.cache
 
 # เก็บไฟล์ export ชุดข้อมูลเฉพาะเครื่องไว้ แต่ไม่รวมในการ merge
