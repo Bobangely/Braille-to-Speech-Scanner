@@ -5,6 +5,7 @@ import numpy as np
 
 from text_to_braille import text_to_braille_cells
 from page_calibration import DEFAULT_FORMAT as FMT, calibrate, render_page
+from page_layout import PageMap
 from page_map import PageLearner, read_page
 from tests.test_page_calibration import camera_view, rotated_corners
 
@@ -168,6 +169,11 @@ class PageLearnerTests(unittest.TestCase):
         results = [learner.update(m) for m in (a, a, b, a, a, a)]
         self.assertEqual(results[:5], [None] * 5)
         self.assertIs(results[5], a)
+
+    def test_learner_never_accepts_a_page_without_lines(self):
+        learner = PageLearner(required=2)
+        empty = PageMap((), ())
+        self.assertEqual([learner.update(empty) for _ in range(3)], [None] * 3)
 
     def test_learner_ignores_sub_millimetre_jitter(self):
         a = read(page_lines())

@@ -217,4 +217,5 @@ class PageLearner:
         signature = page_signature(page_map)
         self._count = self._count + 1 if signature == self._signature else 1
         self._signature = signature
-        return page_map if self._count >= self.required else None
+        # ภาพเบลอหรือมีของบังอ่านได้ 0 บรรทัดซ้ำกันได้ ต้องไม่นับเป็นหน้าที่เรียนสำเร็จ
+        return page_map if page_map.lines and self._count >= self.required else None
