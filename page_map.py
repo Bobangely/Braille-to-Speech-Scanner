@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 
 from colored_braille import ColoredCellStream
@@ -18,6 +20,8 @@ from thai_speech import symbol_name
 PX_PER_MM = 8.0
 UNKNOWN_WORD = 'ไม่ทราบ'
 _BAND_GAP_MM = 1.0  # ระยะเว้นระหว่างบรรทัดสีกับแถบนูน
+word_source_log = logging.getLogger('word_source')  # บอกว่าคำนี้มาจากพจนานุกรมหรือกฎ parser
+_logged_words = set()  # ระบบอ่านหน้าซ้ำทุกวินาที จึงบันทึกแต่ละคำครั้งเดียว
 
 
 def read_page(image, calibration: PageCalibration, fmt: PageFormat = DEFAULT_FORMAT) -> PageMap:
@@ -174,7 +178,17 @@ def _decode_words(slots: list[dict], words: list[str]) -> None:
                 slot['name'] = name
         for slot in group:
             slot['word_index'] = len(words)
-        words.append(known or (UNKNOWN_WORD if unreadable else decode_cells(cells, 'thai')))
+        by_parser = None if known else (UNKNOWN_WORD if unreadable else decode_cells(cells, 'thai'))
+        _log_word_source(tuple(slot['dots'] for slot in group), known, by_parser)
+        words.append(known or by_parser)
+
+
+def _log_word_source(dots: tuple, known: str | None, by_parser: str | None) -> None:
+    """บันทึกว่าคำนี้มาจากพจนานุกรมหรือกฎ parser พร้อมเซลล์ ใช้หาคำที่พจนานุกรมยังไม่รู้จัก"""
+    if dots not in _logged_words:
+        _logged_words.add(dots)
+        cells = ' '.join(''.join(map(str, sorted(cell))) for cell in dots)
+        word_source_log.info('%s | %s | %s', 'พจนานุกรม' if known else 'กฎ parser', known or by_parser, cells)
 
 
 def new_ink_dots(read: PageMap, learned: PageMap, fmt: PageFormat = DEFAULT_FORMAT, tolerance_mm: float = 1.2) -> int:

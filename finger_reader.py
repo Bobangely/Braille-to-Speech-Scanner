@@ -261,6 +261,7 @@ def main() -> int:
     parser.add_argument('--log-latency', type=Path, help='CSV of per-event timings in seconds')
     parser.add_argument('--log-finger', type=Path,
                         help='CSV of the fingertip every frame, for tools/diagnostics/finger_lift.py')
+    parser.add_argument('--log-words', type=Path, help='file of each word read and whether the dictionary or parser rules gave it')
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--resolution', default='1920x1080', metavar='WxH',
                         help='camera size; 1280x720 on slow machines (e.g. ARM mini PC)')
@@ -283,6 +284,11 @@ def main() -> int:
     parser.add_argument('--web-fps', type=int, default=5, metavar='N',
                         help='camera frames per second sent to the panel (1-30); more is smoother but costs CPU')
     args = parser.parse_args()
+    if args.log_words:
+        args.log_words.parent.mkdir(parents=True, exist_ok=True)
+        words_file = logging.FileHandler(args.log_words, mode='w', encoding='utf-8')
+        words_file.setFormatter(logging.Formatter('%(asctime)s | %(message)s', '%H:%M:%S'))
+        logging.getLogger('word_source').addHandler(words_file)
     if not 1 <= args.web_fps <= 30:
         parser.error('--web-fps ต้องอยู่ระหว่าง 1–30')
     # เครือข่ายร่วมเห็นภาพกล้องและสั่งเครื่องพูดได้ จึงห้ามเปิดโดยไม่มี PIN
