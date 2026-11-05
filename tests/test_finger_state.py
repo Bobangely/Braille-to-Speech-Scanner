@@ -65,18 +65,56 @@ class FingerStateTest(unittest.TestCase):
             ev += self.fs.update((15.8 if k % 2 == 0 else 16.2, 25), k * 0.05)
         self.assertEqual(ev, [EnterCell(0, 0, "สระไอ")])
 
-    def test_lost_finger_returns_outside(self):
-        self.assertEqual(
-            run(self.fs, [13, None, 13]),
-            [EnterCell(0, 0, "สระไอ"), EnterCell(0, 0, "สระไอ")],
-        )
+    def test_briefly_lost_finger_does_not_repeat(self):
+        self.assertEqual(run(self.fs, [13, None, 13]), [EnterCell(0, 0, "สระไอ")])
 
-    def test_leave_vertically_then_return_repeats_symbol_only(self):
+    def test_lifted_finger_repeats_on_return(self):
+        ev = run(self.fs, [13])
+        for k in range(21):  # 1 s without a finger
+            ev += self.fs.update(None, 0.2 + k * 0.05)
+        for k in range(4):
+            ev += self.fs.update((13, 25), 1.25 + k * 0.05)
+        self.assertEqual(ev, [EnterCell(0, 0, "สระไอ"), EnterCell(0, 0, "สระไอ")])
+
+    def test_brief_vertical_exit_does_not_repeat(self):
         ev = run(self.fs, [13])
         ev += self.fs.update((13, 35), 0.3)
         for k in range(4):
             ev += self.fs.update((13, 25), 0.4 + k * 0.05)
+        self.assertEqual(ev, [EnterCell(0, 0, "สระไอ")])
+
+    def test_repeated_brief_exits_do_not_repeat(self):
+        ev = run(self.fs, [13])
+        for k in range(40):  # 2 s swinging across the band edge
+            ev += self.fs.update((13, 35 if k % 6 == 0 else 25), 0.2 + k * 0.05)
+        self.assertEqual(ev, [EnterCell(0, 0, "สระไอ")])
+
+    def test_long_vertical_exit_repeats_on_return(self):
+        ev = run(self.fs, [13])
+        for k in range(21):
+            ev += self.fs.update((13, 35), 0.2 + k * 0.05)
+        for k in range(4):
+            ev += self.fs.update((13, 25), 1.25 + k * 0.05)
         self.assertEqual(ev, [EnterCell(0, 0, "สระไอ"), EnterCell(0, 0, "สระไอ")])
+
+    def test_brief_step_onto_neighbour_does_not_repeat(self):
+        ev = run(self.fs, [13])
+        for k in range(2):  # shorter than the dwell
+            ev += self.fs.update((19, 25), 0.2 + k * 0.05)
+        for k in range(4):
+            ev += self.fs.update((13, 25), 0.3 + k * 0.05)
+        self.assertEqual(ev, [EnterCell(0, 0, "สระไอ")])
+
+    def test_past_line_end_then_back_repeats(self):
+        self.assertEqual(
+            run(self.fs, [37, 70, 37]),
+            [EnterCell(0, 4, "มอม้า"), FinishWord(1, "ม"), EnterCell(0, 4, "มอม้า")],
+        )
+
+    def test_neighbouring_cells_with_the_same_letter_speak_twice(self):
+        same = tuple(CellSlot(i, 10 + 6 * i, 16 + 6 * i, frozenset({1}), "กอไก่", 0) for i in range(2))
+        fs = FingerState(PageMap((LinePair(0, 20, 30, same),), ("กก",)), dwell_s=0.15)
+        self.assertEqual(run(fs, [13, 19]), [EnterCell(0, 0, "กอไก่"), EnterCell(0, 1, "กอไก่")])
 
     def test_jump_to_other_line_does_not_finish_word(self):
         ev = []
