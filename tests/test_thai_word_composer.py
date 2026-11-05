@@ -147,7 +147,6 @@ class ThaiWordComposerTests(unittest.TestCase):
         result = compose_tokens(['ง', 'เออะ', 'น'])
         self.assertEqual(result['syllables'][0]['candidate'], 'เงิน')
         self.assertEqual(result['syllables'][0]['status'], 'NEEDS_LEXICON')
-        self.assertEqual(compose_tokens(['ง', 'เออะ', 'น'], lexicon={'เงิน'})['text'], 'เงิน')
 
     def test_boundary_metadata_and_source_preservation(self):
         for boundary, expected in [(dict(break_before=True), 'เกอ ด'),

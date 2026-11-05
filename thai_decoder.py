@@ -1,31 +1,16 @@
 """API ถอดภาษาไทย: parser เบรลล์ดิบ แล้วแปลงเป็นข้อความไทย"""
 
-import re
-import unicodedata
 import logging
 
-from thai_braille import _break_before, cell_read_warning, is_unread_cell, lex_braille
+from thai_braille import _break_before, cell_read_warning, is_unread_cell
 from thai_parser import parse_braille
 from thai_renderer import render_thai
 
 logger = logging.getLogger(__name__)
 
 
-def tokenize_thai(cells):
-    """ป้ายของเซลล์จริงสำหรับวาดภาพและ debug ไม่ใช่ข้อมูลเข้าเชิงความหมายของ parser"""
-    return lex_braille(cells)[1]
-
-
-def normalize_thai(text):
-    """จัดลำดับเครื่องหมายใหม่ โดยไม่เปลี่ยนสระที่รู้แล้วให้เป็นวรรณยุกต์ที่เดาเอง"""
-    for _ in range(2):
-        text = re.sub(r'([่้๊๋์])([ัิีึืุู็ํ])', r'\2\1', text)
-        text = re.sub(r'([าำๅ])([่้๊๋])', r'\2\1', text)
-    return unicodedata.normalize('NFC', text)
-
-
-def decode_thai_details(cells, *, lexicon=None, confidence_threshold=None, compatibility=False):
-    result = render_thai(parse_braille(cells, compatibility=compatibility), lexicon=lexicon,
+def decode_thai_details(cells, *, confidence_threshold=None, compatibility=False):
+    result = render_thai(parse_braille(cells, compatibility=compatibility),
                          confidence_threshold=confidence_threshold)
     if result['needs_review'] and logger.isEnabledFor(logging.DEBUG):
         logger.debug('[THAI_COMPOSITION_REVIEW] raw_cells=%r decoded_cells=%r '

@@ -5,8 +5,6 @@ import json
 from pathlib import Path
 import unicodedata
 
-from thai_lexicon import rank_segmentations
-
 
 CONSONANTS = set('กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ')
 TONES = set('่้๊๋')
@@ -123,19 +121,17 @@ def render_syllable(syllable):
     return syllable['onset'] + (syllable.get('tone') or '')
 
 
-def render_thai(parsed, *, lexicon=None, confidence_threshold=None):
+def render_thai(parsed, *, confidence_threshold=None):
     """แปลงและตรวจหน่วยที่แยกแล้ว โดยเก็บตัวเลือกที่ถูกปฏิเสธไว้ใน trace"""
     records = [dict(token=t) if isinstance(t, str) else t for t in parsed['raw_tokens']]
-    units, ranking, lexicon_info = rank_segmentations(parsed, lexicon, render_syllable, confidence_threshold)
     pieces, traces = [], []
-    for unit in units:
+    for unit in parsed['syllables']:
         syllable = dict(unit)
         status = syllable.pop('status', None)
         traced = syllable.pop('trace', True)
         try:
             candidate = render_syllable(syllable)
-            if (syllable.get('vowel') == 'เออะ' and syllable.get('final')
-                    and (lexicon is None or candidate not in lexicon)):
+            if syllable.get('vowel') == 'เออะ' and syllable.get('final'):
                 status = status or 'NEEDS_LEXICON'
         except CompositionError as exc:
             candidate, status = None, status or exc.status
@@ -165,6 +161,5 @@ def render_thai(parsed, *, lexicon=None, confidence_threshold=None):
             traces.append(dict(syllable, candidate=candidate, text=text, status=status or 'OK',
                                needs_review=bool(status), min_confidence=minimum, render_events=events))
     return dict(parsed, text=unicodedata.normalize('NFC', ''.join(pieces).strip()),
-                structural_syllables=parsed['syllables'], lexicon_ranking=ranking, lexicon_info=lexicon_info,
                 syllables=traces, needs_review=any(t['needs_review'] for t in traces),
                 status='NEEDS_REVIEW' if any(t['needs_review'] for t in traces) else 'VALID')

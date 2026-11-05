@@ -8,7 +8,6 @@ from thai_renderer import (CONSONANTS, TONES, LEADING, SHORT, INHERENT_FINAL,
 from thai_braille import BRAILLE_STANDARD, RULES_SOURCE, lex_braille, match_post_onset_vowel
 from thai_raw_rules import RAW_STANDARD, RAW_RULES_SOURCE, candidate_validation
 
-MAX_SEGMENTATION_CANDIDATES = 128
 
 
 def _is_consonant(atom):
@@ -432,103 +431,16 @@ def _parse_run(atoms, *, compare_boundaries=True):
         yield unit
 
 
-def _enumerate_run(atoms, original):
-    """ขยายทุกขอบที่แข่งกัน รวมถึงส่วนท้ายที่ซ้อนอยู่
-
-    การเทียบเฉพาะจุดแบบเดิมยังอยู่ใน trace แต่การจัดอันดับใช้เส้นทางที่ครบ
-    ซึ่งตรวจซ้ำแล้วว่าครอบคลุมต้นทางและมีโครงสร้างพยางค์ถูกต้อง
-    ถ้าเกินขีดจำกัดความซับซ้อนให้ถือว่าไม่ผ่าน เพราะการค้นหาไม่ครบจัดอันดับไม่ได้
-    """
-    if not any(unit.get('boundary_candidates') for unit in original):
-        return None
-    paths = {}
-
-    def expand():
-        plans, pending = {}, [0]
-        while pending:
-            start = pending[-1]
-            if start in paths:
-                pending.pop()
-                continue
-            if start not in plans:
-                units = original if start == 0 else list(_parse_run(atoms[start:]))
-                choice = next(((pos, unit['boundary_candidates']) for pos, unit in enumerate(units)
-                               if unit.get('boundary_candidates')), None)
-                if choice is None:
-                    paths[start] = [units]
-                    continue
-                position, alternatives = choice
-                branches = []
-                for alternative in alternatives:
-                    if alternative['validation_error'] in (
-                            'REUSED_SOURCE_CELL', 'INVALID_SOURCE_CELLS', 'INCOMPLETE_PARSE'):
-                        # เก็บที่มาของตัวเลือกที่ถูกปฏิเสธ และห้ามสร้างหลักฐานแทน
-                        # ด้วยการแยกเส้นทางต้นทางที่เสียแล้วซ้ำ
-                        branches.append(dict(rejected=[*units[:position], *alternative['syllables']]))
-                        continue
-                    head = alternative['syllables'][0]
-                    used = set(head['indices'])
-                    following = max(i for i, atom in enumerate(atoms)
-                                    if used.intersection(atom.get('source_indices', [atom['index']]))) + 1
-                    branches.append(dict(prefix=units[:position], head=head, following=following))
-                plans[start] = branches
-            branches = plans[start]
-            missing = next((b['following'] for b in branches
-                            if 'following' in b and b['following'] not in paths), None)
-            if missing is not None:
-                pending.append(missing)
-                continue
-            results = []
-            for branch in branches:
-                if 'rejected' in branch:
-                    results.append(branch['rejected'])
-                else:
-                    for suffix in paths[branch['following']]:
-                        results.append([*branch['prefix'], branch['head'], *suffix])
-                        if len(results) > MAX_SEGMENTATION_CANDIDATES:
-                            raise OverflowError('segmentation_candidate_limit')
-                if len(results) > MAX_SEGMENTATION_CANDIDATES:
-                    raise OverflowError('segmentation_candidate_limit')
-            paths[start] = results
-        return paths[0]
-
-    indices = [i for atom in atoms for i in atom.get('source_indices', [atom['index']])]
-    try:
-        candidates = []
-        seen = set()
-        for units in expand():
-            signature = tuple((tuple(u['indices']), u.get('onset'), u.get('vowel'),
-                               u.get('tone'), u.get('final'), u.get('prefix'), u.get('literal'))
-                              for u in units)
-            if signature in seen:
-                continue
-            seen.add(signature)
-            error = _structural_error(units, indices)
-            validation = candidate_validation(units, error,
-                                              compatibility=atoms[0].get('compatibility_enabled', False),
-                                              raw_available=bool(atoms[0].get('patterns')))
-            candidates.append(dict(syllables=deepcopy(units), **validation))
-        return dict(indices=indices, candidates=candidates, generation_complete=True)
-    except OverflowError:
-        return dict(indices=indices, candidates=[], generation_complete=False,
-                    reason='segmentation_candidate_limit')
-
-
 def parse_tokens(tokens, *, atoms=None, compatibility=None):
     """เก็บ token ต้นทาง และคืนพยางค์หรือข้อความตามลำดับโดยไม่แปลงเป็นข้อความ"""
     raw = deepcopy(list(tokens))
     records = [dict(token=t) if isinstance(t, str) else t for t in raw]
     # token adapter ไม่มี raw encoding จึงคง semantic compatibility ของเดิม
     compatibility = atoms is None if compatibility is None else bool(compatibility)
-    normalized, units, run, segmentation_runs = [], [], [], []
+    normalized, units, run = [], [], []
 
     def flush():
-        original = list(_parse_run(run))
-        candidates = _enumerate_run(run, original)
-        if candidates is not None:
-            candidates.update(unit_start=len(units), unit_count=len(original))
-            segmentation_runs.append(candidates)
-        units.extend(original)
+        units.extend(_parse_run(run))
         run.clear()
 
     def literal(value, indices, status=None):
@@ -570,8 +482,7 @@ def parse_tokens(tokens, *, atoms=None, compatibility=None):
             run.append(atom)
     flush()
     return dict(raw_tokens=raw, normalized_tokens=normalized, syllables=units,
-                segmentation_runs=segmentation_runs, compatibility_enabled=compatibility,
-                parsing_precedence=['standard', 'compatibility', 'lexicon'])
+                compatibility_enabled=compatibility, parsing_precedence=['standard', 'compatibility'])
 
 
 def parse_braille(cells, *, compatibility=False):
@@ -598,18 +509,11 @@ def parse_braille(cells, *, compatibility=False):
             trace.append(dict(state_before=state, state_after='INVALID' if syllable.get('status') else 'COMPLETE',
                               rule=syllable.get('status') or 'SYLLABLE_END',
                               patterns=syllable['raw_patterns'], source_cells=syllable['source_cells']))
-    for run in parsed['segmentation_runs']:
-        for candidate in run['candidates']:
-            for unit in candidate['syllables']:
-                unit['raw_patterns'] = [raw[i]['pattern'] if 0 <= i < len(raw) else None
-                                        for i in unit['indices']]
-                unit['source_cells'] = [raw[i]['cell_id'] if 0 <= i < len(raw) else None
-                                        for i in unit['indices']]
     return dict(parsed, standard=RAW_STANDARD, rules_source=RAW_RULES_SOURCE, raw_cells=raw,
                 compatibility_standard=BRAILLE_STANDARD, compatibility_rules_source=RULES_SOURCE,
                 raw_patterns=[cell['pattern'] for cell in raw], semantic_tokens=semantic, parser_trace=trace)
 
 
-def compose_tokens(tokens, *, lexicon=None, confidence_threshold=None):
-    """token เบรลล์เป็นข้อความไทย: แยกพยางค์ แล้วแปลงด้วยรายการคำ"""
-    return render_thai(parse_tokens(tokens), lexicon=lexicon, confidence_threshold=confidence_threshold)
+def compose_tokens(tokens, *, confidence_threshold=None):
+    """token เบรลล์เป็นข้อความไทย: แยกพยางค์ แล้วแปลงเป็นข้อความ"""
+    return render_thai(parse_tokens(tokens), confidence_threshold=confidence_threshold)

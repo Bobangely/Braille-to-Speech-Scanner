@@ -2,7 +2,7 @@
 
 import unittest
 
-from decoder import decode_cells, decode_cells_verbose, normalize_thai_text
+from decoder import decode_cells, decode_cells_verbose
 
 
 def cells(patterns):
@@ -45,21 +45,12 @@ class ThaiCompositionTests(unittest.TestCase):
             with self.subTest(language=language):
                 self.assertEqual(decode_cells(cells(SENTENCE_PATTERNS), language), SENTENCE)
 
-    def test_normalization_preserves_marks_and_is_idempotent(self):
-        for word, _ in WORDS:
-            for source in (word, word.replace('ิ่', '่ิ')):
-                with self.subTest(source=source):
-                    result = normalize_thai_text(source)
-                    self.assertEqual(result, word)
-                    self.assertEqual(normalize_thai_text(result), result)
-
     def test_long_i_is_not_guessed_to_be_short_i_with_tone(self):
         for patterns, expected in [(['2456', '23', '12456'], 'วีง'),
                                    (['2456', '23', '35', '12456'], 'วี่ง'),
                                    (['2456', '12', '12456'], 'วิง')]:
             with self.subTest(expected=expected):
                 self.assertEqual(decode_cells(cells(patterns), 'thai'), expected)
-                self.assertEqual(normalize_thai_text(expected), expected)
 
 if __name__ == '__main__':
     unittest.main()

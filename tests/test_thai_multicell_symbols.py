@@ -6,7 +6,7 @@ from unittest.mock import patch
 from config_thai import THAI_MULTI_CELL_SYMBOLS, THAI_READING_MULTI_CELL
 from decoder import decode_cells
 from thai_braille import LEXICAL_SEQUENCES, lex_braille
-from thai_decoder import decode_thai_details, tokenize_thai
+from thai_decoder import decode_thai_details
 
 
 def cells(patterns):
@@ -36,7 +36,7 @@ class ThaiMultiCellSymbolTests(unittest.TestCase):
 
     def test_standalone_ae_and_other_single_symbols_are_preserved(self):
         self.assertEqual(decode_cells(cells([[1, 2, 6]]), 'thai'), 'แ')
-        self.assertEqual(tokenize_thai(cells([[5]]))[0]['char'], 'ํ')
+        self.assertEqual(lex_braille(cells([[5]]))[1][0]['char'], 'ํ')
         self.assertEqual(decode_cells(cells([[1, 2, 6], [1, 3, 4], [3, 5]]), 'thai'), 'แม่')
 
     def test_dot_order_is_normalized_before_matching(self):

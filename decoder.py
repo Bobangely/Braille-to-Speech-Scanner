@@ -1,7 +1,7 @@
 """ถอดเซลล์เบรลล์ไทยและอังกฤษตามลำดับ โดยเก็บข้อมูลเซลล์ที่อ่านไม่ได้ไว้ด้วย"""
 
 from config import BRAILLE_TO_CHAR
-from thai_decoder import _break_before, cell_read_warning, decode_thai, normalize_thai, thai_verbose
+from thai_decoder import _break_before, cell_read_warning, decode_thai, thai_verbose
 
 
 _CAPITAL = frozenset({6})
@@ -11,14 +11,6 @@ _LETTER_TO_DIGIT = dict(zip('abcdefghij', '1234567890'))
 
 def dots_to_braille_unicode(dots):
     return chr(0x2800 + sum(1 << (dot - 1) for dot in set(dots) if 1 <= dot <= 6))
-
-
-def normalize_thai_text(text):
-    return normalize_thai(text)
-
-
-def decode_cells_thai(cells, *, compatibility=False):
-    return decode_thai(cells, compatibility=compatibility)
 
 
 def _english_tokens(cells):
