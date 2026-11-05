@@ -32,6 +32,7 @@ log = logging.getLogger(__name__)
 PLACE_PAGE = 'วางหน้าให้เห็นมุมทั้งหมด'
 LIFT_HAND = 'ยกมือออกก่อน'
 RECHECK_S = 1.0  # อ่านบรรทัดสีซ้ำทุกช่วงเวลานี้ตอนไม่มีมืออยู่ในภาพ
+TIP_OFFSET_MM = 1.0  # shortcut: ค่าเดียวทุกคน ถ้าต่างกันตามขนาดนิ้วให้วัดจากภาพแทน
 NEW_INK_DOTS = 3  # จำนวนจุดที่อยู่ตรงกระดาษเปล่าของหน้าเดิม ก่อนจะถือว่าเปลี่ยนหน้า
 
 
@@ -39,9 +40,10 @@ class FingerReader:
     """รับภาพกล้องหนึ่งเฟรม คืนสถานะ: waiting_page, learning หรือ reading"""
 
     def __init__(self, tracker, calibrator, speech: SpeechQueue, fmt: PageFormat = DEFAULT_FORMAT,
-                 read_page=read_colored_page, required_maps: int = 3):
+                 read_page=read_colored_page, required_maps: int = 3, tip_offset_mm: float = 0.0):
         self.tracker, self.calibrator, self.speech, self.fmt = tracker, calibrator, speech, fmt
-        self.read_page, self.required_maps = read_page, required_maps
+        self.read_page, self.required_maps, self.tip_offset_mm = read_page, required_maps, tip_offset_mm
+        self.point_mm = None  # จุดอ่านบนหน้าของเฟรมล่าสุด
         self.status = 'waiting_page'
         self.last_events: list = []
         self._told: str | None = None
@@ -53,7 +55,7 @@ class FingerReader:
         self._verify = False  # หน้าถูกขยับ: ตรวจซ้ำทุกเฟรมที่ไม่มีมือจนกว่าจะแน่ใจ
 
     def step(self, frame, now_s: float) -> str:
-        self.last_events = []
+        self.last_events, self.point_mm = [], None
         calibration, changed = self.calibrator.update(frame, now_s)
         tip = self.tracker.update(frame, round(now_s * 1000))
         self.calibration, self.tip = calibration, tip
@@ -72,8 +74,9 @@ class FingerReader:
         if self.status == 'learning':
             self._learn(frame, calibration, now_s)
         elif self.status == 'reading':
-            point = calibration.to_page([tip])[0] if tip is not None else None
-            self.last_events = self._finger.update(None if point is None else tuple(point), now_s)
+            # landmark ปลายนิ้วอยู่ค่อนไปทางซ้ายของนิ้วจริง จึงเลื่อนจุดอ่านไปทางที่นิ้วกำลังอ่าน
+            self.point_mm = calibration.to_page([tip])[0] + (self.tip_offset_mm, 0) if tip is not None else None
+            self.last_events = self._finger.update(None if self.point_mm is None else tuple(self.point_mm), now_s)
             self.speech.handle(self.last_events)
             # MediaPipe พลาดมือที่บังหน้าเป็นบางเฟรม จึงตรวจซ้ำเมื่อไม่มีมือครบหนึ่งวินาทีเท่านั้น
             if now_s - self._hand_seen_s >= RECHECK_S and (self._verify or now_s - self._checked_s >= RECHECK_S):
@@ -262,6 +265,8 @@ def main() -> int:
     parser.add_argument('--resolution', default='1920x1080', metavar='WxH',
                         help='camera size; 1280x720 on slow machines (e.g. ARM mini PC)')
     parser.add_argument('--marker-size-mm', type=float, help='printed marker side, as in the book template')
+    parser.add_argument('--tip-offset-mm', type=float, default=TIP_OFFSET_MM,
+                        help='move the reading point this far right on the page, toward the middle of the finger')
     parser.add_argument('--pad-fraction', type=float, default=PAD_FRACTION,
                         help='reading point from the fingertip toward the first joint: 0 = nail tip, 1 = joint')
     parser.add_argument('--debug-dir', type=Path, help='save the camera frame each time the status changes')
@@ -309,7 +314,8 @@ def main() -> int:
     panel_settings.apply_to(speech, settings)
     if cli_settings:
         panel_settings.save(args.settings, settings)
-    reader = FingerReader(FingertipTracker(pad_fraction=args.pad_fraction), CalibrationTracker(fmt), speech, fmt)
+    reader = FingerReader(FingertipTracker(pad_fraction=args.pad_fraction), CalibrationTracker(fmt), speech, fmt,
+                          tip_offset_mm=args.tip_offset_mm)
     panel = None
     if args.web is not None:
         import web_panel
@@ -357,9 +363,8 @@ def main() -> int:
                 latency.writerow([repr(reader.last_events[-1]), f'{reader.entered_s:.4f}', f'{done_s:.4f}',
                                   f'{done_s - reader.entered_s:.4f}'])
             if finger_log is not None:
-                tip, calibration = reader.tip, reader.calibration
-                point = calibration.to_page([tip])[0] if tip is not None and calibration is not None else ('', '')
-                size = hand_size_px(reader.tracker.hand_landmarks, tip, frame.shape[1], frame.shape[0])
+                point = reader.point_mm if reader.point_mm is not None else ('', '')
+                size = hand_size_px(reader.tracker.hand_landmarks, reader.tip, frame.shape[1], frame.shape[0])
                 entered = next((e.name or UNKNOWN for e in reader.last_events if isinstance(e, EnterCell)), '')
                 finger_log.writerow([f'{frame_s:.4f}', *point, '' if size is None else f'{size:.1f}', entered])
             if panel is not None:
@@ -372,7 +377,9 @@ def main() -> int:
                 if reader.calibration is not None:
                     draw_reading_zone(frame, reader.calibration, status, fmt)
                 if reader.page is not None and reader.calibration is not None:
-                    draw_overlay(frame, reader.page, reader.calibration, reader.tip, reader.active_cell)
+                    point = reader.point_mm
+                    tip = None if point is None else reader.calibration.to_image([point])[0]
+                    draw_overlay(frame, reader.page, reader.calibration, tip, reader.active_cell)
                 cv2.putText(frame, status, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 200, 255), 3)
             if to_panel:
                 panel.set_frame(frame, frame_s)

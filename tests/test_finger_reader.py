@@ -110,6 +110,18 @@ class FingerReaderTests(unittest.TestCase):
         self.assertEqual(self.learn(), 'reading')
         self.assertEqual(self.speaker.spoken, ['พร้อม 3 บรรทัด'])
 
+    def test_tip_offset_moves_the_reading_point_right_on_the_page(self):
+        self.reader.tip_offset_mm = 6.0
+        self.learn()
+        self.tracker.hand_present, self.tracker.tip = True, (5, 25)  # ยังไม่ถึงเซลล์ 10-16 mm ถ้าไม่เลื่อน
+        self.reader.step(FRAME, 1.0)
+        self.reader.step(FRAME, 1.3)
+        self.assertEqual(self.reader.point_mm.tolist(), [11.0, 25.0])
+        self.assertEqual(self.reader.last_events, [EnterCell(0, 0, 'สระไอ')])
+        self.tracker.hand_present, self.tracker.tip = False, None
+        self.reader.step(FRAME, 1.4)
+        self.assertIsNone(self.reader.point_mm)
+
     def test_fingertip_mapped_to_mm_drives_events(self):
         self.learn()
         self.tracker.hand_present, self.tracker.tip = True, (13, 25)
