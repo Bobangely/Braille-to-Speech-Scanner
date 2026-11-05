@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 import panel_settings
+from colored_braille import UnreadableBrailleFrame
 from finger_state import EnterCell, FingerState
 from page_calibration import DEFAULT_FORMAT, CalibrationTracker, PageFormat, page_format
 from page_map import PageLearner, new_ink_dots, read_page as read_colored_page
@@ -48,6 +49,7 @@ class FingerReader:
         self._finger: FingerState | None = None
         self.calibration = self.tip = None  # ค่าของเฟรมล่าสุด ใช้วาดภาพตัวอย่าง
         self._hand_seen_s = float('-inf')
+        self._unreadable = False  # บันทึก log ครั้งเดียวต่อช่วงที่อ่านหน้าไม่ได้
         self._verify = False  # หน้าถูกขยับ: ตรวจซ้ำทุกเฟรมที่ไม่มีมือจนกว่าจะแน่ใจ
 
     def step(self, frame, now_s: float) -> str:
@@ -82,7 +84,11 @@ class FingerReader:
         """หน้าสมุดสันห่วงที่พลิกทับ marker เดิมจะเปลี่ยนแค่จุดเบรลล์"""
         self._checked_s = now_s
         # หมึกใหม่เท่านั้นที่แปลว่าหน้าใหม่ มือที่ MediaPipe มองไม่เห็นทำได้แค่บังจุด
-        same = new_ink_dots(self.read_page(frame, calibration, self.fmt), self._finger.page, self.fmt) < NEW_INK_DOTS
+        try:
+            seen = self.read_page(frame, calibration, self.fmt)
+        except UnreadableBrailleFrame:
+            return  # เฟรมนี้บอกไม่ได้ว่าเป็นหน้าเดิมหรือไม่ รอตรวจรอบถัดไป
+        same = new_ink_dots(seen, self._finger.page, self.fmt) < NEW_INK_DOTS
         self._mismatches = 0 if same else self._mismatches + 1
         self._verify = self._verify and not same
         if self._mismatches >= self.required_maps:
@@ -105,7 +111,17 @@ class FingerReader:
         if self.tracker.hand_present:
             self._tell(LIFT_HAND)
             return
-        page = self._learner.update(self.read_page(frame, calibration, self.fmt))
+        try:
+            seen = self.read_page(frame, calibration, self.fmt)
+        except UnreadableBrailleFrame as error:
+            # แสงน้อยทำให้มีจุดรบกวนได้ทั้งเฟรม ต้องไม่ทำให้โปรแกรมดับ เริ่มนับการอ่านที่ตรงกันใหม่
+            if not self._unreadable:
+                log.warning('page unreadable, check the light: %s', error)
+            self._unreadable = True
+            self._learner = PageLearner(self.required_maps)
+            return
+        self._unreadable = False
+        page = self._learner.update(seen)
         if page is None:
             return
         self.speech.prepare_page(page)

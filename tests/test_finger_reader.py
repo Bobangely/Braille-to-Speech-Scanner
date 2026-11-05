@@ -3,6 +3,7 @@ import unittest
 
 import numpy as np
 
+from colored_braille import UnreadableBrailleFrame
 from finger_reader import FingerReader
 from finger_state import EnterCell
 from page_layout import CellSlot, LinePair, PageMap
@@ -59,9 +60,12 @@ class FingerReaderTests(unittest.TestCase):
         self.calibrator, self.tracker, self.speaker = FakeCalibrator(), FakeTracker(), RecordingSpeaker()
         self.reads = []
         self.lines_on_page, self.dots_on_page = 3, {1, 5, 6}
+        self.unreadable = False
 
         def read_page(frame, calibration, fmt):
             self.reads.append(frame)
+            if self.unreadable:
+                raise UnreadableBrailleFrame('noise')
             return page(self.lines_on_page, self.dots_on_page)
 
         self.reader = FingerReader(self.tracker, self.calibrator, SpeechQueue(self.speaker),
@@ -81,6 +85,26 @@ class FingerReaderTests(unittest.TestCase):
         self.assertEqual([self.reader.step(FRAME, i * 0.1) for i in range(5)], ['learning'] * 5)
         self.assertEqual(self.speaker.spoken, ['ยกมือออกก่อน'])
         self.assertEqual(self.reads, [])
+
+    def test_unreadable_frames_keep_learning_until_the_page_reads(self):
+        self.reader.step(FRAME, 0.0)
+        self.unreadable = True
+        self.assertEqual(self.reader.step(FRAME, 0.1), 'learning')
+        self.unreadable = False
+        self.assertEqual(self.learn(0.2), 'reading')
+
+    def test_unreadable_frame_breaks_the_run_of_equal_reads(self):
+        self.reader.step(FRAME, 0.0)
+        self.reader.step(FRAME, 0.1)
+        self.unreadable = True
+        self.reader.step(FRAME, 0.2)
+        self.unreadable = False
+        self.assertEqual(self.reader.step(FRAME, 0.3), 'learning')
+
+    def test_unreadable_recheck_keeps_reading(self):
+        self.learn()
+        self.unreadable = True
+        self.assertEqual(self.reader.step(FRAME, 5.0), 'reading')
 
     def test_learned_page_announces_lines(self):
         self.assertEqual(self.learn(), 'reading')
