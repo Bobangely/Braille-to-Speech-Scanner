@@ -171,7 +171,7 @@ class ServerTests(unittest.TestCase):
         status, kind, body = self.get('/')
         self.assertEqual(status, 200)
         self.assertIn('text/html', kind)
-        self.assertIn(b'BRAILLE STATION', body)
+        self.assertIn('สถานีอ่านเบรลล์'.encode(), body)
 
     def test_state_json(self):
         status, kind, body = self.get('/api/state')
