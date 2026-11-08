@@ -1,15 +1,10 @@
-"""ตารางเบรลล์ไทยแบบไม่ย่อ สำหรับข้อความใหม่และชุดข้อมูล
+"""ตารางเบรลล์ไทย
 
-พยัญชนะและเครื่องหมาย: liblouis tables/th-g0.utb (2023-06-01)
-สระประสม: World Braille Usage, 3rd ed. (2013), printed pp. 140-141
-
-หนึ่งเซลล์มี 6 จุด เรียงเลขแบบนี้:
+หนึ่งเซลล์มี 6 จุด 
     (1) (4)
     (2) (5)
     (3) (6)
 
-แต่ละแถวอ่านว่า จุดเหล่านี้คือตัวอักษรนี้ เช่น frozenset({1, 2, 4, 5}) คือ ก
-ใช้ frozenset เพราะลำดับจุดไม่มีผล และแก้ค่าไม่ได้ จึงเป็น key ของ dict ได้
 """
 
 THAI_CONSONANTS = {
@@ -75,7 +70,7 @@ THAI_CONSONANTS_PREFIX356 = {
     frozenset({2, 3, 4, 5, 6}): 'ธ',  # ทอธง
 }
 
-# ตัวเลข: เซลล์นำตัวเลขตามด้วยเซลล์ในตารางนี้
+# ตัวเลข: เซลล์นำตัวเลข
 NUMBER_INDICATOR = frozenset({3, 4, 5, 6})
 THAI_DIGIT_MAP = {
     frozenset({1}):          '1',
@@ -124,8 +119,7 @@ THAI_SPECIAL_MARKS = {
     frozenset({3}):       '็',  # ไม้ไต่คู้
     frozenset({2}):       'ๆ',  # ไม้ยมก
     frozenset({5}):       'ํ',  # นิคหิต
-    # ขีดกลางเดี่ยว ถ้ามีพยัญชนะที่ขึ้นต้นด้วย 36 ครบอยู่ติดกันจะใช้พยัญชนะก่อน
-    frozenset({3, 6}):    '-',  # ขีดกลาง
+    frozenset({3, 6}):    '-',  # ขีดกลาง # ขีดกลางเดี่ยว ถ้ามีพยัญชนะที่ขึ้นต้นด้วย 36 ครบอยู่ติดกันจะใช้พยัญชนะก่อน
 }
 
 # ตัวอักษรหลายเซลล์: รวมพยัญชนะ 2 เซลล์จากตารางด้านบน แล้วเพิ่มตัวอื่น
@@ -143,7 +137,7 @@ THAI_MULTI_CELL.update({
     (frozenset({5}), frozenset({1, 6})):       'ๅ',  # ลากข้าง
 })
 
-# หนังสือใช้เครื่องหมายวรรคตอนแบบมีตัวนำของไทย (Liblouis tables/th-g1.utb)
+# หนังสือใช้เครื่องหมายวรรคตอนแบบมีตัวนำของไทย 
 # คงคำศัพท์ชุดข้อมูลจำลองเดิม และเพิ่มเฉพาะตารางสำหรับอ่าน
 THAI_READING_MULTI_CELL = dict(THAI_MULTI_CELL)
 THAI_READING_MULTI_CELL.update({
@@ -156,24 +150,16 @@ THAI_READING_MULTI_CELL.update({
 })
 
 # ข้อความที่แสดงกับชื่อที่พูดใช้นิยามสัญลักษณ์ชุดเดียวกัน เพิ่มเข้า
-# ตารางอ่านเดิม เพื่อให้ทุกส่วนเห็นการจับคู่หลายเซลล์แบบเดียวกัน
 THAI_MULTI_CELL_SYMBOLS = {
     (frozenset({5}), frozenset({1, 2, 6})): dict(
         id='open_parenthesis', output='(', tts='วงเล็บเปิด', type='punctuation'),
     (frozenset({5}), frozenset({3, 4, 5})): dict(
         id='close_parenthesis', output=')', tts='วงเล็บปิด', type='punctuation'),
 }
-THAI_READING_MULTI_CELL.update({sequence: symbol['output']
+THAI_READING_MULTI_CELL.update({sequence: symbol['output']  
                                for sequence, symbol in THAI_MULTI_CELL_SYMBOLS.items()})
 
-LEADING_VOWELS = {'เ', 'แ', 'โ', 'ไ', 'ใ'}
-COMPOUND_VOWELS = {'เ◌า', 'เ◌อ', 'เ◌ีย', 'เ◌ือ', '◌ัว'}
-COMBINING_VOWELS = set(THAI_VOWELS.values()) - LEADING_VOWELS - COMPOUND_VOWELS
-CONSONANT_KEYS = set(THAI_CONSONANTS)
-VOWEL_KEYS = set(THAI_VOWELS)
-TONE_KEYS = set(THAI_TONE_MARKS)
-SPECIAL_KEYS = set(THAI_SPECIAL_MARKS)
-THAI_BRAILLE_TO_CHAR = {**THAI_CONSONANTS, **THAI_VOWELS,
+THAI_BRAILLE_TO_CHAR = {**THAI_CONSONANTS, **THAI_VOWELS, # ** รวมหลาย dict เป็นตัวเดียว ใช้ค้นเซลล์เดี่ยว
                        **THAI_TONE_MARKS, **THAI_SPECIAL_MARKS}
 THAI_CHAR_TO_BRAILLE = {char: pattern for pattern, char in THAI_BRAILLE_TO_CHAR.items()}
 THAI_CHAR_TO_BRAILLE.update({char: patterns for patterns, char in THAI_MULTI_CELL.items()})
