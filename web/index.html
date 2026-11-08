@@ -194,6 +194,56 @@
   }
   #pin-error { color: var(--bad); font-size: 14px; min-height: 1.3em; margin: 0; }
 
+  /* ---- ลูกเล่น: เกิดเฉพาะตอนมีเหตุการณ์ ไม่วนตลอดเวลา ---- */
+  /* พื้นหลังลายจุดเบรลล์จาง ๆ */
+  body {
+    background-image: radial-gradient(var(--line) 1.6px, transparent 1.8px);
+    background-size: 22px 22px;
+  }
+  @media (hover: hover) {
+    .card { transition: border-color .2s ease-out, box-shadow .2s ease-out; }
+    .card:hover { border-color: var(--tone-ink, var(--accent)); box-shadow: 0 10px 24px -14px rgba(122, 72, 40, .45); }
+  }
+  /* ตัวอักษรใต้นิ้วเด้งเมื่อเปลี่ยนเซลล์ */
+  .symbol.pop { animation: pop .32s cubic-bezier(.2, .9, .3, 1.4); }
+  @keyframes pop { from { transform: scale(.82) translateY(4px); opacity: .4; } to { transform: none; opacity: 1; } }
+  /* จุดเบรลล์ติดทีละจุด */
+  .braille-grid .dot.active { transition-timing-function: cubic-bezier(.2, .9, .3, 1.5); }
+  .braille-grid .dot[data-dot="2"] { transition-delay: 30ms; } .braille-grid .dot[data-dot="3"] { transition-delay: 60ms; }
+  .braille-grid .dot[data-dot="4"] { transition-delay: 90ms; } .braille-grid .dot[data-dot="5"] { transition-delay: 120ms; }
+  .braille-grid .dot[data-dot="6"] { transition-delay: 150ms; }
+  /* คลื่นเสียงตอนสถานีพูด */
+  .wave { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; margin-left: 2px; }
+  .wave i { width: 3px; height: 4px; border-radius: 2px; background: var(--tone-ink); }
+  .wave.on i { animation: wave .4s ease-in-out 3 alternate; }
+  .wave.on i:nth-child(2) { animation-delay: .1s; } .wave.on i:nth-child(3) { animation-delay: .2s; }
+  @keyframes wave { to { height: 14px; } }
+  /* คำที่กำลังอ่านมีจุดบอกตำแหน่งใต้คำ */
+  .word-span { position: relative; }
+  .word-span.active::after {
+    content: ""; position: absolute; left: 50%; bottom: -9px; width: 7px; height: 7px; margin-left: -3.5px;
+    border-radius: 50%; background: var(--accent); animation: drop .25s ease-out;
+  }
+  @keyframes drop { from { transform: translateY(-6px); opacity: 0; } }
+  /* ป้ายสถานะมีจุดสีนำหน้า */
+  .chip::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: 1px; opacity: .8; }
+  /* ปุ่มธีมหมุนไอคอนตอนสลับ */
+  .theme-toggle svg { transition: transform .4s cubic-bezier(.2, .9, .3, 1.3); }
+  .theme-toggle.spin svg { transform: rotate(180deg); }
+  /* ฉลองเมื่อจำหน้าเสร็จ: จุดสีกระจายจากหัวการ์ดข้อความ */
+  .page { position: relative; }
+  .burst { position: absolute; left: 60px; top: 24px; pointer-events: none; }
+  .burst i { position: absolute; width: 9px; height: 9px; border-radius: 50%; animation: burst .9s ease-out forwards; }
+  @keyframes burst { from { transform: translate(0, 0) scale(1); opacity: 1; } to { transform: translate(var(--x), var(--y)) scale(.4); opacity: 0; } }
+  .ready-note {
+    display: inline-block; margin-left: 8px; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 700;
+    background: var(--mint-soft); color: var(--mint-ink); animation: pop .32s ease-out;
+  }
+  /* หน้ายังว่าง: ภาพหนังสือ */
+  .empty { display: flex; align-items: center; gap: 14px; padding: 10px 4px; color: var(--muted); }
+  .empty svg { width: 64px; height: 64px; flex: none; }
+  .empty b { display: block; color: var(--text); font-size: 17px; }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { transition: none !important; animation: none !important; }
   }
@@ -277,6 +327,7 @@
       </div>
       <div class="spoken-row muted">
         <span>พูดล่าสุด:</span> <b id="spoken" style="color: var(--text);">—</b>
+        <span class="wave" id="wave" aria-hidden="true"><i></i><i></i><i></i></span>
       </div>
       <div class="btn-bar">
         <button class="btn-action primary" id="btn-replay" title="สั่งให้ออกเสียงซ้ำอีกครั้ง">
@@ -337,7 +388,7 @@
       </div>
       <span class="page-stats" id="page-stats">รอหน้าหนังสือ</span>
     </div>
-    <div id="lines"><p class="muted">รอหน้าหนังสือ</p></div>
+    <div id="lines"></div>
   </section>
 </main>
 
@@ -595,6 +646,46 @@ $('stream').onerror = () => {
   }, 1200);
 };
 
+const EMPTY = `<div class="empty">
+  <svg viewBox="0 0 64 64" aria-hidden="true">
+    <path d="M6 14c9-4 18-4 26 2v38c-8-6-17-6-26-2z" fill="var(--peach-soft)" stroke="var(--peach-ink)" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M58 14c-9-4-18-4-26 2v38c8-6 17-6 26-2z" fill="var(--lav-soft)" stroke="var(--lav-ink)" stroke-width="2.5" stroke-linejoin="round"/>
+    <g fill="var(--accent)"><circle cx="15" cy="24" r="2.2"/><circle cx="22" cy="24" r="2.2"/><circle cx="15" cy="31" r="2.2"/><circle cx="42" cy="24" r="2.2"/><circle cx="42" cy="31" r="2.2"/><circle cx="49" cy="38" r="2.2"/></g>
+  </svg>
+  <div><b>วางหนังสือใต้กล้องได้เลย</b>ให้เห็นมุมครบ 4 มุม แล้วยกมือออกสักครู่ ระบบจะจำหน้าให้เอง</div>
+</div>`;
+
+// เล่นแอนิเมชันซ้ำได้ทุกครั้ง: ถอด class แล้วใส่ใหม่หลังเบราว์เซอร์คำนวณหน้าใหม่
+function replay(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
+// จำหน้าเสร็จ: จุดสีกระจายจากหัวการ์ด และป้าย "พร้อมอ่านแล้ว"
+let lastStatus = null;
+function celebrate() {
+  const card = document.querySelector('.page');
+  const burst = document.createElement('span');
+  burst.className = 'burst';
+  const colors = ['var(--accent)', 'var(--mint-ink)', 'var(--lav-ink)', 'var(--peach-line)'];
+  for (let i = 0; i < 14; i++) {
+    const dot = document.createElement('i');
+    const angle = (i / 14) * Math.PI * 2;
+    dot.style.background = colors[i % colors.length];
+    dot.style.setProperty('--x', `${Math.cos(angle) * (50 + (i % 3) * 18)}px`);
+    dot.style.setProperty('--y', `${Math.sin(angle) * (40 + (i % 3) * 14)}px`);
+    burst.append(dot);
+  }
+  card.append(burst);
+  setTimeout(() => burst.remove(), 1000);
+  const note = document.createElement('span');
+  note.className = 'ready-note';
+  note.textContent = 'พร้อมอ่านแล้ว';
+  card.querySelector('.label').after(note);
+  setTimeout(() => note.remove(), 3000);
+}
+
 let shownLines = '';
 function render(s) {
   chip('chip-markers', s.markers, s.markers ? 'พบ marker' : 'ไม่เห็น marker');
@@ -605,9 +696,19 @@ function render(s) {
   updateAudioState(Boolean(s.muted));
   if (s.audio_config) updateAudioUI(s.audio_config);
 
-  $('symbol').textContent = s.symbol || '—';
+  const symbol = s.symbol || '—';
+  if ($('symbol').textContent !== symbol) {
+    $('symbol').textContent = symbol;
+    replay($('symbol'), 'pop');
+  }
   $('word').textContent = s.word || '—';
-  $('spoken').textContent = s.last_spoken || '—';
+  const spoken = s.last_spoken || '—';
+  if ($('spoken').textContent !== spoken) {
+    $('spoken').textContent = spoken;
+    if (s.last_spoken) replay($('wave'), 'on');
+  }
+  if (lastStatus === 'learning' && s.status === 'reading') celebrate();
+  lastStatus = s.status;
 
   updateDots(s.dots);
   // Rebuild word spans only when the page layout changes
@@ -617,7 +718,7 @@ function render(s) {
     const box = $('lines');
     box.replaceChildren();
     if (!s.lines.length) {
-      box.innerHTML = '<p class="muted">รอหน้าหนังสือ</p>';
+      box.innerHTML = EMPTY;
       $('page-stats').textContent = 'รอหน้าหนังสือ';
     } else {
       let totalWords = 0;
@@ -738,6 +839,7 @@ $('theme-toggle').onclick = () => {
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem('theme', next); } catch {}
   showTheme();
+  $('theme-toggle').classList.toggle('spin');
 };
 showTheme();
 
