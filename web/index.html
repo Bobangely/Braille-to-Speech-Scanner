@@ -6,225 +6,231 @@
 <title>Braille Station</title>
 <!-- Teacher panel & Station Interface. API contract: docs/web-api.md. Opened from file:// or with ?demo runs on simulation. -->
 <style>
+  /* ธีม "พาสเทลห้องเรียน": ครีม พีช มิ้นต์ ลาเวนเดอร์ สีเข้มของแต่ละโทนผ่าน WCAG AA บนพื้นของตัวเอง */
   :root {
-    --blue: #0050dc; --blue-hover: #003eb0; --blue-soft: #dbe7ff; --blue-border: #bfd4ff;
-    --bg: #f6f7f9; --card: #ffffff; --line: #e1e5eb;
-    --text: #1d2430; --muted: #5b6472;
-    --ok-bg: #dcfce7; --ok: #166534; --bad-bg: #fee2e2; --bad: #991b1b;
-    --amber-bg: #fef3c7; --amber: #92400e;
-    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -2px rgba(0,0,0,0.05);
+    color-scheme: light;
+    --bg: #fff8f0; --card: #ffffff; --line: #f1e3d8; --text: #2b2233; --muted: #6b5f73;
+    --accent: #c8432a; --accent-hover: #a83620; --on-accent: #ffffff;
+    --peach-soft: #ffeee6; --peach-line: #ffd9c9; --peach-ink: #a83620;
+    --mint-soft: #dcf5ea; --mint-line: #bfe9d6; --mint-ink: #17694a;
+    --lav-soft: #efe8fc; --lav-line: #ddd0f7; --lav-ink: #5b3fa0;
+    --ok-bg: #dcf5ea; --ok: #17694a; --bad-bg: #ffe4e1; --bad: #a3261b;
+    --amber-bg: #fff1c9; --amber: #7a4d00; --plain-bg: #f6eee8;
+    --viewport: #2d2a3a; --dot-off: #e9dcd3;
+    --shadow: 0 1px 0 rgba(122, 72, 40, .06), 0 6px 16px -10px rgba(122, 72, 40, .25);
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #1c1822; --card: #27222e; --line: #3a3342; --text: #f4eef7; --muted: #b9aec3;
+    --accent: #ff9a7a; --accent-hover: #ffb59c; --on-accent: #2a140d;
+    --peach-soft: #3a2620; --peach-line: #5a362b; --peach-ink: #ffb59c;
+    --mint-soft: #1d3a2f; --mint-line: #2c5545; --mint-ink: #8be3bd;
+    --lav-soft: #2f2744; --lav-line: #463a66; --lav-ink: #cdbbff;
+    --ok-bg: #1d3a2f; --ok: #8be3bd; --bad-bg: #45201c; --bad: #ffb0a6;
+    --amber-bg: #3f3215; --amber: #ffd98a; --plain-bg: #332c3b;
+    --viewport: #120f17; --dot-off: #4a4153;
+    --shadow: 0 6px 18px -12px rgba(0, 0, 0, .7);
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
-    font: 16px/1.45 system-ui, "Segoe UI", "Noto Sans Thai", Tahoma, sans-serif;
+    font: 16px/1.5 "Leelawadee UI", "Noto Sans Thai", "Segoe UI", Tahoma, sans-serif;
     -webkit-font-smoothing: antialiased;
+    transition: background-color .2s ease, color .2s ease;
   }
+  .muted { color: var(--muted); }
+
   header {
-    display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
-    padding: 12px 20px; background: var(--card); border-bottom: 1px solid var(--line);
-    box-shadow: var(--shadow-sm);
+    display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between;
+    padding: 12px 20px; background: var(--card); border-bottom: 2px solid var(--line);
   }
-  .brand { display: flex; align-items: center; gap: 8px; }
-  h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: .5px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  /* โลโก้: เซลล์เบรลล์ 6 จุด */
+  .logo {
+    width: 34px; height: 34px; border-radius: 10px; background: var(--accent);
+    display: grid; grid-template-columns: repeat(2, 6px); grid-auto-rows: 6px; gap: 3px;
+    place-content: center; flex: none;
+  }
+  .logo i { width: 6px; height: 6px; border-radius: 50%; background: var(--on-accent); }
+  .logo i.o { opacity: .35; }
+  h1 { margin: 0; font-size: 19px; font-weight: 700; }
+  .header-right { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .chip {
-    padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600;
-    background: var(--ok-bg); color: var(--ok); transition: all .2s ease;
+    padding: 3px 11px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    background: var(--ok-bg); color: var(--ok);
   }
   .chip.off { background: var(--bad-bg); color: var(--bad); }
-  .chip.plain { background: #eef1f5; color: var(--muted); }
+  .chip.plain { background: var(--plain-bg); color: var(--muted); }
   .chip.warn { background: var(--amber-bg); color: var(--amber); }
+  .theme-toggle {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 6px 14px;
+    border: 2px solid var(--line); border-radius: 999px; background: var(--card); color: var(--text);
+    font-size: 14px; font-weight: 600;
+  }
+  .theme-toggle svg { width: 18px; height: 18px; }
 
-  #offline { display: none; padding: 10px 16px; background: var(--bad); color: #fff; font-weight: 600; text-align: center; }
-  #offline.show { display: block; animation: slideDown .25s ease; }
-  @keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+  #offline { display: none; padding: 10px 16px; background: var(--bad); color: var(--card); font-weight: 600; text-align: center; }
+  #offline.show { display: block; }
 
   main {
-    display: grid; grid-template-columns: 2fr 1fr; gap: 16px;
-    padding: 16px 20px; max-width: 1340px; margin: 0 auto;
+    display: grid; grid-template-columns: 2fr 1fr; gap: 18px;
+    padding: 18px 20px 28px; max-width: 1340px; margin: 0 auto;
   }
   .card {
-    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-    padding: 16px; box-shadow: var(--shadow-sm);
+    background: var(--card); border: 2px solid var(--line); border-radius: 18px;
+    padding: 16px 18px; box-shadow: var(--shadow);
   }
-  .card-header {
-    display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
-  }
+  /* แต่ละการ์ดมีโทนของตัวเอง: กรอบและป้ายหัวการ์ด */
+  .tone-peach { border-color: var(--peach-line); --tone-soft: var(--peach-soft); --tone-ink: var(--peach-ink); }
+  .tone-mint { border-color: var(--mint-line); --tone-soft: var(--mint-soft); --tone-ink: var(--mint-ink); }
+  .tone-lav { border-color: var(--lav-line); --tone-soft: var(--lav-soft); --tone-ink: var(--lav-ink); }
+  .card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
   .label {
-    font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
-    color: var(--muted); margin: 0 0 6px;
+    display: inline-block; margin: 0 0 10px; padding: 3px 12px; border-radius: 999px;
+    font-size: 14px; font-weight: 700;
+    background: var(--tone-soft, var(--plain-bg)); color: var(--tone-ink, var(--muted));
   }
+  .card-header .label { margin: 0; }
 
-  /* Camera Card */
-  .cam {
-    display: flex; flex-direction: column; gap: 10px;
-    padding: 14px; background: var(--card); border-radius: 12px;
-    border: 1px solid var(--line); box-shadow: var(--shadow-sm);
-  }
-  .cam .placeholder { color: #8392a5; font-size: 15px; position: absolute; pointer-events: none; }
-  .cam-bar {
-    display: flex; justify-content: space-between; align-items: center;
-    gap: 8px; flex-wrap: wrap; width: 100%;
-  }
+  /* การ์ดกล้อง */
+  .cam { display: flex; flex-direction: column; gap: 10px; align-self: start; }
+  .cam-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
   .cam-left { display: flex; align-items: center; gap: 6px; }
   .cam-badge {
-    background: #0f172a; color: #fff;
-    font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: var(--tone-soft); color: var(--tone-ink);
+    font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 999px;
   }
+  .cam-viewport {
+    position: relative; width: 100%; aspect-ratio: 16 / 9; background: var(--viewport);
+    border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  }
+  .cam-viewport img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .cam .placeholder { color: #c9c0d6; font-size: 15px; position: absolute; pointer-events: none; }
 
-  /* Aside / Controls */
-  aside { display: flex; flex-direction: column; gap: 16px; }
+  aside { display: flex; flex-direction: column; gap: 18px; }
 
-  /* Fingertip Hero Display */
+  /* ใต้นิ้ว */
   .fingertip-row {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 8px 0 12px; border-bottom: 1px solid var(--line);
+    padding: 4px 0 12px; border-bottom: 2px dashed var(--line);
   }
-  .symbol {
-    font-size: 42px; font-weight: 800; color: var(--blue); line-height: 1.1;
-    min-height: 48px; letter-spacing: -0.5px;
-  }
+  .symbol { font-size: 44px; font-weight: 800; color: var(--accent); line-height: 1.15; min-height: 50px; }
   .braille-preview {
-    display: flex; flex-direction: column; align-items: center; gap: 4px;
-    padding: 6px 10px; background: #f0f4fa; border: 1px solid #dce4f0; border-radius: 8px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 8px 12px; background: var(--tone-soft); border-radius: 14px;
   }
-  .braille-grid {
-    display: grid; grid-template-columns: 14px 14px; grid-template-rows: repeat(3, 14px);
-    gap: 6px;
-  }
-  .braille-grid .dot {
-    width: 14px; height: 14px; border-radius: 50%; background: #ccd5e3;
-    transition: all .15s ease;
-  }
-  .braille-grid .dot.active {
-    background: var(--blue); box-shadow: 0 0 5px rgba(0, 80, 220, 0.5);
-    transform: scale(1.15);
-  }
-  .braille-dots-text { font-size: 11px; font-weight: 700; color: var(--muted); }
-
+  .braille-grid { display: grid; grid-template-columns: 14px 14px; grid-template-rows: repeat(3, 14px); gap: 6px; }
+  .braille-grid .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--dot-off); transition: background-color .15s ease, transform .15s ease; }
+  .braille-grid .dot.active { background: var(--accent); transform: scale(1.12); }
+  .braille-dots-text { font-size: 12px; font-weight: 700; color: var(--tone-ink); }
   .word { font-size: 18px; margin-top: 8px; }
-  .word b { color: var(--text); }
-  .spoken-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 14px; }
+  .spoken-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 14px; color: var(--muted); }
 
-  /* Buttons & Segmented Controls */
-  button {
-    font: inherit; cursor: pointer; transition: background .15s ease, border-color .15s ease, transform .1s ease;
-  }
-  button:active { transform: scale(0.98); }
-  button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
-
-  .btn-bar { display: flex; gap: 8px; margin-top: 12px; }
+  /* ปุ่ม */
+  button { font: inherit; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .1s ease; }
+  button:active { transform: scale(0.97); }
+  button:disabled { cursor: not-allowed; opacity: .5; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .btn-bar { display: flex; gap: 8px; margin-top: 14px; }
   .btn-action {
     flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px;
-    background: var(--card); color: var(--text); font-weight: 600; font-size: 14px;
+    min-height: 46px; padding: 8px 14px; border: 2px solid var(--line); border-radius: 14px;
+    background: var(--card); color: var(--text); font-weight: 700; font-size: 15px;
   }
-  .btn-action:hover { background: #f1f4f9; border-color: #cfd6df; }
-  .btn-action.primary {
-    background: var(--blue); color: #fff; border-color: var(--blue);
-  }
-  .btn-action.primary:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
+  .btn-action:hover { border-color: var(--accent); }
+  .btn-action.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .btn-action.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 
-  .seg { display: flex; border: 1px solid #cfd6df; border-radius: 8px; overflow: hidden; margin: 4px 0 10px; }
-  .seg button { flex: 1; min-height: 44px; padding: 7px 0; border: 0; background: var(--card); color: var(--text); font-size: 13px; font-weight: 500; }
-  .seg button[aria-pressed="true"] { background: var(--blue); color: #fff; font-weight: 700; }
-  .stepper { display: flex; align-items: center; gap: 8px; }
+  .seg { display: flex; gap: 4px; padding: 4px; margin: 6px 0 12px; border-radius: 14px; background: var(--tone-soft, var(--plain-bg)); }
+  .seg button {
+    flex: 1; min-height: 42px; padding: 6px 8px; border: 0; border-radius: 10px;
+    background: transparent; color: var(--text); font-size: 14px; font-weight: 600; line-height: 1.3;
+  }
+  .seg button[aria-pressed="true"] { background: var(--tone-ink, var(--accent)); color: var(--card); font-weight: 800; }
+  .stepper { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .stepper.dim { opacity: .45; }
-  .stepper button, .toggle {
-    min-width: 44px; min-height: 44px; padding: 6px 12px; border: 1px solid #cfd6df; border-radius: 8px;
-    background: var(--card); color: var(--text); font-weight: 600;
+  .stepper button {
+    min-width: 44px; min-height: 44px; padding: 6px 12px; border: 2px solid var(--line); border-radius: 12px;
+    background: var(--card); color: var(--text); font-weight: 700; font-size: 18px;
   }
-  .toggle[aria-pressed="true"] { background: #16a34a; border-color: #16a34a; color: #fff; }
-  .stepper output { min-width: 1.5em; text-align: center; font-size: 20px; font-weight: 700; }
-  #error { color: var(--bad); font-size: 13px; min-height: 1.3em; margin: 6px 0 0; }
+  .stepper output { min-width: 1.6em; text-align: center; font-size: 22px; font-weight: 800; color: var(--tone-ink); }
+  #error { color: var(--bad); font-size: 14px; min-height: 1.3em; margin: 6px 0 0; }
 
-  /* Audio Configuration Sliders */
+  /* ตั้งค่าเสียง */
   .setting-item { margin-bottom: 12px; }
   .setting-item:last-child { margin-bottom: 0; }
-  .sublabel { font-size: 13px; font-weight: 600; color: var(--muted); }
-  .range-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-  .val-badge { font-size: 13px; color: var(--blue); font-weight: 700; }
-  .slider {
-    width: 100%; height: 44px; accent-color: var(--blue); cursor: pointer; margin: 0;
-  }
-  .range-ticks {
-    display: flex; justify-content: space-between; font-size: 11px; color: var(--muted);
-  }
+  .sublabel { font-size: 14px; font-weight: 600; color: var(--muted); }
+  .range-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+  .val-badge { font-size: 14px; color: var(--tone-ink); font-weight: 800; }
+  .slider { width: 100%; height: 44px; accent-color: var(--mint-ink); cursor: pointer; margin: 0; }
 
-  /* Camera Viewport & Digital Zoom / Rotate Controls */
-  .cam-viewport {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    background: #0d131f;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .cam-viewport img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
-
-  /* Full Page View */
+  /* ข้อความทั้งหน้า */
   .page { grid-column: 1 / -1; }
-  .page-hint { font-size: 13px; color: var(--muted); font-weight: normal; margin-left: 8px; }
-  .page-stats { font-size: 13px; font-weight: 600; color: var(--muted); }
-  #lines { padding-top: 4px; }
-  #lines p { margin: 8px 0; font-size: 22px; line-height: 1.6; }
+  .page-hint { font-size: 14px; color: var(--muted); margin-left: 8px; }
+  .page-stats { font-size: 14px; font-weight: 700; color: var(--tone-ink); }
+  #lines { padding-top: 2px; }
+  #lines p { margin: 6px 0; font-size: 22px; line-height: 1.7; }
   .word-span {
-    display: inline-block; min-width: 44px; padding: 4px 8px; margin: 2px 3px; border-radius: 6px;
-    background: #f7f9fb; border: 1px solid transparent; cursor: pointer; text-align: center;
-    user-select: none; transition: all .15s ease;
+    display: inline-block; min-width: 44px; padding: 3px 10px; margin: 2px 3px; border-radius: 12px;
+    background: var(--plain-bg); border: 2px solid transparent; cursor: pointer; text-align: center;
+    user-select: none; transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
   }
   /* จอสัมผัสจะค้างสถานะ hover หลังแตะ */
   @media (hover: hover) {
-    .word-span:hover {
-      background: var(--blue-soft); border-color: var(--blue-border); color: var(--blue);
-      transform: translateY(-1px);
-    }
+    .word-span:hover { background: var(--tone-soft); border-color: var(--lav-line); transform: translateY(-1px); }
   }
-  .word-span.active {
-    background: var(--blue-soft); color: var(--blue); font-weight: 700;
-    border-color: var(--blue); box-shadow: 0 0 0 2px rgba(0,80,220,0.15);
-  }
-  .word-span.flash {
-    animation: flashWord .4s ease;
-  }
-  @keyframes flashWord {
-    0% { background: #ffe4b5; transform: scale(1.1); }
-    100% { background: var(--blue-soft); transform: scale(1); }
-  }
+  .word-span.active { background: var(--tone-soft); color: var(--tone-ink); font-weight: 800; border-color: var(--tone-ink); }
+  .word-span.flash { animation: flashWord .4s ease; }
+  @keyframes flashWord { 0% { background: var(--peach-soft); transform: scale(1.08); } 100% { transform: scale(1); } }
 
   /* หน้าใส่ PIN: ตัวอักษร 16px ขึ้นไป iPhone จึงไม่ซูมเข้าเองตอนแตะช่องกรอก */
-  #pin-form { display: flex; flex-direction: column; gap: 10px; max-width: 360px; margin: 32px auto; }
+  #pin-form { display: flex; flex-direction: column; gap: 12px; max-width: 360px; margin: 40px auto; }
   #pin-form label { font-weight: 700; }
-  #pin { min-height: 44px; padding: 8px 12px; border: 1px solid #cfd6df; border-radius: 8px; font: inherit; font-size: 20px; letter-spacing: 4px; }
+  #pin {
+    min-height: 48px; padding: 8px 14px; border: 2px solid var(--line); border-radius: 12px;
+    background: var(--card); color: var(--text); font: inherit; font-size: 22px; letter-spacing: 6px;
+  }
   #pin-error { color: var(--bad); font-size: 14px; min-height: 1.3em; margin: 0; }
 
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
   @media (max-width: 860px) {
-    main { grid-template-columns: 1fr; padding: 12px; }
+    main { grid-template-columns: 1fr; padding: 12px 12px 24px; gap: 14px; }
     .page { grid-column: 1; }
+    header { padding: 10px 12px; }
   }
 </style>
+<script>
+  // ตั้งธีมก่อนวาดหน้า จะได้ไม่กะพริบเป็นสีสว่างก่อน; เครื่องที่ไม่เคยเลือกใช้ตามระบบ
+  (() => {
+    let saved = null;
+    try { saved = localStorage.getItem('theme'); } catch {}
+    const dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  })();
+</script>
 </head>
 <body>
 <header>
   <div class="brand">
-    <h1>BRAILLE STATION</h1>
+    <span class="logo" aria-hidden="true"><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i></span>
+    <h1>สถานีอ่านเบรลล์</h1>
   </div>
-  <div class="chips" aria-live="polite">
-    <span class="chip" id="chip-markers">marker</span>
-    <span class="chip" id="chip-hand">มือ</span>
-    <span class="chip plain" id="chip-status">—</span>
-    <span class="chip plain" id="chip-fps">— fps</span>
-    <span class="chip plain" id="chip-audio">เสียงเปิด</span>
+  <div class="header-right">
+    <div class="chips" aria-live="polite">
+      <span class="chip" id="chip-markers">marker</span>
+      <span class="chip" id="chip-hand">มือ</span>
+      <span class="chip plain" id="chip-status">—</span>
+      <span class="chip plain" id="chip-fps">— fps</span>
+      <span class="chip plain" id="chip-audio">เสียงเปิด</span>
+    </div>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="เปลี่ยนเป็นธีมมืด">
+      <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"></svg>
+      <span id="theme-text">ธีมมืด</span>
+    </button>
   </div>
 </header>
 <div id="offline" role="alert">ขาดการเชื่อมต่อกับสถานี กำลังพยายามเชื่อมต่อใหม่…</div>
@@ -238,7 +244,7 @@
 
 <main>
   <!-- Camera stream preview -->
-  <section class="card cam" aria-label="ภาพกล้อง">
+  <section class="card cam tone-lav" aria-label="ภาพกล้อง">
     <div class="cam-bar">
       <div class="cam-left">
         <span class="cam-badge" id="cam-badge">กำลังตรวจหากล้อง…</span>
@@ -253,7 +259,7 @@
   <!-- Control aside -->
   <aside>
     <!-- Fingertip Details & Braille Matrix -->
-    <section class="card" aria-live="polite">
+    <section class="card tone-peach" aria-live="polite">
       <p class="label">ใต้นิ้ว (Fingertip)</p>
       <div class="fingertip-row">
         <div>
@@ -283,7 +289,7 @@
     </section>
 
     <!-- Audio Configuration: Engine, Rate, Volume -->
-    <section class="card">
+    <section class="card tone-mint">
       <p class="label">ระบบเสียง (Audio Settings)</p>
       <!-- Voice Engine Toggle -->
       <div class="setting-item">
@@ -304,7 +310,7 @@
     </section>
 
     <!-- Speech Mode Settings -->
-    <section class="card">
+    <section class="card tone-lav">
       <p class="label">โหมดเสียง (Speech Mode)</p>
       <div class="seg" role="group" aria-label="โหมดเสียง">
         <button id="mode-spell" aria-pressed="true">สะกด</button>
@@ -323,7 +329,7 @@
   </aside>
 
   <!-- Page Text Display with Click-to-Speak -->
-  <section class="card page">
+  <section class="card page tone-peach">
     <div class="card-header">
       <div>
         <span class="label">ข้อความทั้งหน้า</span>
@@ -717,6 +723,23 @@ $('btn-replay').onclick = async () => {
 $('btn-mute').onclick = async () => {
   await postAction({action: 'toggle_mute'});
 };
+
+// ปุ่มสลับธีม: ไอคอนบอกธีมที่จะเปลี่ยนไป
+const SUN = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+const MOON = '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
+function showTheme() {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  $('theme-icon').innerHTML = dark ? SUN : MOON;
+  $('theme-text').textContent = dark ? 'ธีมสว่าง' : 'ธีมมืด';
+  $('theme-toggle').setAttribute('aria-label', dark ? 'เปลี่ยนเป็นธีมสว่าง' : 'เปลี่ยนเป็นธีมมืด');
+}
+$('theme-toggle').onclick = () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('theme', next); } catch {}
+  showTheme();
+};
+showTheme();
 
 showSettings();
 poll();
