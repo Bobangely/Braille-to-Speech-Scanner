@@ -12,11 +12,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import cv2
 import numpy as np
 
 from page_layout import CellSlot, LinePair, PageMap
 from panel_settings import DEFAULTS
-from web_panel import PanelState, start
+from web_panel import PanelState, lan_ip, start
 
 
 def page():
@@ -124,6 +125,56 @@ class PinTests(unittest.TestCase):
                 self.assertIn(self.call('/api/login', body)[0], (400, 401))
         self.assertGreaterEqual(time.monotonic() - started, 1.0)
         self.assertEqual(self.call('/api/state', cookie='pin=000000')[0], 401)
+
+
+class ConnectCardTests(unittest.TestCase):
+    """การ์ด QR บนจอสถานี: ให้ที่อยู่และ PIN เฉพาะเครื่องสถานีเอง"""
+    PIN = '482913'
+
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        self.server = start(0, PanelState(dict(DEFAULTS)), SimpleNamespace(mode='spell', spell_max_cells=2),
+                            Path(self._dir.name) / 's.json', host='0.0.0.0', pin=self.PIN)
+        self.port = self.server.server_address[1]
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self._dir.cleanup()
+
+    def get(self, host, path):
+        try:
+            with urllib.request.urlopen(f'http://{host}:{self.port}{path}', timeout=5) as r:
+                return r.status, r.headers.get('Content-Type'), r.read()
+        except urllib.error.HTTPError as error:
+            return error.code, None, b''
+
+    def test_station_gets_address_and_pin_without_logging_in(self):
+        status, kind, body = self.get('127.0.0.1', '/api/connect')
+        self.assertEqual(status, 200)
+        info = json.loads(body)
+        self.assertEqual(info['pin'], self.PIN)
+        self.assertTrue(info['network'])
+        ip = lan_ip()
+        if ip:
+            self.assertEqual(info['url'], f'http://{ip}:{self.port}')
+
+    def test_qr_png_holds_the_address(self):
+        url = json.loads(self.get('127.0.0.1', '/api/connect')[2])['url']
+        if url is None:
+            self.skipTest('no network on this machine')
+        status, kind, body = self.get('127.0.0.1', '/qr.png')
+        self.assertEqual((status, kind), (200, 'image/png'))
+        image = cv2.imdecode(np.frombuffer(body, np.uint8), cv2.IMREAD_GRAYSCALE)
+        self.assertEqual(cv2.QRCodeDetector().detectAndDecode(image)[0], url)
+
+    def test_other_devices_cannot_read_the_pin(self):
+        ip = lan_ip()
+        if ip is None:
+            self.skipTest('no network on this machine')
+        for path in ('/api/connect', '/qr.png'):
+            with self.subTest(path=path):
+                self.assertEqual(self.get(ip, path)[0], 404)
 
 
 class WebOptionTests(unittest.TestCase):

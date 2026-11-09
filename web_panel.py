@@ -103,6 +103,18 @@ def _jpeg(frame) -> bytes:
     return data.tobytes()
 
 
+def _qr_png(text: str) -> bytes:
+    """QR code เป็น PNG ด้วย OpenCV ที่ติดตั้งอยู่แล้ว ไม่ต้องใช้อินเทอร์เน็ต"""
+    modules = cv2.QRCodeEncoder.create().encode(text)
+    # ขอบขาว 4 ช่องตามมาตรฐาน แล้วขยายแบบไม่เบลอให้กล้องมือถืออ่านง่าย
+    modules = cv2.copyMakeBorder(modules, 4, 4, 4, 4, cv2.BORDER_CONSTANT, value=255)
+    image = cv2.resize(modules, None, fx=10, fy=10, interpolation=cv2.INTER_NEAREST)
+    ok, data = cv2.imencode('.png', image)
+    if not ok:
+        raise RuntimeError('cannot encode QR code')
+    return data.tobytes()
+
+
 def lan_ip() -> str | None:
     """IP ของเครื่องนี้ในวง WiFi หรือ hotspot ปัจจุบัน UDP connect แค่เลือกเส้นทาง ไม่ส่งข้อมูลจริง"""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
@@ -151,6 +163,21 @@ def start(port: int, state: PanelState, speech, settings_path: Path, host: str =
             self.send_header('Content-Length', '0')
             self.end_headers()
 
+        def _connect(self, path: str) -> None:
+            """การ์ด QR บนจอสถานี: ที่อยู่และ PIN ให้เฉพาะเครื่องสถานีเอง เครื่องอื่นเห็นเป็น 404"""
+            if self.client_address[0] not in ('127.0.0.1', '::1'):
+                self._json(404, {'error': 'ไม่พบหน้านี้'})
+                return
+            network = host not in ('127.0.0.1', 'localhost')
+            ip = (lan_ip() if host == '0.0.0.0' else host) if network else None
+            url = f'http://{ip}:{self.server.server_address[1]}' if ip else None
+            if path == '/api/connect':
+                self._json(200, {'network': network, 'url': url, 'pin': pin})
+            elif url is None:
+                self._json(404, {'error': 'ยังไม่ได้เปิดให้เครื่องอื่นเข้า'})
+            else:
+                self._send(200, _qr_png(url), 'image/png')
+
         def _send(self, code: int, body: bytes, kind: str) -> None:
             self.send_response(code)
             self.send_header('Content-Type', kind)
@@ -166,6 +193,8 @@ def start(port: int, state: PanelState, speech, settings_path: Path, host: str =
             path = self.path.split('?', 1)[0]
             if path == '/':
                 self._send(200, INDEX.read_bytes(), 'text/html; charset=utf-8')
+            elif path in ('/api/connect', '/qr.png'):
+                self._connect(path)
             elif not self._unlocked():
                 self._json(401, {'error': 'ต้องใส่ PIN'})
             elif path == '/api/state':

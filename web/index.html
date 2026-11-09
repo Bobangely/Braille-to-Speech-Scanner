@@ -194,6 +194,34 @@
   }
   #pin-error { color: var(--bad); font-size: 14px; min-height: 1.3em; margin: 0; }
 
+  /* การ์ดเชื่อมต่อจากมือถือ (เฉพาะจอสถานี) */
+  .connect {
+    position: relative; display: flex; align-items: center; gap: 18px;
+    max-width: 1300px; margin: 18px auto 0; width: calc(100% - 40px);
+  }
+  .qr-box {
+    flex: none; width: 148px; height: 148px; border-radius: 14px; background: #fff;
+    display: grid; place-items: center; border: 2px solid var(--mint-line);
+  }
+  .qr-box img { width: 136px; height: 136px; image-rendering: pixelated; }
+  .qr-placeholder { color: var(--muted); font-weight: 700; }
+  .connect-text { min-width: 0; }
+  .steps { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+  .steps b { word-break: break-all; }
+  .pin-big {
+    display: inline-block; margin-left: 4px; padding: 0 10px; border-radius: 10px;
+    background: var(--mint-soft); color: var(--mint-ink); font-size: 24px; font-weight: 800; letter-spacing: 4px;
+  }
+  .connect-close {
+    position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; border: 0; border-radius: 12px;
+    background: transparent; color: var(--muted); display: grid; place-items: center;
+  }
+  .connect-close svg { width: 18px; height: 18px; }
+  @media (hover: hover) { .connect-close:hover { background: var(--plain-bg); color: var(--text); } }
+  @media (max-width: 860px) {
+    .connect { width: calc(100% - 24px); margin-top: 12px; flex-direction: column; align-items: flex-start; }
+  }
+
   /* ---- ลูกเล่น: เกิดเฉพาะตอนมีเหตุการณ์ ไม่วนตลอดเวลา ---- */
   /* พื้นหลังลายจุดเบรลล์จาง ๆ */
   body {
@@ -284,6 +312,29 @@
   </div>
 </header>
 <div id="offline" role="alert">ขาดการเชื่อมต่อกับสถานี กำลังพยายามเชื่อมต่อใหม่…</div>
+
+<!-- แสดงเฉพาะบนจอของสถานีเอง: server ตอบ /api/connect ให้แค่ localhost -->
+<section class="card connect tone-mint" id="connect" aria-label="เชื่อมต่อจากมือถือ" hidden>
+  <div class="qr-box">
+    <img id="qr" alt="QR code ที่อยู่หน้าเว็บสถานี" hidden>
+    <span class="qr-placeholder" id="qr-placeholder">QR</span>
+  </div>
+  <div class="connect-text">
+    <p class="label">เชื่อมต่อจากมือถือหรือ iPad</p>
+    <div id="connect-on">
+      <ol class="steps">
+        <li>ต่อ WiFi หรือ hotspot เดียวกับสถานีนี้</li>
+        <li>สแกน QR หรือพิมพ์ <b id="connect-url">—</b></li>
+        <li>ใส่ PIN <span class="pin-big" id="connect-pin">——————</span></li>
+      </ol>
+    </div>
+    <p id="connect-off" hidden>ตอนนี้เปิดได้เฉพาะเครื่องนี้ ถ้าจะให้มือถือเข้า ให้สร้างไฟล์ <b>station_pin.txt</b>
+      ข้างไฟล์ Start_Finger_Reader.bat ใส่เลข 6 หลัก แล้วเปิดโปรแกรมใหม่</p>
+  </div>
+  <button class="connect-close" id="connect-close" type="button" aria-label="ซ่อนการ์ดเชื่อมต่อ">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+</section>
 
 <form class="card" id="pin-form" hidden>
   <label for="pin">ใส่ PIN ของเครื่องอ่าน</label>
@@ -843,7 +894,37 @@ $('theme-toggle').onclick = () => {
 };
 showTheme();
 
+// การ์ดเชื่อมต่อ: ถามทุก 5 วินาที เพราะ hotspot อาจแจก IP ใหม่ เครื่องอื่นได้ 404 การ์ดจึงไม่ขึ้น
+let connectClosed = false;
+async function refreshConnect() {
+  let info = null;
+  if (DEMO) info = {network: true, url: 'http://192.168.1.20:8080', pin: '123456'};
+  else {
+    const r = await fetch('/api/connect', {cache: 'no-store'}).catch(() => null);
+    if (r && r.ok) info = await r.json();
+  }
+  $('connect').hidden = !info || connectClosed;
+  if (info) {
+    const on = Boolean(info.network && info.url);
+    $('connect-on').hidden = !on;
+    $('connect-off').hidden = on;
+    $('connect-url').textContent = info.url || '—';
+    $('connect-pin').textContent = info.pin || '—';
+    const qr = $('qr');
+    const showQr = on && !DEMO;
+    if (showQr && qr.dataset.url !== info.url) {
+      qr.dataset.url = info.url;
+      qr.src = '/qr.png?' + Date.now();
+    }
+    qr.hidden = !showQr;
+    $('qr-placeholder').hidden = showQr;
+  }
+  setTimeout(refreshConnect, 5000);
+}
+$('connect-close').onclick = () => { connectClosed = true; $('connect').hidden = true; };
+
 showSettings();
+refreshConnect();
 poll();
 </script>
 </body>
