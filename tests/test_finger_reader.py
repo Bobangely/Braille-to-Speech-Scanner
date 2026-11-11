@@ -261,6 +261,43 @@ class OverlayTests(unittest.TestCase):
         self.assertFalse(np.array_equal(self.frame[-30:], before[-30:]))  # text drawn in the bottom bar
 
 
+class UprightTurnsTests(unittest.TestCase):
+    """The preview is turned so the page's top is up, whichever way the camera sees the book."""
+
+    class Calibration:
+        def __init__(self, matrix):
+            self.matrix = np.asarray(matrix, dtype=float)
+
+        def to_image(self, points):
+            return np.asarray(points, dtype=float).reshape(-1, 2) @ self.matrix.T
+
+    def turns(self, matrix):
+        from finger_reader import upright_turns
+        return upright_turns(self.Calibration(matrix))
+
+    def test_upright_page_is_not_turned(self):
+        self.assertEqual(self.turns([[1, 0], [0, 1]]), 0)
+
+    def test_upside_down_page_is_turned_half_way(self):
+        self.assertEqual(self.turns([[-1, 0], [0, -1]]), 2)
+
+    def test_sideways_pages_are_turned_a_quarter(self):
+        # หน้าลงล่างชี้ไปขวาของภาพ: np.rot90 สามครั้ง (ตามเข็ม) ทำให้ชี้ลง
+        self.assertEqual(self.turns([[0, 1], [-1, 0]]), 3)
+        self.assertEqual(self.turns([[0, -1], [1, 0]]), 1)
+
+    def test_turned_image_points_page_down_downwards(self):
+        # ตรวจกับ np.rot90 จริง: จุดหัวกระดาษต้องอยู่เหนือจุดท้ายกระดาษหลังหมุน
+        from finger_reader import upright_turns
+        for matrix in ([[1, 0], [0, 1]], [[-1, 0], [0, -1]], [[0, 1], [-1, 0]], [[0, -1], [1, 0]]):
+            calibration = self.Calibration(matrix)
+            image = np.zeros((400, 400), np.uint8)
+            top, bottom = calibration.to_image([[0, -50], [0, 50]]) + 200
+            image[int(top[1]), int(top[0])], image[int(bottom[1]), int(bottom[0])] = 1, 2
+            turned = np.rot90(image, upright_turns(calibration))
+            self.assertLess(np.argwhere(turned == 1)[0][0], np.argwhere(turned == 2)[0][0], matrix)
+
+
 class ReadingZoneTests(unittest.TestCase):
     """The dev preview frames the page through the markers' outer corners, coloured by status."""
 

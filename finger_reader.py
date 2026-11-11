@@ -149,14 +149,39 @@ class FingerReader:
 WORD_BGR = ((0, 140, 255), (255, 120, 0), (180, 0, 220), (0, 170, 0), (0, 0, 220), (200, 160, 0))
 CELL_BGR = (170, 170, 170)
 ACTIVE_BGR = (0, 200, 0)
-THAI_FONT = Path('C:/Windows/Fonts/tahoma.ttf')
+# ฟอนต์ที่มีตัวอักษรไทย ใช้ตัวแรกที่มีในเครื่อง: Windows แล้ว macOS
+THAI_FONTS = (Path('C:/Windows/Fonts/tahoma.ttf'), Path('/System/Library/Fonts/Supplemental/Tahoma.ttf'),
+              Path('/System/Library/Fonts/Supplemental/Thonburi.ttc'))
 
 
-def draw_overlay(image, page, calibration, tip, active) -> None:
+def upright_turns(calibration, fmt=DEFAULT_FORMAT) -> int:
+    """จำนวนรอบหมุน 90° ทวนเข็ม (แบบ ``np.rot90``) ที่ทำให้หัวกระดาษอยู่บนในภาพตัวอย่าง
+
+    กล้องอาจมองหนังสือกลับหัวหรือตะแคง ระบบอ่านถูกอยู่แล้วเพราะใช้ marker
+    แต่คนที่ดูหน้าจอจะอ่านภาพได้ยาก ดูจากทิศ "ลงล่าง" ของหน้าเมื่อฉายลงภาพ
+    """
+    cx, cy = fmt.width_mm / 2, fmt.height_mm / 2
+    (x0, y0), (x1, y1) = calibration.to_image([[cx, cy], [cx, cy + 10.0]])
+    dx, dy = x1 - x0, y1 - y0
+    if abs(dy) >= abs(dx):
+        return 0 if dy > 0 else 2
+    return 3 if dx > 0 else 1  # ลงล่างของหน้าชี้ไปขวาของภาพ: หมุนตามเข็ม 90°
+
+
+def cell_caption(page, active) -> str | None:
+    """ข้อความแถบล่าง: เซลล์ใต้นิ้วและคำของมัน"""
+    if active is None:
+        return None
+    cell = active[1]
+    word = page.words[cell.word_index] if cell.word_index is not None else ''
+    return f'กำลังอ่าน: {cell.name or UNKNOWN}    คำ: {word}'
+
+
+def draw_overlay(image, page, calibration, tip, active, caption: bool = True) -> None:
     """วาดกรอบทุกเซลล์และคำบนหน้า ระบายเซลล์นูนใต้นิ้ว และเขียนชื่อกำกับ
 
     กรอบอยู่ในหน่วย mm ของหน้าและฉายผ่านค่าปรับเทียบ จึงเอียงตามกระดาษ
-    เซลล์สีอยู่เหนือเซลล์นูนของมัน
+    เซลล์สีอยู่เหนือเซลล์นูนของมัน ``caption=False`` เมื่อจะหมุนภาพก่อนเขียนข้อความ
     """
     import cv2
     import numpy as np
@@ -185,17 +210,20 @@ def draw_overlay(image, page, calibration, tip, active) -> None:
     if tip is not None:
         cv2.circle(image, tuple(map(int, tip)), 9, (0, 0, 0), -1)
         cv2.circle(image, tuple(map(int, tip)), 6, ACTIVE_BGR, -1)
-    if active is not None:
-        cell = active[1]
-        word = page.words[cell.word_index] if cell.word_index is not None else ''
-        _thai_bar(image, f'กำลังอ่าน: {cell.name or UNKNOWN}    คำ: {word}')
+    text = cell_caption(page, active)
+    if caption and text:
+        _thai_bar(image, text)
 
 
 ZONE_BGR = {'reading': (0, 200, 0), 'learning': (0, 200, 255)}  # ถ้าไม่เห็น marker จะไม่วาดกรอบ
 
 
-def draw_reading_zone(image, calibration, status: str, fmt=DEFAULT_FORMAT, dash_px: int = 14) -> None:
-    """กรอบเส้นประผ่านมุมนอกของ marker มีป้ายกำกับ และเปลี่ยนสีตามสถานะ (หน้าจอ dev)"""
+def draw_reading_zone(image, calibration, status: str, fmt=DEFAULT_FORMAT, dash_px: int = 14,
+                      label: bool = True) -> None:
+    """กรอบเส้นประผ่านมุมนอกของ marker มีป้ายกำกับ และเปลี่ยนสีตามสถานะ (หน้าจอ dev)
+
+    ``label=False`` เมื่อภาพจะถูกหมุน ป้ายจะกลับหัวตามภาพ
+    """
     import cv2
     import numpy as np
 
@@ -209,6 +237,8 @@ def draw_reading_zone(image, calibration, status: str, fmt=DEFAULT_FORMAT, dash_
             a = start + (end - start) * t / length
             b = start + (end - start) * min(t + dash_px, length) / length
             cv2.line(image, tuple(np.round(a).astype(int)), tuple(np.round(b).astype(int)), colour, 2, cv2.LINE_AA)
+    if not label:
+        return
     x, y = np.round(corners[0]).astype(int)
     cv2.putText(image, f'READING ZONE: {status}', (int(x), max(15, int(y) - 8)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, colour, 2, cv2.LINE_AA)
@@ -221,10 +251,9 @@ def _thai_bar(image, text: str) -> None:
 
     height = max(24, image.shape[0] // 18)
     bar = Image.fromarray(np.full((height, image.shape[1], 3), 30, np.uint8))
-    try:
-        font = ImageFont.truetype(str(THAI_FONT), int(height * 0.7))
-    except OSError:
-        font = ImageFont.load_default()  # shortcut: นอก Windows ไม่มีตัวอักษรไทยจาก Tahoma ใช้ได้กับเทสต์ แก้ถ้าต้องดูหน้าจอบนระบบอื่น
+    path = next((f for f in THAI_FONTS if f.is_file()), None)
+    # ไม่มีฟอนต์ไทยในเครื่อง: ข้อความไทยจะเป็นสี่เหลี่ยม แต่ภาพตัวอย่างยังใช้งานได้
+    font = ImageFont.truetype(str(path), int(height * 0.7)) if path else ImageFont.load_default()
     ImageDraw.Draw(bar).text((10, height * 0.1), text, font=font, fill=(255, 255, 255))
     image[-height:] = np.asarray(bar)
 
@@ -237,6 +266,7 @@ def symbol_texts() -> list[str]:
 
 def main() -> int:
     import cv2
+    import numpy as np
 
     from fingertip import PAD_FRACTION, FingertipTracker, draw_hand_skeletons, hand_size_px, open_camera
 
@@ -352,6 +382,7 @@ def main() -> int:
         finger_log.writerow(['t_s', 'x_mm', 'y_mm', 'hand_px', 'entered'])
     started = time.perf_counter()
     fps, last_frame_s = 0.0, 0.0
+    turns = 0  # หมุนภาพตัวอย่างให้หัวกระดาษอยู่บน จำค่าเดิมไว้ตอนมือบัง marker
     try:
         while True:
             ok, frame = capture.read()
@@ -381,16 +412,24 @@ def main() -> int:
             if not args.headless or to_panel:
                 draw_hand_skeletons(frame, reader.tracker.hand_landmarks)  # วาดไว้ใต้จุดอ่าน
                 if reader.calibration is not None:
-                    draw_reading_zone(frame, reader.calibration, status, fmt)
+                    turns = upright_turns(reader.calibration, fmt)
+                    draw_reading_zone(frame, reader.calibration, status, fmt, label=turns == 0)
+                caption = None
                 if reader.page is not None and reader.calibration is not None:
                     point = reader.point_mm
                     tip = None if point is None else reader.calibration.to_image([point])[0]
-                    draw_overlay(frame, reader.page, reader.calibration, tip, reader.active_cell)
+                    draw_overlay(frame, reader.page, reader.calibration, tip, reader.active_cell, caption=False)
+                    caption = cell_caption(reader.page, reader.active_cell)
+                # หมุนหลังวาดกรอบ ก่อนเขียนข้อความ ข้อความจึงไม่กลับหัว
+                frame = np.ascontiguousarray(np.rot90(frame, turns)) if turns else frame
+                if caption:
+                    _thai_bar(frame, caption)
                 cv2.putText(frame, status, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 200, 255), 3)
             if to_panel:
                 panel.set_frame(frame, frame_s)
             if not args.headless:
-                cv2.imshow('finger reader', cv2.resize(frame, (1280, 720)))
+                height, width = frame.shape[:2]
+                cv2.imshow('finger reader', cv2.resize(frame, (round(720 * width / height), 720)))
                 if cv2.waitKey(1) & 0xFF in (ord('q'), 27):
                     break
     finally:
