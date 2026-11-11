@@ -25,7 +25,7 @@ def test_open_camera_requests_mjpg_1080p30(monkeypatch):
     capture = Capture()
     monkeypatch.setattr(spike.cv2, "VideoCapture", lambda *_args: capture)
 
-    assert spike._open_camera(0, 1920, 1080, 30) is capture
+    assert spike.open_camera(0, 1920, 1080, 30) is capture
     assert capture.settings == [
         (spike.cv2.CAP_PROP_FOURCC, spike.cv2.VideoWriter_fourcc(*"MJPG")),
         (spike.cv2.CAP_PROP_FRAME_WIDTH, 1920),

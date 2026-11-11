@@ -1,7 +1,7 @@
-"""Raw Thai Grade-1 cell snapshots and longest lexical/contextual rules.
+"""เก็บเซลล์ดิบของเบรลล์ไทยเกรด 1 และกฎจับคู่ยาวสุดตามคำและบริบท
 
-Scanner subset of THAI_BRAILLE_G1_PARSER_RULES.md. Forward Liblouis tables
-are references, not a claim that every reverse reading is unambiguous.
+เป็นส่วนย่อยสำหรับ scanner จาก THAI_BRAILLE_G1_PARSER_RULES.md ตาราง Liblouis ขาไป
+เป็นแค่ข้อมูลอ้างอิง ไม่ได้รับประกันว่าการอ่านย้อนกลับทุกแบบไม่กำกวม
 """
 from copy import deepcopy
 import logging
@@ -66,7 +66,7 @@ SYMBOL_PREFIXES = {''.join(map(str, sorted(sequence[0])))
 
 
 def match_post_onset_vowel(atoms, index):
-    """Only called while an onset exists and its vowel has not been selected."""
+    """เรียกเฉพาะตอนมีพยัญชนะต้นและยังไม่ได้เลือกสระ"""
     for sequence in sorted(POST_ONSET_VOWELS, key=len, reverse=True):
         following = atoms[index:index+len(sequence)]
         if (len(following) == len(sequence)
@@ -83,7 +83,7 @@ def _spacing(cell):
 
 
 def is_unread_cell(cell):
-    """A proposed cell with a failed crop read is unknown, not a blank space."""
+    """เซลล์ที่เสนอมาแต่อ่านภาพไม่สำเร็จคือไม่ทราบ ไม่ใช่ช่องว่าง"""
     return not cell.get('dots') and cell.get('crop_status') in ('empty', 'invalid_grid')
 
 
@@ -116,13 +116,13 @@ def _break_before(cells, index, adjacent=False):
     if abs(right.get('y', 0) - left.get('y', 0)) > spacing * 1.5:
         return True
     if 'x' not in left or 'x' not in right:
-        return False  # Ordered logical cells need no image coordinates.
+        return False  # เซลล์ที่เรียงลำดับแล้วไม่ต้องใช้พิกัดภาพ
     dx = right.get('x', 0) - left.get('x', 0)
     return dx < 0 or dx > spacing * (3.4 if adjacent else 6.5)
 
 
 def snapshot_cells(cells):
-    """Preserve dots and measured confidence before any interpretation."""
+    """เก็บจุดและค่าความมั่นใจที่วัดได้ไว้ก่อนตีความใดๆ"""
     prepared = []
     for cell in cells:
         if isinstance(cell, str):
@@ -160,7 +160,7 @@ def snapshot_cells(cells):
 
 
 def lex_braille(cells):
-    """Keep overlay labels separate from candidate-bearing parser atoms."""
+    """แยกป้ายกำกับบนภาพออกจาก atom ที่มีตัวเลือกของ parser"""
     raw = snapshot_cells(cells)
     tokens, atoms = [], []
     index, numeric = 0, False

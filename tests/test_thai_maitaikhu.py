@@ -4,8 +4,9 @@ from copy import deepcopy
 import unittest
 
 from decoder import decode_cells, decode_cells_verbose
-from thai_composer import compose_tokens
-from thai_decoder import decode_thai_details, tokenize_thai
+from thai_parser import compose_tokens
+from thai_braille import lex_braille
+from thai_decoder import decode_thai_details
 
 
 def book_cells(lines):
@@ -92,7 +93,7 @@ class ThaiMaiTaikhuTests(unittest.TestCase):
         cells = book_cells(BOOK)
         original = deepcopy(cells)
         self.assertEqual(len(cells), 39)
-        raw = tokenize_thai(cells)
+        raw = lex_braille(cells)[1]
         result = decode_thai_details(cells)
         self.assertEqual([t['char'] for t in raw[:3]], ['ก', 'แ', 'ะ'])
         self.assertFalse(any(t['char'] == '็' for t in raw))

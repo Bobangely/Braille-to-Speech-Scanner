@@ -29,7 +29,12 @@ def run(fs, steps, y=25.0, hold=0.2, tick=0.05):
 
 class FingerStateTest(unittest.TestCase):
     def setUp(self):
-        self.fs = FingerState(PAGE)
+        self.fs = FingerState(PAGE, dwell_s=0.15)  # เทสต์ตรรกะ ไม่ผูกกับค่าที่ใช้จริง
+
+    def test_default_dwell_speaks_after_three_tenths_of_a_second(self):
+        fs = FingerState(PAGE)
+        self.assertEqual(fs.update((13, 25), 0.0) + fs.update((13, 25), 0.29), [])
+        self.assertEqual(fs.update((13, 25), 0.3), [EnterCell(0, 0, "สระไอ")])
 
     def test_reading_kai_then_space(self):
         self.assertEqual(
@@ -60,24 +65,62 @@ class FingerStateTest(unittest.TestCase):
             ev += self.fs.update((15.8 if k % 2 == 0 else 16.2, 25), k * 0.05)
         self.assertEqual(ev, [EnterCell(0, 0, "สระไอ")])
 
-    def test_lost_finger_returns_outside(self):
-        self.assertEqual(
-            run(self.fs, [13, None, 13]),
-            [EnterCell(0, 0, "สระไอ"), EnterCell(0, 0, "สระไอ")],
-        )
+    def test_briefly_lost_finger_does_not_repeat(self):
+        self.assertEqual(run(self.fs, [13, None, 13]), [EnterCell(0, 0, "สระไอ")])
 
-    def test_leave_vertically_then_return_repeats_symbol_only(self):
+    def test_lifted_finger_repeats_on_return(self):
+        ev = run(self.fs, [13])
+        for k in range(21):  # 1 s without a finger
+            ev += self.fs.update(None, 0.2 + k * 0.05)
+        for k in range(4):
+            ev += self.fs.update((13, 25), 1.25 + k * 0.05)
+        self.assertEqual(ev, [EnterCell(0, 0, "สระไอ"), EnterCell(0, 0, "สระไอ")])
+
+    def test_brief_vertical_exit_does_not_repeat(self):
         ev = run(self.fs, [13])
         ev += self.fs.update((13, 35), 0.3)
         for k in range(4):
             ev += self.fs.update((13, 25), 0.4 + k * 0.05)
+        self.assertEqual(ev, [EnterCell(0, 0, "สระไอ")])
+
+    def test_repeated_brief_exits_do_not_repeat(self):
+        ev = run(self.fs, [13])
+        for k in range(40):  # 2 s swinging across the band edge
+            ev += self.fs.update((13, 35 if k % 6 == 0 else 25), 0.2 + k * 0.05)
+        self.assertEqual(ev, [EnterCell(0, 0, "สระไอ")])
+
+    def test_long_vertical_exit_repeats_on_return(self):
+        ev = run(self.fs, [13])
+        for k in range(21):
+            ev += self.fs.update((13, 35), 0.2 + k * 0.05)
+        for k in range(4):
+            ev += self.fs.update((13, 25), 1.25 + k * 0.05)
         self.assertEqual(ev, [EnterCell(0, 0, "สระไอ"), EnterCell(0, 0, "สระไอ")])
+
+    def test_brief_step_onto_neighbour_does_not_repeat(self):
+        ev = run(self.fs, [13])
+        for k in range(2):  # shorter than the dwell
+            ev += self.fs.update((19, 25), 0.2 + k * 0.05)
+        for k in range(4):
+            ev += self.fs.update((13, 25), 0.3 + k * 0.05)
+        self.assertEqual(ev, [EnterCell(0, 0, "สระไอ")])
+
+    def test_past_line_end_then_back_repeats(self):
+        self.assertEqual(
+            run(self.fs, [37, 70, 37]),
+            [EnterCell(0, 4, "มอม้า"), FinishWord(1, "ม"), EnterCell(0, 4, "มอม้า")],
+        )
+
+    def test_neighbouring_cells_with_the_same_letter_speak_twice(self):
+        same = tuple(CellSlot(i, 10 + 6 * i, 16 + 6 * i, frozenset({1}), "กอไก่", 0) for i in range(2))
+        fs = FingerState(PageMap((LinePair(0, 20, 30, same),), ("กก",)), dwell_s=0.15)
+        self.assertEqual(run(fs, [13, 19]), [EnterCell(0, 0, "กอไก่"), EnterCell(0, 1, "กอไก่")])
 
     def test_jump_to_other_line_does_not_finish_word(self):
         ev = []
         for k in range(4):
             ev += self.fs.update((19, 25), k * 0.05)
-        for k in range(4):
+        for k in range(9):  # a deliberate move: the new line needs LINE_DWELL_S
             ev += self.fs.update((19, 55), 0.3 + k * 0.05)
         self.assertEqual(ev, [EnterCell(0, 1, "กอไก่"), EnterCell(1, 1, "กอไก่")])
 
@@ -87,7 +130,7 @@ class FingerStateTest(unittest.TestCase):
 
     def test_unreadable_cell_reports_none_name(self):
         c = CellSlot(0, 0, 6, frozenset(), None, 0)
-        fs = FingerState(PageMap((LinePair(0, 20, 30, (c,)),), ("?",)))
+        fs = FingerState(PageMap((LinePair(0, 20, 30, (c,)),), ("?",)), dwell_s=0.15)
         self.assertEqual(run(fs, [3]), [EnterCell(0, 0, None)])
 
     def test_dropped_frame_entering_space_still_finishes_word(self):
@@ -126,6 +169,35 @@ class FingerStateTest(unittest.TestCase):
             ev += self.fs.update((13, 25), 1.0 + k * 0.05)
         self.assertEqual(ev, [EnterCell(0, 0, "สระไอ")])
         self.assertAlmostEqual(self.fs.entered_s, 1.0)
+
+    def test_unfinished_word_is_not_spoken_on_space(self):
+        # Read สระไอ กอไก่, lift, put the finger down on the space: ไก่ was not read to the end.
+        ev = run(self.fs, [13, 19, None, 31])
+        self.assertNotIn(FinishWord(0, "ไก่"), ev)
+
+    def test_unfinished_word_is_not_spoken_past_line_end(self):
+        fs = FingerState(PageMap((LinePair(0, 20, 30, PAGE.lines[0].cells[:3]),), ("ไก่",)), dwell_s=0.15)
+        ev = run(fs, [13, 19, None, 70])
+        self.assertEqual(ev, [EnterCell(0, 0, "สระไอ"), EnterCell(0, 1, "กอไก่")])
+
+    def test_fast_slide_over_space_finishes_read_word(self):
+        # Too quick on the space to dwell there: the next word's first cell finishes ไก่.
+        ev = run(self.fs, [13, 19, 25])
+        ev += self.fs.update((31, 25), 0.60)
+        for k in range(4):
+            ev += self.fs.update((37, 25), 0.65 + k * 0.05)
+        self.assertEqual(ev[-2:], [FinishWord(0, "ไก่"), EnterCell(0, 4, "มอม้า")])
+
+    def test_fast_slide_does_not_finish_unread_word(self):
+        ev = run(self.fs, [13, None, 37])
+        self.assertNotIn(FinishWord(0, "ไก่"), ev)
+
+    def test_brushing_other_line_says_nothing(self):
+        ev = run(self.fs, [19])
+        for k in range(6):  # 0.25 s on the line below: a drifting hand, not a move
+            ev += self.fs.update((19, 55), 0.3 + k * 0.05)
+        ev += run(self.fs, [25])
+        self.assertEqual(ev, [EnterCell(0, 1, "กอไก่"), EnterCell(0, 2, "ไม้เอก")])
 
     def test_word_finishes_once(self):
         ev = run(self.fs, [13, 19, 25, 31, 70])

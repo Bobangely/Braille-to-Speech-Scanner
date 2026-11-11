@@ -1,18 +1,16 @@
-"""Render parsed Thai syllables; no Braille lookup or syllable segmentation."""
+"""แปลงพยางค์ไทยที่แยกแล้วเป็นข้อความ โดยไม่ค้นเบรลล์และไม่ตัดพยางค์"""
 
 from functools import lru_cache
 import json
 from pathlib import Path
 import unicodedata
 
-from thai_lexicon import rank_segmentations
-
 
 CONSONANTS = set('กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ')
 TONES = set('่้๊๋')
 LEADING = {'เ': 'เอ', 'แ': 'แอ', 'โ': 'โอ', 'ไ': 'ไอ', 'ใ': 'ใอ'}
-# Every rule places the tone explicitly, after combining vowels and before
-# trailing vowels/finals. O includes the complete onset; its last letter anchors T.
+# ทุกกฎวางวรรณยุกต์ชัดเจน หลังสระที่ประกอบกับพยัญชนะและก่อน
+# สระหลังหรือตัวสะกด O รวมพยัญชนะต้นทั้งหมด ตัวสุดท้ายเป็นที่วาง T
 RULES = {
     'อะ': ('{O}{T}ะ', '{O}ั{T}{F}'),
     'อา': ('{O}{T}า', '{O}{T}า{F}'),
@@ -42,7 +40,7 @@ RULES = {
     'ไอ': ('ไ{O}{T}', None),
     'ใอ': ('ใ{O}{T}', None),
     'เอา': ('เ{O}{T}า', None),
-    # Orthographic tokens already read from the page, not semantic vowel names.
+    # token ตัวสะกดที่อ่านจากหน้าแล้ว ไม่ใช่ชื่อสระเชิงความหมาย
     'ั': ('{O}ั{T}', '{O}ั{T}{F}'),
     'ื': ('{O}ื{T}', '{O}ื{T}{F}'),
     '็': ('{O}็{T}', '{O}็{T}{F}'),
@@ -75,7 +73,7 @@ class CompositionError(ValueError):
 
 
 def normalize_vowel(value):
-    """Normalize names/placeholder notation, never rewrite the detected text."""
+    """ปรับชื่อและสัญลักษณ์แทนที่ให้เป็นมาตรฐาน โดยไม่เขียนข้อความที่ตรวจพบใหม่"""
     return ALIASES.get(value.removeprefix('สระ').replace('◌', '-'))
 
 
@@ -88,7 +86,7 @@ def _exceptions():
 
 
 def compose_syllable(onset, vowel, final=None, tone=None):
-    """Render an explicitly parsed syllable; invalid combinations raise a status."""
+    """แปลงพยางค์ที่แยกชัดแล้ว การประกอบที่ผิดจะเกิดสถานะแจ้ง"""
     vowel = normalize_vowel(vowel)
     if vowel is None:
         raise CompositionError('UNKNOWN_VOWEL')
@@ -107,14 +105,14 @@ def compose_syllable(onset, vowel, final=None, tone=None):
         template = RULES[vowel][bool(final)]
     if template is None:
         raise CompositionError('NEEDS_LEXICON' if vowel in SHORT_COMPOUNDS else 'INVALID_FINAL')
-    # Mai taikhu plus a tone needs lexical evidence; do not emit two competing marks.
+    # ไม้ไต่คู้กับวรรณยุกต์ต้องใช้หลักฐานจากพจนานุกรม อย่าใส่สองเครื่องหมายที่แข่งกัน
     if tone and '็' in template:
         raise CompositionError('UNSUPPORTED_COMBINATION')
     return unicodedata.normalize('NFC', template.format(O=onset, T=tone or '', F=final or ''))
 
 
 def render_syllable(syllable):
-    """Render one semantic syllable, including any already-written prefix."""
+    """แปลงพยางค์เชิงความหมายหนึ่งพยางค์ รวมส่วนนำที่เขียนไว้แล้ว"""
     if 'literal' in syllable:
         return syllable['literal']
     if syllable.get('vowel'):
@@ -123,19 +121,17 @@ def render_syllable(syllable):
     return syllable['onset'] + (syllable.get('tone') or '')
 
 
-def render_thai(parsed, *, lexicon=None, confidence_threshold=None):
-    """Render/validate parsed units, keeping rejected candidates in the trace."""
+def render_thai(parsed, *, confidence_threshold=None):
+    """แปลงและตรวจหน่วยที่แยกแล้ว โดยเก็บตัวเลือกที่ถูกปฏิเสธไว้ใน trace"""
     records = [dict(token=t) if isinstance(t, str) else t for t in parsed['raw_tokens']]
-    units, ranking, lexicon_info = rank_segmentations(parsed, lexicon, render_syllable, confidence_threshold)
     pieces, traces = [], []
-    for unit in units:
+    for unit in parsed['syllables']:
         syllable = dict(unit)
         status = syllable.pop('status', None)
         traced = syllable.pop('trace', True)
         try:
             candidate = render_syllable(syllable)
-            if (syllable.get('vowel') == 'เออะ' and syllable.get('final')
-                    and (lexicon is None or candidate not in lexicon)):
+            if syllable.get('vowel') == 'เออะ' and syllable.get('final'):
                 status = status or 'NEEDS_LEXICON'
         except CompositionError as exc:
             candidate, status = None, status or exc.status
@@ -148,8 +144,8 @@ def render_thai(parsed, *, lexicon=None, confidence_threshold=None):
             status = status or 'LOW_CONFIDENCE'
         text = '�' if status else candidate
         pieces.append(text)
-        # Ambiguous segmentation keeps a display candidate, never confirmation.
-        # Other invalid/low-confidence cases retain their existing � behavior.
+        # การตัดพยางค์ที่กำกวมเก็บไว้เป็นตัวเลือกแสดงผล ไม่ใช่การยืนยัน
+        # กรณีผิดหรือความมั่นใจต่ำอื่นๆ ยังแสดง � เหมือนเดิม
         if syllable.get('boundary_review'):
             status = status or syllable['boundary_status']
         if traced or status:
@@ -165,6 +161,5 @@ def render_thai(parsed, *, lexicon=None, confidence_threshold=None):
             traces.append(dict(syllable, candidate=candidate, text=text, status=status or 'OK',
                                needs_review=bool(status), min_confidence=minimum, render_events=events))
     return dict(parsed, text=unicodedata.normalize('NFC', ''.join(pieces).strip()),
-                structural_syllables=parsed['syllables'], lexicon_ranking=ranking, lexicon_info=lexicon_info,
                 syllables=traces, needs_review=any(t['needs_review'] for t in traces),
                 status='NEEDS_REVIEW' if any(t['needs_review'] for t in traces) else 'VALID')

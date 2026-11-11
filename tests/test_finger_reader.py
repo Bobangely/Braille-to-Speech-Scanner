@@ -1,11 +1,10 @@
 """FingerReader: page learning, reading and page changes, with every device faked."""
-import tempfile
 import unittest
-from pathlib import Path
 
 import numpy as np
 
-from finger_reader import CachedWavSpeaker, FingerReader
+from colored_braille import UnreadableBrailleFrame
+from finger_reader import FingerReader
 from finger_state import EnterCell
 from page_layout import CellSlot, LinePair, PageMap
 from speech_queue import SpeechQueue
@@ -61,9 +60,12 @@ class FingerReaderTests(unittest.TestCase):
         self.calibrator, self.tracker, self.speaker = FakeCalibrator(), FakeTracker(), RecordingSpeaker()
         self.reads = []
         self.lines_on_page, self.dots_on_page = 3, {1, 5, 6}
+        self.unreadable = False
 
         def read_page(frame, calibration, fmt):
             self.reads.append(frame)
+            if self.unreadable:
+                raise UnreadableBrailleFrame('noise')
             return page(self.lines_on_page, self.dots_on_page)
 
         self.reader = FingerReader(self.tracker, self.calibrator, SpeechQueue(self.speaker),
@@ -76,7 +78,7 @@ class FingerReaderTests(unittest.TestCase):
         self.calibrator.result = (None, False)
         self.assertEqual(self.reader.step(FRAME, 0.0), 'waiting_page')
         self.reader.step(FRAME, 0.1)
-        self.assertEqual(self.speaker.spoken, ['วางหน้าให้เห็นมุมครบ'])
+        self.assertEqual(self.speaker.spoken, ['วางหน้าให้เห็นมุมทั้งหมด'])
 
     def test_page_learning_waits_for_no_hand(self):
         self.tracker.hand_present = True
@@ -84,15 +86,47 @@ class FingerReaderTests(unittest.TestCase):
         self.assertEqual(self.speaker.spoken, ['ยกมือออกก่อน'])
         self.assertEqual(self.reads, [])
 
+    def test_unreadable_frames_keep_learning_until_the_page_reads(self):
+        self.reader.step(FRAME, 0.0)
+        self.unreadable = True
+        self.assertEqual(self.reader.step(FRAME, 0.1), 'learning')
+        self.unreadable = False
+        self.assertEqual(self.learn(0.2), 'reading')
+
+    def test_unreadable_frame_breaks_the_run_of_equal_reads(self):
+        self.reader.step(FRAME, 0.0)
+        self.reader.step(FRAME, 0.1)
+        self.unreadable = True
+        self.reader.step(FRAME, 0.2)
+        self.unreadable = False
+        self.assertEqual(self.reader.step(FRAME, 0.3), 'learning')
+
+    def test_unreadable_recheck_keeps_reading(self):
+        self.learn()
+        self.unreadable = True
+        self.assertEqual(self.reader.step(FRAME, 5.0), 'reading')
+
     def test_learned_page_announces_lines(self):
         self.assertEqual(self.learn(), 'reading')
         self.assertEqual(self.speaker.spoken, ['พร้อม 3 บรรทัด'])
+
+    def test_tip_offset_moves_the_reading_point_right_on_the_page(self):
+        self.reader.tip_offset_mm = 6.0
+        self.learn()
+        self.tracker.hand_present, self.tracker.tip = True, (5, 25)  # ยังไม่ถึงเซลล์ 10-16 mm ถ้าไม่เลื่อน
+        self.reader.step(FRAME, 1.0)
+        self.reader.step(FRAME, 1.3)
+        self.assertEqual(self.reader.point_mm.tolist(), [11.0, 25.0])
+        self.assertEqual(self.reader.last_events, [EnterCell(0, 0, 'สระไอ')])
+        self.tracker.hand_present, self.tracker.tip = False, None
+        self.reader.step(FRAME, 1.4)
+        self.assertIsNone(self.reader.point_mm)
 
     def test_fingertip_mapped_to_mm_drives_events(self):
         self.learn()
         self.tracker.hand_present, self.tracker.tip = True, (13, 25)
         self.reader.step(FRAME, 1.0)
-        self.reader.step(FRAME, 1.2)
+        self.reader.step(FRAME, 1.3)
         self.assertEqual(self.speaker.spoken[-1], 'สระไอ')
         self.assertEqual(self.reader.last_events, [EnterCell(0, 0, 'สระไอ')])
         self.assertAlmostEqual(self.reader.entered_s, 1.0)  # latency is measured from here
@@ -104,7 +138,7 @@ class FingerReaderTests(unittest.TestCase):
         self.assertEqual(self.reader.step(FRAME, 2.0), 'reading')
         self.tracker.hand_present, self.tracker.tip = True, (13, 25)
         self.reader.step(FRAME, 2.1)
-        self.reader.step(FRAME, 2.3)
+        self.reader.step(FRAME, 2.4)
         self.assertEqual(self.reader.last_events, [EnterCell(0, 0, 'สระไอ')])
 
     def test_moved_page_with_new_ink_is_learned_again_at_once(self):
@@ -152,7 +186,7 @@ class FingerReaderTests(unittest.TestCase):
         self.learn()
         self.tracker.hand_present, self.tracker.tip = True, (13, 55)  # line 2's raised band is 50-60 mm
         self.reader.step(FRAME, 1.0)
-        self.reader.step(FRAME, 1.2)
+        self.reader.step(FRAME, 1.3)
         self.assertEqual(self.reader.last_events, [EnterCell(1, 0, 'สระไอ')])
 
     def test_relearning_says_why(self):
@@ -179,7 +213,7 @@ class FingerReaderTests(unittest.TestCase):
         self.learn()
         self.tracker.hand_present, self.tracker.tip = True, (13, 25)
         self.reader.step(FRAME, 1.0)
-        self.reader.step(FRAME, 1.2)
+        self.reader.step(FRAME, 1.3)
         self.assertEqual(self.reader.tip, (13, 25))
         line, cell = self.reader.active_cell
         self.assertEqual((line.line_id, cell.index), (0, 0))
@@ -227,6 +261,43 @@ class OverlayTests(unittest.TestCase):
         self.assertFalse(np.array_equal(self.frame[-30:], before[-30:]))  # text drawn in the bottom bar
 
 
+class UprightTurnsTests(unittest.TestCase):
+    """The preview is turned so the page's top is up, whichever way the camera sees the book."""
+
+    class Calibration:
+        def __init__(self, matrix):
+            self.matrix = np.asarray(matrix, dtype=float)
+
+        def to_image(self, points):
+            return np.asarray(points, dtype=float).reshape(-1, 2) @ self.matrix.T
+
+    def turns(self, matrix):
+        from finger_reader import upright_turns
+        return upright_turns(self.Calibration(matrix))
+
+    def test_upright_page_is_not_turned(self):
+        self.assertEqual(self.turns([[1, 0], [0, 1]]), 0)
+
+    def test_upside_down_page_is_turned_half_way(self):
+        self.assertEqual(self.turns([[-1, 0], [0, -1]]), 2)
+
+    def test_sideways_pages_are_turned_a_quarter(self):
+        # หน้าลงล่างชี้ไปขวาของภาพ: np.rot90 สามครั้ง (ตามเข็ม) ทำให้ชี้ลง
+        self.assertEqual(self.turns([[0, 1], [-1, 0]]), 3)
+        self.assertEqual(self.turns([[0, -1], [1, 0]]), 1)
+
+    def test_turned_image_points_page_down_downwards(self):
+        # ตรวจกับ np.rot90 จริง: จุดหัวกระดาษต้องอยู่เหนือจุดท้ายกระดาษหลังหมุน
+        from finger_reader import upright_turns
+        for matrix in ([[1, 0], [0, 1]], [[-1, 0], [0, -1]], [[0, 1], [-1, 0]], [[0, -1], [1, 0]]):
+            calibration = self.Calibration(matrix)
+            image = np.zeros((400, 400), np.uint8)
+            top, bottom = calibration.to_image([[0, -50], [0, 50]]) + 200
+            image[int(top[1]), int(top[0])], image[int(bottom[1]), int(bottom[0])] = 1, 2
+            turned = np.rot90(image, upright_turns(calibration))
+            self.assertLess(np.argwhere(turned == 1)[0][0], np.argwhere(turned == 2)[0][0], matrix)
+
+
 class ReadingZoneTests(unittest.TestCase):
     """The dev preview frames the page through the markers' outer corners, coloured by status."""
 
@@ -250,143 +321,6 @@ class ReadingZoneTests(unittest.TestCase):
         left = [self.px(10.0, y) for y in np.arange(20.0, 130.0, 0.25)]
         self.assertIn(list(ZONE_BGR['learning']), left)
         self.assertNotIn(list(ZONE_BGR['reading']), left)
-
-
-class HybridSpeakerTests(unittest.TestCase):
-    """Fixed phrases come from the clear online voice's cache; everything else from Piper."""
-
-    class Fake:
-        def __init__(self, can):
-            self.can, self.prepared, self.spoken, self.stopped = set(can), [], [], 0
-
-        def prepare_many(self, texts, lang='thai'):
-            self.prepared.append(list(texts))
-            return {t for t in texts if t in self.can}
-
-        def speak(self, text, lang='thai'):
-            self.spoken.append(text)
-            return True
-
-        def stop(self):
-            self.stopped += 1
-
-    def test_fixed_phrases_use_the_online_voice_and_words_use_piper(self):
-        from finger_reader import HybridSpeaker
-        online, piper = self.Fake({'กอไก่'}), self.Fake({'กอไก่', 'ไก่'})
-        speaker = HybridSpeaker(online, piper, fixed={'กอไก่'})
-        self.assertEqual(speaker.prepare_many(['กอไก่', 'ไก่']), {'กอไก่', 'ไก่'})
-        self.assertEqual((online.prepared, piper.prepared), ([['กอไก่']], [['ไก่']]))
-        speaker.speak('กอไก่'), speaker.speak('ไก่')
-        self.assertEqual((online.spoken, piper.spoken), (['กอไก่'], ['ไก่']))
-
-    def test_without_fixed_set_every_text_tries_the_online_voice_first(self):
-        from finger_reader import HybridSpeaker
-        online, piper = self.Fake({'ไก่'}), self.Fake({'นก'})
-        speaker = HybridSpeaker(online, piper, fixed=None)
-        self.assertEqual(speaker.prepare_many(['ไก่', 'นก']), {'ไก่', 'นก'})
-        self.assertEqual((online.prepared, piper.prepared), ([['ไก่', 'นก']], [['นก']]))
-
-    def test_piper_stands_in_when_the_online_voice_has_no_audio(self):
-        from finger_reader import HybridSpeaker
-        online, piper = self.Fake(()), self.Fake({'กอไก่'})
-        speaker = HybridSpeaker(online, piper, fixed={'กอไก่'})
-        self.assertEqual(speaker.prepare_many(['กอไก่']), {'กอไก่'})
-        speaker.speak('กอไก่')
-        self.assertEqual((online.spoken, piper.spoken), ([], ['กอไก่']))
-
-
-class CachedWavSpeakerTests(unittest.TestCase):
-    def test_missing_tts_model_fails_at_startup(self):
-        with tempfile.TemporaryDirectory() as cache:
-            with self.assertRaises(FileNotFoundError):
-                CachedWavSpeaker(Path(cache) / 'missing.onnx', Path(cache))
-
-    def speaker(self, cache, batches, played, fail=()):
-        model = Path(cache) / 'thai.onnx'
-        model.write_bytes(b'')
-
-        def synthesize(model, jobs):
-            batches.append([text for text, _ in jobs])
-            for text, output in jobs:
-                if text not in fail:
-                    Path(output).write_bytes(b'RIFF')
-
-        return CachedWavSpeaker(model, Path(cache), synthesize=synthesize, play=played.append)
-
-    def test_prepare_many_synthesizes_missing_texts_in_one_batch(self):
-        with tempfile.TemporaryDirectory() as cache:
-            batches, played = [], []
-            speaker = self.speaker(cache, batches, played)
-            self.assertEqual(speaker.prepare_many(['ไก่', 'มา'], 'thai'), {'ไก่', 'มา'})
-            self.assertEqual(speaker.prepare_many(['ไก่', 'ดี'], 'thai'), {'ไก่', 'ดี'})
-            self.assertEqual(batches, [['ไก่', 'มา'], ['ดี']])
-
-    def test_prepared_text_is_played_from_cache(self):
-        with tempfile.TemporaryDirectory() as cache:
-            batches, played = [], []
-            speaker = self.speaker(cache, batches, played)
-            speaker.prepare_many(['ไก่'], 'thai')
-            self.assertTrue(speaker.speak('ไก่', 'thai'))
-            speaker.stop()
-            self.assertTrue(str(played[0]).endswith('.wav'))
-            self.assertIsNone(played[1])
-
-    def test_speak_never_synthesizes_in_the_frame_loop(self):
-        with tempfile.TemporaryDirectory() as cache:
-            batches, played = [], []
-            speaker = self.speaker(cache, batches, played)
-            with self.assertLogs('finger_reader', 'WARNING'):
-                self.assertFalse(speaker.speak('ไม่เคยเตรียม', 'thai'))
-            self.assertEqual((batches, played), ([], []))
-
-    def test_names_are_sent_to_tts_respelled_but_played_by_name(self):
-        with tempfile.TemporaryDirectory() as cache:
-            batches, played = [], []
-            speaker = self.speaker(cache, batches, played)
-            self.assertEqual(speaker.prepare_many(['งองู', 'ไก่ งองู'], 'thai'), {'งองู', 'ไก่ งองู'})
-            self.assertEqual(batches, [['งอ งู', 'ไก่ งอ งู']])
-            self.assertTrue(speaker.speak('งองู', 'thai'))
-
-    def test_edge_voice_gets_names_as_written(self):
-        with tempfile.TemporaryDirectory() as cache:
-            batches = []
-
-            def synthesize(model, jobs):
-                batches.append([text for text, _ in jobs])
-
-            CachedWavSpeaker(None, Path(cache), backend='edge', synthesize=synthesize).prepare_many(['งองู', 'สระอิ'])
-            self.assertEqual(batches, [['งองู', 'สะ ละ อิ']])  # Edge has its own, shorter respelling list
-
-    def test_leading_silence_is_trimmed_after_synthesis(self):
-        import wave
-        from finger_reader import trim_leading_silence
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / 'a.wav'
-            samples = np.concatenate([np.zeros(16000), np.full(8000, 9000), np.zeros(4000)]).astype(np.int16)
-            with wave.open(str(path), 'wb') as out:
-                out.setnchannels(1), out.setsampwidth(2), out.setframerate(16000)
-                out.writeframes(samples.tobytes())
-            trim_leading_silence(path, keep_s=0.02)
-            with wave.open(str(path)) as trimmed:
-                self.assertEqual(trimmed.getnframes(), 320 + 8000 + 4000)  # 1 s of silence -> 20 ms
-
-    def test_failed_texts_are_not_reported_ready(self):
-        with tempfile.TemporaryDirectory() as cache:
-            batches, played = [], []
-            speaker = self.speaker(cache, batches, played, fail={'มา'})
-            self.assertEqual(speaker.prepare_many(['ไก่', 'มา'], 'thai'), {'ไก่'})
-
-    def test_blank_texts_are_never_sent_to_the_voice(self):
-        # Piper writes no audio for '' and the whole batch used to fail (wave.Error).
-        with tempfile.TemporaryDirectory() as cache:
-            batches, played = [], []
-            speaker = self.speaker(cache, batches, played)
-            self.assertEqual(speaker.prepare_many(['', '  ', 'ไก่'], 'thai'), {'ไก่'})
-            self.assertEqual(batches, [['ไก่']])
-
-    def test_one_failing_text_does_not_stop_the_batch_in_the_voice_process(self):
-        from finger_reader import BATCH_SCRIPT
-        self.assertIn('except Exception', BATCH_SCRIPT)  # per text, inside the Piper/MMS process
 
 
 if __name__ == '__main__':

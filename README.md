@@ -32,7 +32,7 @@
 ### ทำไมใช้ MediaPipe
 
 - ได้ตำแหน่งข้อนิ้ว 21 จุดต่อมือจากภาพ RGB ธรรมดา ไม่ต้องฝึกโมเดลเองหรือติดเซนเซอร์ที่นิ้ว
-- ใช้ปลายนิ้วชี้ (landmark 8) ขยับเข้าหาข้อนิ้วเล็กน้อย (`--pad-fraction`) ให้ตรงกับส่วนของนิ้วที่สัมผัสจุดจริง
+- ใช้สุดปลายนิ้วชี้ (landmark 8) เป็นจุดอ่าน เลื่อนเข้าหาข้อนิ้วได้ด้วย `--pad-fraction`
 - ล็อกนิ้วที่กำลังอ่านไว้แม้มีสองมือในภาพ และคงล็อกไว้เมื่อตรวจไม่เจอชั่วครู่ (เช่น นิ้วบังกันเอง)
 - แปลงตำแหน่งนิ้วเป็นมิลลิเมตรบนหน้าด้วย homography จาก marker แล้ว state machine ตัดสินว่านิ้วเข้าเซลล์ใหม่ อยู่ระหว่างคำ หรือยกนิ้ว
 
@@ -73,10 +73,53 @@ py -3.12 -m venv .venv
 
 - Python environment ของ Piper พร้อมเสียง `th_TH-tsync2-medium.onnx` ([requirements-piper.txt](requirements-piper.txt))
 - Python environment ของ Edge TTS ([requirements-edge-tts.txt](requirements-edge-tts.txt))
-- `models/hand_landmarker.task` ของ MediaPipe
+- `models/hand_landmarker.task` ของ MediaPipe: ดาวน์โหลดจาก
+  https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+  แล้ววางไว้ในโฟลเดอร์ `models/`
 
 ตัวเลือกที่ใช้บ่อย: `--marker-size-mm` (ถ้า marker ไม่ใช่ 10 มม.), `--pad-fraction` (ตำแหน่งจุดอ่านบนนิ้ว),
 `--headless` (ไม่เปิดหน้าจอ), `--debug-dir` (เก็บภาพเมื่อสถานะเปลี่ยน), `--log-latency` (บันทึกเวลาตอบสนอง)
+
+### เปิดด้วยดับเบิลคลิก
+
+เตรียมไฟล์ด้านบนให้ครบ แล้วดับเบิลคลิก `Start_Finger_Reader.bat` โปรแกรมเปิดพร้อมหน้าเว็บครูที่ http://localhost:8080
+ถ้าขาดไฟล์ จะบอกชื่อไฟล์ที่ขาดแล้วหยุดรอ ส่งตัวเลือกเพิ่มต่อท้ายได้ เช่น `Start_Finger_Reader.bat --speech-mode word --web-fps 15`
+ทำไอคอนบนเดสก์ท็อป: คลิกขวาที่ไฟล์ → Send to → Desktop (create shortcut)
+
+### โหมดเสียง
+
+| โหมด | พูดอะไร |
+|---|---|
+| `spell` (ค่าเริ่มต้น) | ชื่อตัวอักษรทุกเซลล์ แล้วพูดคำเมื่ออ่านจบคำ |
+| `word` | เฉพาะคำเมื่ออ่านจบคำ ยกเว้นคำยาวไม่เกิน `--spell-max-cells` (ค่าเริ่มต้น 2) ที่ยังสะกด |
+
+คำจะถูกพูดเฉพาะเมื่อนิ้วผ่านครบทุกเซลล์ ยกนิ้วหรือย้ายบรรทัดกลางคำจะไม่พูดคำ
+เปลี่ยนบรรทัดต้องค้างนิ้วบนบรรทัดใหม่ 0.4 วินาที มือที่เฉียดบรรทัดอื่นจึงไม่ทำให้พูด
+ตั้งจาก CLI (`--speech-mode`, `--spell-max-cells`) หรือหน้าเว็บครู ค่าบันทึกใน `output/panel_settings.json`
+
+### หน้าเว็บครู
+
+![หน้าเว็บครู: ภาพกล้องสด ตัวอักษรใต้นิ้ว โหมดเสียง และข้อความทั้งหน้า](docs/images/teacher-panel.webp)
+
+เพิ่ม `--web 8080` (ไฟล์ .bat ใส่ให้แล้ว) แล้วเปิด http://localhost:8080 จากเครื่องเดียวกัน
+
+**เปิดจากมือถือหรือ iPad:**
+
+1. สร้างไฟล์ `station_pin.txt` ข้างไฟล์ .bat ใส่เลข 6 หลักบรรทัดเดียว (ไฟล์นี้ไม่ขึ้น git)
+2. อนุญาตพอร์ตใน Windows Firewall ครั้งเดียว โดยเปิด PowerShell แบบ Administrator แล้วรัน
+   `netsh advfirewall firewall add rule name="Braille Station" dir=in action=allow protocol=TCP localport=8080 profile=private,public`
+3. ต่อเครื่องอ่านกับมือถือหรือ iPad เข้า WiFi หรือ hotspot วงเดียวกัน แล้วเปิดโปรแกรม
+4. เปิดที่อยู่ที่โปรแกรมพิมพ์ในบรรทัด `phone or iPad on the same network` แล้วใส่ PIN ครั้งแรก
+
+IP เปลี่ยนเมื่อเปลี่ยนเครือข่าย WiFi บางแห่งบล็อกไม่ให้อุปกรณ์คุยกัน ถ้าเปิดไม่ได้ให้ใช้ hotspot มือถือ
+
+- ดูภาพกล้องสด ตัวอักษรใต้นิ้ว คำที่กำลังอ่าน และข้อความทั้งหน้า
+- เปลี่ยนโหมดเสียงและจำนวนเซลล์ได้ทันที เปิด/ปิดภาพกล้องเพื่อลดภาระ CPU
+- `--web-fps N` (1–30, ค่าเริ่มต้น 5): ภาพลื่นขึ้นแต่กิน CPU มากขึ้น บนบอร์ดเล็กให้ใช้ค่าต่ำ
+- PIN กันคนทั่วไปในวงเดียวกัน แต่เป็น HTTP จึงไม่กันคนที่ดักข้อมูลในเครือข่าย
+- เสียง Edge TTS ใช้เน็ตตอนเตรียมเสียงครั้งแรกเท่านั้น ไฟล์ละราว 70 KB แล้วเก็บ cache ถ้าไม่มีเน็ตจะใช้เสียง Piper แทน
+- ดูหน้าเว็บโดยไม่ต่อกล้อง: `.\.venv\Scripts\python.exe -m http.server 8765 --directory web` แล้วเปิด http://localhost:8765/?demo
+- API สำหรับพัฒนาต่อ: [docs/web-api.md](docs/web-api.md)
 
 ## โครงสร้าง
 
@@ -86,9 +129,10 @@ py -3.12 -m venv .venv
 | `page_calibration.py` | รูปแบบหน้าและ marker ArUco |
 | `page_map.py`, `colored_braille.py` | อ่านจุดสีเป็นบรรทัด เซลล์ และคำ |
 | `fingertip.py`, `finger_state.py` | ตามนิ้ว และตัดสินว่าเข้าเซลล์หรือจบคำ |
+| `web_panel.py`, `web/index.html`, `panel_settings.py` | หน้าเว็บครู web server และค่าตั้งโหมดเสียง |
 | `speech_queue.py`, `thai_speech.py` | เลือกข้อความที่จะพูด และคำสะกดสำหรับเสียงแต่ละแบบ |
 | `decoder.py`, `thai_parser.py` | ถอดรหัสเบรลล์ไทย |
-| `tools/make_book_template.py` | สร้างไฟล์ Word ต้นแบบพร้อม marker |
+| `tools/make_book_template.py`, `text_to_braille.py` | สร้างไฟล์ Word ต้นแบบพร้อม marker |
 | `tools/diagnostics/symbol_speech_page.py` | หน้าฟังเสียงชื่อสัญลักษณ์ทั้งหมดเทียบ Piper กับ Edge |
 | `tools/diagnostics/page_map_accuracy.py` | วัดความแม่นการอ่านจากภาพถ่ายเทียบข้อความเฉลย |
 | `archive/legacy_scanner/` | ระบบสแกนรุ่นก่อน (ถือกล้องสแกน + YOLO) เก็บไว้อ้างอิง |

@@ -1,31 +1,16 @@
-"""Public Thai decoding API: raw Braille parser followed by Thai rendering."""
+"""API ถอดภาษาไทย: parser เบรลล์ดิบ แล้วแปลงเป็นข้อความไทย"""
 
-import re
-import unicodedata
 import logging
 
-from thai_braille import _break_before, cell_read_warning, is_unread_cell, lex_braille
-from thai_parser import parse_braille
-from thai_renderer import render_thai
+from thai_braille import _break_before, cell_read_warning, is_unread_cell
+from thai_parser import parse_braille  # จัดพยางค์จากเซลล์ 
+from thai_renderer import render_thai  # เรียงพยางค์เป็นตัวหนังสือ
 
 logger = logging.getLogger(__name__)
 
 
-def tokenize_thai(cells):
-    """Physical-cell labels for overlays/debug; not the parser's semantic input."""
-    return lex_braille(cells)[1]
-
-
-def normalize_thai(text):
-    """Reorder marks without changing a recognized vowel into a guessed tone."""
-    for _ in range(2):
-        text = re.sub(r'([่้๊๋์])([ัิีึืุู็ํ])', r'\2\1', text)
-        text = re.sub(r'([าำๅ])([่้๊๋])', r'\2\1', text)
-    return unicodedata.normalize('NFC', text)
-
-
-def decode_thai_details(cells, *, lexicon=None, confidence_threshold=None, compatibility=False):
-    result = render_thai(parse_braille(cells, compatibility=compatibility), lexicon=lexicon,
+def decode_thai_details(cells, *, confidence_threshold=None, compatibility=False): #main
+    result = render_thai(parse_braille(cells, compatibility=compatibility),
                          confidence_threshold=confidence_threshold)
     if result['needs_review'] and logger.isEnabledFor(logging.DEBUG):
         logger.debug('[THAI_COMPOSITION_REVIEW] raw_cells=%r decoded_cells=%r '
@@ -35,19 +20,20 @@ def decode_thai_details(cells, *, lexicon=None, confidence_threshold=None, compa
 
 
 def decode_thai(cells, *, compatibility=False):
-    return decode_thai_details(cells, compatibility=compatibility)['text']
+    return decode_thai_details(cells, compatibility=compatibility)['text'] 
 
 
 def thai_verbose(cells, *, compatibility=False):
-    """Preserve overlay labels/spans; attach composition decisions for diagnostics."""
+    """เก็บป้ายและช่วงเซลล์สำหรับวาดภาพ และแนบการตัดสินใจประกอบคำไว้วิเคราะห์"""
     result = decode_thai_details(cells, compatibility=compatibility)
     tokens = result['raw_tokens']
     for syllable in result['syllables']:
-        token = tokens[syllable['indices'][0]]
-        token['composition'] = syllable
+        token = tokens[syllable['indices'][0]] # token ตัวแรกของพยางค์
+        token['composition'] = syllable # แนบผลพยางค์ไว้
+
         if syllable['needs_review']:
-            # Text segmentation cannot invalidate an already known cell label.
-            # Keep its review channel separate from detection/mapping errors.
+            # การตัดคำเปลี่ยนป้ายเซลล์ที่รู้แล้วให้ผิดไม่ได้
+            # แยกช่องทางตรวจทานออกจากข้อผิดพลาดการตรวจจับและการจับคู่
             if (syllable['status'] == syllable.get('boundary_status')
                     and syllable.get('boundary_indices')):
                 token['composition_warning'] = syllable['status']

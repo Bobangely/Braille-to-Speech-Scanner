@@ -13,8 +13,8 @@ import mediapipe as mp
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from fingertip import (  # noqa: E402
-    DEFAULT_MODEL, MODEL_URL, ActiveFingertipLock, fingertip_pixels,
-    labelled_fingertips,
+    DEFAULT_MODEL, MODEL_URL, ActiveFingertipLock, draw_hand_skeletons,
+    fingertip_pixels, labelled_fingertips, open_camera,
 )
 
 
@@ -25,16 +25,6 @@ DEFAULT_HEIGHT = 1080
 DEFAULT_FPS = 30
 PREVIEW_WIDTH = 1280
 PREVIEW_HEIGHT = 720
-
-
-def draw_hand_skeletons(frame, hand_landmarks) -> None:
-    """Draw every detected hand with the complete MediaPipe hand topology."""
-    for landmarks in hand_landmarks:
-        mp.tasks.vision.drawing_utils.draw_landmarks(
-            frame,
-            landmarks,
-            mp.tasks.vision.HandLandmarksConnections.HAND_CONNECTIONS,
-        )
 
 
 def resize_preview(frame):
@@ -55,20 +45,6 @@ def detection_rates(detections: list[bool]) -> tuple[float, float]:
     return sum(detections) / len(detections), active_rate
 
 
-def _open_camera(camera_id: int, width: int, height: int, fps: int):
-    backend = cv2.CAP_DSHOW if sys.platform.startswith("win") else cv2.CAP_ANY
-    capture = cv2.VideoCapture(camera_id, backend)
-    if not capture.isOpened() and backend != cv2.CAP_ANY:
-        capture.release()
-        capture = cv2.VideoCapture(camera_id)
-    if capture.isOpened():
-        capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-        capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        capture.set(cv2.CAP_PROP_FPS, fps)
-    return capture
-
-
 def run_probe(
     camera_id: int,
     model_path: Path,
@@ -83,7 +59,7 @@ def run_probe(
             f"Hand Landmarker model not found: {model_path}\nDownload: {MODEL_URL}"
         )
 
-    capture = _open_camera(camera_id, width, height, fps)
+    capture = open_camera(camera_id, width, height, fps)
     if not capture.isOpened():
         raise RuntimeError(f"Cannot open camera {camera_id}")
 

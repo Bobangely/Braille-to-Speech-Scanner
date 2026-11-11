@@ -1,0 +1,931 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Braille Station</title>
+<!-- Teacher panel & Station Interface. API contract: docs/web-api.md. Opened from file:// or with ?demo runs on simulation. -->
+<style>
+  /* ธีม "พาสเทลห้องเรียน": ครีม พีช มิ้นต์ ลาเวนเดอร์ สีเข้มของแต่ละโทนผ่าน WCAG AA บนพื้นของตัวเอง */
+  :root {
+    color-scheme: light;
+    --bg: #fff8f0; --card: #ffffff; --line: #f1e3d8; --text: #2b2233; --muted: #6b5f73;
+    --accent: #c8432a; --accent-hover: #a83620; --on-accent: #ffffff;
+    --peach-soft: #ffeee6; --peach-line: #ffd9c9; --peach-ink: #a83620;
+    --mint-soft: #dcf5ea; --mint-line: #bfe9d6; --mint-ink: #17694a;
+    --lav-soft: #efe8fc; --lav-line: #ddd0f7; --lav-ink: #5b3fa0;
+    --ok-bg: #dcf5ea; --ok: #17694a; --bad-bg: #ffe4e1; --bad: #a3261b;
+    --amber-bg: #fff1c9; --amber: #7a4d00; --plain-bg: #f6eee8;
+    --viewport: #2d2a3a; --dot-off: #e9dcd3;
+    --shadow: 0 1px 0 rgba(122, 72, 40, .06), 0 6px 16px -10px rgba(122, 72, 40, .25);
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #1c1822; --card: #27222e; --line: #3a3342; --text: #f4eef7; --muted: #b9aec3;
+    --accent: #ff9a7a; --accent-hover: #ffb59c; --on-accent: #2a140d;
+    --peach-soft: #3a2620; --peach-line: #5a362b; --peach-ink: #ffb59c;
+    --mint-soft: #1d3a2f; --mint-line: #2c5545; --mint-ink: #8be3bd;
+    --lav-soft: #2f2744; --lav-line: #463a66; --lav-ink: #cdbbff;
+    --ok-bg: #1d3a2f; --ok: #8be3bd; --bad-bg: #45201c; --bad: #ffb0a6;
+    --amber-bg: #3f3215; --amber: #ffd98a; --plain-bg: #332c3b;
+    --viewport: #120f17; --dot-off: #4a4153;
+    --shadow: 0 6px 18px -12px rgba(0, 0, 0, .7);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 "Leelawadee UI", "Noto Sans Thai", "Segoe UI", Tahoma, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color .2s ease, color .2s ease;
+  }
+  .muted { color: var(--muted); }
+
+  header {
+    display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between;
+    padding: 12px 20px; background: var(--card); border-bottom: 2px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  /* โลโก้: เซลล์เบรลล์ 6 จุด */
+  .logo {
+    width: 34px; height: 34px; border-radius: 10px; background: var(--accent);
+    display: grid; grid-template-columns: repeat(2, 6px); grid-auto-rows: 6px; gap: 3px;
+    place-content: center; flex: none;
+  }
+  .logo i { width: 6px; height: 6px; border-radius: 50%; background: var(--on-accent); }
+  .logo i.o { opacity: .35; }
+  h1 { margin: 0; font-size: 19px; font-weight: 700; }
+  .header-right { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chip {
+    padding: 3px 11px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    background: var(--ok-bg); color: var(--ok);
+  }
+  .chip.off { background: var(--bad-bg); color: var(--bad); }
+  .chip.plain { background: var(--plain-bg); color: var(--muted); }
+  .chip.warn { background: var(--amber-bg); color: var(--amber); }
+  .theme-toggle {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 6px 14px;
+    border: 2px solid var(--line); border-radius: 999px; background: var(--card); color: var(--text);
+    font-size: 14px; font-weight: 600;
+  }
+  .theme-toggle svg { width: 18px; height: 18px; }
+
+  #offline { display: none; padding: 10px 16px; background: var(--bad); color: var(--card); font-weight: 600; text-align: center; }
+  #offline.show { display: block; }
+
+  main {
+    display: grid; grid-template-columns: 2fr 1fr; gap: 18px;
+    padding: 18px 20px 28px; max-width: 1340px; margin: 0 auto;
+  }
+  .card {
+    background: var(--card); border: 2px solid var(--line); border-radius: 18px;
+    padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  /* แต่ละการ์ดมีโทนของตัวเอง: กรอบและป้ายหัวการ์ด */
+  .tone-peach { border-color: var(--peach-line); --tone-soft: var(--peach-soft); --tone-ink: var(--peach-ink); }
+  .tone-mint { border-color: var(--mint-line); --tone-soft: var(--mint-soft); --tone-ink: var(--mint-ink); }
+  .tone-lav { border-color: var(--lav-line); --tone-soft: var(--lav-soft); --tone-ink: var(--lav-ink); }
+  .card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .label {
+    display: inline-block; margin: 0 0 10px; padding: 3px 12px; border-radius: 999px;
+    font-size: 14px; font-weight: 700;
+    background: var(--tone-soft, var(--plain-bg)); color: var(--tone-ink, var(--muted));
+  }
+  .card-header .label { margin: 0; }
+
+  /* การ์ดกล้อง */
+  .cam { display: flex; flex-direction: column; gap: 10px; align-self: start; }
+  .cam-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .cam-left { display: flex; align-items: center; gap: 6px; }
+  .cam-badge {
+    background: var(--tone-soft); color: var(--tone-ink);
+    font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 999px;
+  }
+  .cam-viewport {
+    position: relative; width: 100%; aspect-ratio: 16 / 9; background: var(--viewport);
+    border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  }
+  .cam-viewport img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .cam .placeholder { color: #c9c0d6; font-size: 15px; position: absolute; pointer-events: none; }
+
+  aside { display: flex; flex-direction: column; gap: 18px; }
+
+  /* ใต้นิ้ว */
+  .fingertip-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 4px 0 12px; border-bottom: 2px dashed var(--line);
+  }
+  .symbol { font-size: 44px; font-weight: 800; color: var(--accent); line-height: 1.15; min-height: 50px; }
+  .braille-preview {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 8px 12px; background: var(--tone-soft); border-radius: 14px;
+  }
+  .braille-grid { display: grid; grid-template-columns: 14px 14px; grid-template-rows: repeat(3, 14px); gap: 6px; }
+  .braille-grid .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--dot-off); transition: background-color .15s ease, transform .15s ease; }
+  .braille-grid .dot.active { background: var(--accent); transform: scale(1.12); }
+  .braille-dots-text { font-size: 12px; font-weight: 700; color: var(--tone-ink); }
+  .word { font-size: 18px; margin-top: 8px; }
+  .spoken-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 14px; color: var(--muted); }
+
+  /* ปุ่ม */
+  button { font: inherit; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .1s ease; }
+  button:active { transform: scale(0.97); }
+  button:disabled { cursor: not-allowed; opacity: .5; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .btn-bar { display: flex; gap: 8px; margin-top: 14px; }
+  .btn-action {
+    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-height: 46px; padding: 8px 14px; border: 2px solid var(--line); border-radius: 14px;
+    background: var(--card); color: var(--text); font-weight: 700; font-size: 15px;
+  }
+  .btn-action:hover { border-color: var(--accent); }
+  .btn-action.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .btn-action.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+  .seg { display: flex; gap: 4px; padding: 4px; margin: 6px 0 12px; border-radius: 14px; background: var(--tone-soft, var(--plain-bg)); }
+  .seg button {
+    flex: 1; min-height: 42px; padding: 6px 8px; border: 0; border-radius: 10px;
+    background: transparent; color: var(--text); font-size: 14px; font-weight: 600; line-height: 1.3;
+  }
+  .seg button[aria-pressed="true"] { background: var(--tone-ink, var(--accent)); color: var(--card); font-weight: 800; }
+  .stepper { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .stepper.dim { opacity: .45; }
+  .stepper button {
+    min-width: 44px; min-height: 44px; padding: 6px 12px; border: 2px solid var(--line); border-radius: 12px;
+    background: var(--card); color: var(--text); font-weight: 700; font-size: 18px;
+  }
+  .stepper output { min-width: 1.6em; text-align: center; font-size: 22px; font-weight: 800; color: var(--tone-ink); }
+  #error { color: var(--bad); font-size: 14px; min-height: 1.3em; margin: 6px 0 0; }
+
+  /* ตั้งค่าเสียง */
+  .setting-item { margin-bottom: 12px; }
+  .setting-item:last-child { margin-bottom: 0; }
+  .sublabel { font-size: 14px; font-weight: 600; color: var(--muted); }
+  .range-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+  .val-badge { font-size: 14px; color: var(--tone-ink); font-weight: 800; }
+  .slider { width: 100%; height: 44px; accent-color: var(--mint-ink); cursor: pointer; margin: 0; }
+
+  /* ข้อความทั้งหน้า */
+  .page { grid-column: 1 / -1; }
+  .page-hint { font-size: 14px; color: var(--muted); margin-left: 8px; }
+  .page-stats { font-size: 14px; font-weight: 700; color: var(--tone-ink); }
+  #lines { padding-top: 2px; }
+  #lines p { margin: 6px 0; font-size: 22px; line-height: 1.7; }
+  .word-span {
+    display: inline-block; min-width: 44px; padding: 3px 10px; margin: 2px 3px; border-radius: 12px;
+    background: var(--plain-bg); border: 2px solid transparent; cursor: pointer; text-align: center;
+    user-select: none; transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
+  }
+  /* จอสัมผัสจะค้างสถานะ hover หลังแตะ */
+  @media (hover: hover) {
+    .word-span:hover { background: var(--tone-soft); border-color: var(--lav-line); transform: translateY(-1px); }
+  }
+  .word-span.active { background: var(--tone-soft); color: var(--tone-ink); font-weight: 800; border-color: var(--tone-ink); }
+  .word-span.flash { animation: flashWord .4s ease; }
+  @keyframes flashWord { 0% { background: var(--peach-soft); transform: scale(1.08); } 100% { transform: scale(1); } }
+
+  /* หน้าใส่ PIN: ตัวอักษร 16px ขึ้นไป iPhone จึงไม่ซูมเข้าเองตอนแตะช่องกรอก */
+  #pin-form { display: flex; flex-direction: column; gap: 12px; max-width: 360px; margin: 40px auto; }
+  #pin-form label { font-weight: 700; }
+  #pin {
+    min-height: 48px; padding: 8px 14px; border: 2px solid var(--line); border-radius: 12px;
+    background: var(--card); color: var(--text); font: inherit; font-size: 22px; letter-spacing: 6px;
+  }
+  #pin-error { color: var(--bad); font-size: 14px; min-height: 1.3em; margin: 0; }
+
+  /* การ์ดเชื่อมต่อจากมือถือ (เฉพาะจอสถานี) */
+  .connect {
+    position: relative; display: flex; align-items: center; gap: 18px;
+    max-width: 1300px; margin: 18px auto 0; width: calc(100% - 40px);
+  }
+  .qr-box {
+    flex: none; width: 148px; height: 148px; border-radius: 14px; background: #fff;
+    display: grid; place-items: center; border: 2px solid var(--mint-line);
+  }
+  .qr-box img { width: 136px; height: 136px; image-rendering: pixelated; }
+  .qr-placeholder { color: var(--muted); font-weight: 700; }
+  .connect-text { min-width: 0; }
+  .steps { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+  .steps b { word-break: break-all; }
+  .pin-big {
+    display: inline-block; margin-left: 4px; padding: 0 10px; border-radius: 10px;
+    background: var(--mint-soft); color: var(--mint-ink); font-size: 24px; font-weight: 800; letter-spacing: 4px;
+  }
+  .connect-close {
+    position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; border: 0; border-radius: 12px;
+    background: transparent; color: var(--muted); display: grid; place-items: center;
+  }
+  .connect-close svg { width: 18px; height: 18px; }
+  @media (hover: hover) { .connect-close:hover { background: var(--plain-bg); color: var(--text); } }
+  @media (max-width: 860px) {
+    .connect { width: calc(100% - 24px); margin-top: 12px; flex-direction: column; align-items: flex-start; }
+  }
+
+  /* ---- ลูกเล่น: เกิดเฉพาะตอนมีเหตุการณ์ ไม่วนตลอดเวลา ---- */
+  /* พื้นหลังลายจุดเบรลล์จาง ๆ */
+  body {
+    background-image: radial-gradient(var(--line) 1.6px, transparent 1.8px);
+    background-size: 22px 22px;
+  }
+  @media (hover: hover) {
+    .card { transition: border-color .2s ease-out, box-shadow .2s ease-out; }
+    .card:hover { border-color: var(--tone-ink, var(--accent)); box-shadow: 0 10px 24px -14px rgba(122, 72, 40, .45); }
+  }
+  /* ตัวอักษรใต้นิ้วเด้งเมื่อเปลี่ยนเซลล์ */
+  .symbol.pop { animation: pop .32s cubic-bezier(.2, .9, .3, 1.4); }
+  @keyframes pop { from { transform: scale(.82) translateY(4px); opacity: .4; } to { transform: none; opacity: 1; } }
+  /* จุดเบรลล์ติดทีละจุด */
+  .braille-grid .dot.active { transition-timing-function: cubic-bezier(.2, .9, .3, 1.5); }
+  .braille-grid .dot[data-dot="2"] { transition-delay: 30ms; } .braille-grid .dot[data-dot="3"] { transition-delay: 60ms; }
+  .braille-grid .dot[data-dot="4"] { transition-delay: 90ms; } .braille-grid .dot[data-dot="5"] { transition-delay: 120ms; }
+  .braille-grid .dot[data-dot="6"] { transition-delay: 150ms; }
+  /* คลื่นเสียงตอนสถานีพูด */
+  .wave { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; margin-left: 2px; }
+  .wave i { width: 3px; height: 4px; border-radius: 2px; background: var(--tone-ink); }
+  .wave.on i { animation: wave .4s ease-in-out 3 alternate; }
+  .wave.on i:nth-child(2) { animation-delay: .1s; } .wave.on i:nth-child(3) { animation-delay: .2s; }
+  @keyframes wave { to { height: 14px; } }
+  /* คำที่กำลังอ่านมีจุดบอกตำแหน่งใต้คำ */
+  .word-span { position: relative; }
+  .word-span.active::after {
+    content: ""; position: absolute; left: 50%; bottom: -9px; width: 7px; height: 7px; margin-left: -3.5px;
+    border-radius: 50%; background: var(--accent); animation: drop .25s ease-out;
+  }
+  @keyframes drop { from { transform: translateY(-6px); opacity: 0; } }
+  /* ป้ายสถานะมีจุดสีนำหน้า */
+  .chip::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: 1px; opacity: .8; }
+  /* ปุ่มธีมหมุนไอคอนตอนสลับ */
+  .theme-toggle svg { transition: transform .4s cubic-bezier(.2, .9, .3, 1.3); }
+  .theme-toggle.spin svg { transform: rotate(180deg); }
+  /* ฉลองเมื่อจำหน้าเสร็จ: จุดสีกระจายจากหัวการ์ดข้อความ */
+  .page { position: relative; }
+  .burst { position: absolute; left: 60px; top: 24px; pointer-events: none; }
+  .burst i { position: absolute; width: 9px; height: 9px; border-radius: 50%; animation: burst .9s ease-out forwards; }
+  @keyframes burst { from { transform: translate(0, 0) scale(1); opacity: 1; } to { transform: translate(var(--x), var(--y)) scale(.4); opacity: 0; } }
+  .ready-note {
+    display: inline-block; margin-left: 8px; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 700;
+    background: var(--mint-soft); color: var(--mint-ink); animation: pop .32s ease-out;
+  }
+  /* หน้ายังว่าง: ภาพหนังสือ */
+  .empty { display: flex; align-items: center; gap: 14px; padding: 10px 4px; color: var(--muted); }
+  .empty svg { width: 64px; height: 64px; flex: none; }
+  .empty b { display: block; color: var(--text); font-size: 17px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; padding: 12px 12px 24px; gap: 14px; }
+    .page { grid-column: 1; }
+    header { padding: 10px 12px; }
+  }
+</style>
+<script>
+  // ตั้งธีมก่อนวาดหน้า จะได้ไม่กะพริบเป็นสีสว่างก่อน; เครื่องที่ไม่เคยเลือกใช้ตามระบบ
+  (() => {
+    let saved = null;
+    try { saved = localStorage.getItem('theme'); } catch {}
+    const dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  })();
+</script>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo" aria-hidden="true"><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i></span>
+    <h1>สถานีอ่านเบรลล์</h1>
+  </div>
+  <div class="header-right">
+    <div class="chips" aria-live="polite">
+      <span class="chip" id="chip-markers">marker</span>
+      <span class="chip" id="chip-hand">มือ</span>
+      <span class="chip plain" id="chip-status">—</span>
+      <span class="chip plain" id="chip-fps">— fps</span>
+      <span class="chip plain" id="chip-audio">เสียงเปิด</span>
+    </div>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="เปลี่ยนเป็นธีมมืด">
+      <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"></svg>
+      <span id="theme-text">ธีมมืด</span>
+    </button>
+  </div>
+</header>
+<div id="offline" role="alert">ขาดการเชื่อมต่อกับสถานี กำลังพยายามเชื่อมต่อใหม่…</div>
+
+<!-- แสดงเฉพาะบนจอของสถานีเอง: server ตอบ /api/connect ให้แค่ localhost -->
+<section class="card connect tone-mint" id="connect" aria-label="เชื่อมต่อจากมือถือ" hidden>
+  <div class="qr-box">
+    <img id="qr" alt="QR code ที่อยู่หน้าเว็บสถานี" hidden>
+    <span class="qr-placeholder" id="qr-placeholder">QR</span>
+  </div>
+  <div class="connect-text">
+    <p class="label">เชื่อมต่อจากมือถือหรือ iPad</p>
+    <div id="connect-on">
+      <ol class="steps">
+        <li>ต่อ WiFi หรือ hotspot เดียวกับสถานีนี้</li>
+        <li>สแกน QR หรือพิมพ์ <b id="connect-url">—</b></li>
+        <li>ใส่ PIN <span class="pin-big" id="connect-pin">——————</span></li>
+      </ol>
+    </div>
+    <p id="connect-off" hidden>ตอนนี้เปิดได้เฉพาะเครื่องนี้ ถ้าจะให้มือถือเข้า ให้สร้างไฟล์ <b>station_pin.txt</b>
+      ข้างไฟล์ Start_Finger_Reader.bat ใส่เลข 6 หลัก แล้วเปิดโปรแกรมใหม่</p>
+  </div>
+  <button class="connect-close" id="connect-close" type="button" aria-label="ซ่อนการ์ดเชื่อมต่อ">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+</section>
+
+<form class="card" id="pin-form" hidden>
+  <label for="pin">ใส่ PIN ของเครื่องอ่าน</label>
+  <input id="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" required>
+  <button class="btn-action primary">เข้าใช้งาน</button>
+  <p id="pin-error" role="alert"></p>
+</form>
+
+<main>
+  <!-- Camera stream preview -->
+  <section class="card cam tone-lav" aria-label="ภาพกล้อง">
+    <div class="cam-bar">
+      <div class="cam-left">
+        <span class="cam-badge" id="cam-badge">กำลังตรวจหากล้อง…</span>
+      </div>
+    </div>
+    <div class="cam-viewport" id="cam-viewport">
+      <img id="stream" alt="ภาพจากกล้องพร้อมโครงมือและกรอบเซลล์" hidden>
+      <span class="placeholder" id="cam-note">ภาพกล้องปิดอยู่</span>
+    </div>
+  </section>
+
+  <!-- Control aside -->
+  <aside>
+    <!-- Fingertip Details & Braille Matrix -->
+    <section class="card tone-peach" aria-live="polite">
+      <p class="label">ใต้นิ้ว (Fingertip)</p>
+      <div class="fingertip-row">
+        <div>
+          <div class="symbol" id="symbol">—</div>
+          <div class="word">คำ: <b id="word">—</b></div>
+        </div>
+        <div class="braille-preview" title="รูปแบบจุดเบรลล์ 6 จุด">
+          <div class="braille-grid" id="braille-dots" aria-label="ผังจุดเบรลล์ 6 จุด">
+            <span class="dot" data-dot="1"></span><span class="dot" data-dot="4"></span>
+            <span class="dot" data-dot="2"></span><span class="dot" data-dot="5"></span>
+            <span class="dot" data-dot="3"></span><span class="dot" data-dot="6"></span>
+          </div>
+          <span class="braille-dots-text" id="dots-text">—</span>
+        </div>
+      </div>
+      <div class="spoken-row muted">
+        <span>พูดล่าสุด:</span> <b id="spoken" style="color: var(--text);">—</b>
+        <span class="wave" id="wave" aria-hidden="true"><i></i><i></i><i></i></span>
+      </div>
+      <div class="btn-bar">
+        <button class="btn-action primary" id="btn-replay" title="สั่งให้ออกเสียงซ้ำอีกครั้ง">
+          พูดซ้ำ
+        </button>
+        <button class="btn-action" id="btn-mute" title="ปิดหรือเปิดเสียงพูด">
+          ปิดเสียง
+        </button>
+      </div>
+    </section>
+
+    <!-- Audio Configuration: Engine, Rate, Volume -->
+    <section class="card tone-mint">
+      <p class="label">ระบบเสียง (Audio Settings)</p>
+      <!-- Voice Engine Toggle -->
+      <div class="setting-item">
+        <span class="sublabel">เอนจินเสียง (Voice Engine)</span>
+        <div class="seg" role="group" aria-label="เอนจินเสียง">
+          <button id="engine-edge" aria-pressed="true">Edge TTS (ออนไลน์)</button>
+          <button id="engine-piper" aria-pressed="false">Piper ONNX (ออฟไลน์)</button>
+        </div>
+      </div>
+      <!-- Volume Slider -->
+      <div class="setting-item">
+        <div class="range-header">
+          <span class="sublabel">ระดับความดังเสียง (Volume)</span>
+          <b class="val-badge" id="volume-val">100%</b>
+        </div>
+        <input type="range" id="volume-slider" min="0" max="100" step="5" value="100" class="slider">
+      </div>
+    </section>
+
+    <!-- Speech Mode Settings -->
+    <section class="card tone-lav">
+      <p class="label">โหมดเสียง (Speech Mode)</p>
+      <div class="seg" role="group" aria-label="โหมดเสียง">
+        <button id="mode-spell" aria-pressed="true">สะกด</button>
+        <button id="mode-word" aria-pressed="false">เฉพาะคำ</button>
+      </div>
+      <div class="stepper" id="stepper">
+        <span>สะกดคำยาวไม่เกิน</span>
+        <button id="less" aria-label="ลดจำนวนเซลล์">−</button>
+        <output id="cells" aria-live="polite">2</output>
+        <button id="more" aria-label="เพิ่มจำนวนเซลล์">+</button>
+        <span>เซลล์</span>
+      </div>
+      <p id="error" role="status"></p>
+    </section>
+
+  </aside>
+
+  <!-- Page Text Display with Click-to-Speak -->
+  <section class="card page tone-peach">
+    <div class="card-header">
+      <div>
+        <span class="label">ข้อความทั้งหน้า</span>
+        <span class="page-hint">แตะที่คำเพื่อสั่งให้อ่านออกเสียงคำนั้นได้ทันที</span>
+      </div>
+      <span class="page-stats" id="page-stats">รอหน้าหนังสือ</span>
+    </div>
+    <div id="lines"></div>
+  </section>
+</main>
+
+<script>
+const DEMO = location.protocol === 'file:' || new URLSearchParams(location.search).has('demo');
+const STATUS = {waiting_page: 'รอหน้าหนังสือ', learning: 'กำลังจำหน้า', reading: 'กำลังอ่าน'};
+const $ = id => document.getElementById(id);
+
+let locked = null;  // null: ยังไม่รู้จนกว่าจะถาม server ครั้งแรก
+let settings = {mode: 'spell', spell_max_cells: 2, camera: true};
+let audioConfig = {engine: 'edge', volume: 100};
+let muted = false;
+let sending = false;
+let isDraggingVolume = false;
+let volDebounce = null;
+// Thai Braille dot patterns for DEMO simulation
+const DEMO_DOTS = {
+  'กอไก่': [1,2,4,5], 'ชอช้าง': [1,4], 'งองู': [1,2,4,6], 'นอหนู': [1,3,4,5], 'มอม้า': [1,3,4],
+  'ลอลิง': [1,2,3], 'วอแหวน': [2,4,5,6], 'ยอยักษ์': [1,3,4,5,6], 'อออ่าง': [1,3,5],
+  'สระอา': [3,4,5], 'สระอิ': [2,4], 'สระแอ': [1,2,6], 'ไม้โท': [3,5,6], 'ไม้เอก': [2]
+};
+
+// ---- fake station for DEMO ------------------------------------------------
+const demo = (() => {
+  const lines = [
+    [['ช้าง', ['ชอช้าง', 'สระอา', 'ไม้โท', 'งองู']], ['กิน', ['กอไก่', 'สระอิ', 'นอหนู']],
+     ['กล้วย', ['กอไก่', 'ลอลิง', 'ไม้โท', 'วอแหวน', 'ยอยักษ์']]],
+    [['แมว', ['สระแอ', 'มอม้า', 'วอแหวน']], ['ก', ['กอไก่']], ['นอน', ['นอหนู', 'อออ่าง', 'นอหนู']]]
+  ];
+  const words = lines.flat();
+  const cells = words.flatMap((w, i) => w[1].map(name => [i, name]));
+  let step = 0, spoken = null, paused = false;
+
+  function speakBrowser(text) {
+    if (muted || !window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'th-TH';
+      u.volume = Math.max(0, Math.min(1, (audioConfig.volume || 100) / 100));
+      window.speechSynthesis.speak(u);
+    } catch {}
+  }
+
+  return {
+    state() {
+      const [index, symbol] = cells[step % cells.length];
+      const next = cells[(step + 1) % cells.length][0];
+      const word = words[index];
+      if (settings.mode === 'spell' || word[1].length <= settings.spell_max_cells) spoken = symbol;
+      if (next !== index) spoken = word[1].length === 1 ? spoken : word[0];
+      let n = 0;
+      return {
+        status: paused ? 'waiting_page' : 'reading',
+        markers: true, hand: true, fps: 24.6, symbol,
+        dots: DEMO_DOTS[symbol] || [1, 2],
+        word: word[0], active_word: index,
+        last_spoken: spoken, settings, muted,
+        audio_config: audioConfig,
+        lines: lines.map(line => line.map(w => ({index: n++, text: w[0]})))
+      };
+    },
+    tick() { if (!paused) step++; },
+    jumpWord(idx, text) {
+      step = cells.findIndex(c => c[0] === idx);
+      if (step < 0) step = 0;
+      spoken = text;
+      speakBrowser(text);
+    },
+    replay() {
+      if (spoken) speakBrowser(spoken);
+    },
+    toggleMute() {
+      muted = !muted;
+      if (muted && window.speechSynthesis) window.speechSynthesis.cancel();
+    },
+    setAudio(cfg) {
+      audioConfig = {...audioConfig, ...cfg};
+    },
+  };
+})();
+if (DEMO) setInterval(demo.tick, 1000);
+
+// ---- talking to the station ----------------------------------------------
+async function getState() {
+  if (DEMO) return demo.state();
+  const r = await fetch('/api/state', {cache: 'no-store'});
+  if (r.status === 401) return null;
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+function setLocked(value) {
+  if (locked === value) return;
+  locked = value;
+  $('pin-form').hidden = !locked;
+  document.querySelector('main').hidden = locked;
+  document.querySelector('.chips').hidden = locked;
+  if (locked) $('pin').focus();
+  showSettings();
+}
+
+$('pin-form').onsubmit = async e => {
+  e.preventDefault();
+  const r = await fetch('/api/login', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({pin: $('pin').value})
+  }).catch(() => null);
+  $('pin-error').textContent = !r ? 'เชื่อมต่อไม่ได้' : r.ok ? '' : 'PIN ไม่ถูกต้อง';
+  $('pin').value = '';
+};
+
+async function postSettings(partial) {
+  if (DEMO) return {...settings, ...partial};
+  const r = await fetch('/api/settings', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(partial)
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || `ตั้งค่าไม่สำเร็จ (${r.status})`);
+  return body;
+}
+
+async function postAction(actionData) {
+  if (DEMO) {
+    if (actionData.action === 'replay') demo.replay();
+    else if (actionData.action === 'speak') demo.jumpWord(-1, actionData.text);
+    else if (actionData.action === 'toggle_mute') demo.toggleMute();
+    else if (actionData.action === 'set_audio') demo.setAudio(actionData);
+    return {ok: true};
+  }
+  const r = await fetch('/api/action', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(actionData)
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || `สั่งการไม่สำเร็จ (${r.status})`);
+  return body;
+}
+
+async function change(partial) {
+  const before = settings;
+  settings = {...settings, ...partial};
+  sending = true;
+  showSettings();
+  $('error').textContent = '';
+  try {
+    settings = await postSettings(partial);
+  } catch (e) {
+    settings = before;
+    $('error').textContent = e instanceof TypeError ? 'ส่งค่าตั้งไม่ได้: ขาดการเชื่อมต่อ' : e.message;
+  }
+  sending = false;
+  showSettings();
+}
+
+// ---- UI Drawing & Rendering ----------------------------------------------
+function chip(id, ok, text, warn = false) {
+  const el = $(id);
+  el.textContent = text;
+  el.classList.toggle('off', !ok && !warn);
+  el.classList.toggle('warn', warn);
+}
+
+function updateDots(dots) {
+  const activeSet = new Set(dots || []);
+  for (let i = 1; i <= 6; i++) {
+    const dotEl = document.querySelector(`.braille-grid .dot[data-dot="${i}"]`);
+    if (dotEl) dotEl.classList.toggle('active', activeSet.has(i));
+  }
+  const dotsTextEl = $('dots-text');
+  if (dots && dots.length > 0) {
+    dotsTextEl.textContent = `จุด ${dots.join('-')}`;
+  } else {
+    dotsTextEl.textContent = '—';
+  }
+}
+
+function showSettings() {
+  const spell = settings.mode === 'spell';
+  $('mode-spell').setAttribute('aria-pressed', spell);
+  $('mode-word').setAttribute('aria-pressed', !spell);
+  $('cells').textContent = settings.spell_max_cells;
+  $('stepper').classList.toggle('dim', spell);
+  $('less').disabled = settings.spell_max_cells <= 1;
+  $('more').disabled = settings.spell_max_cells >= 5;
+  const img = $('stream');
+  const live = Boolean(settings.camera && !DEMO && locked === false);
+  if (live) {
+    img.hidden = false;
+    $('cam-note').hidden = true;
+    if (!img.src || img.src.indexOf('/stream.mjpg') === -1) {
+      openStream();
+    }
+  } else {
+    img.hidden = true;
+    img.removeAttribute('src');
+    $('cam-note').hidden = false;
+    $('cam-note').textContent = !settings.camera ? 'ภาพกล้องปิดอยู่' : 'ภาพกล้อง (โหมดจำลอง DEMO)';
+  }
+  $('cam-badge').textContent = DEMO ? 'โหมดจำลอง (DEMO)' : (settings.camera ? 'ภาพกล้องสด' : 'ภาพกล้องปิดอยู่');
+}
+
+function updateAudioUI(cfg) {
+  if (!cfg) return;
+  audioConfig = {...audioConfig, ...cfg};
+  const isEdge = audioConfig.engine === 'edge';
+  $('engine-edge').setAttribute('aria-pressed', isEdge);
+  $('engine-piper').setAttribute('aria-pressed', !isEdge);
+
+  const vol = Math.round(audioConfig.volume !== undefined ? audioConfig.volume : 100);
+  $('volume-val').textContent = `${vol}%`;
+  if (document.activeElement !== $('volume-slider') && !isDraggingVolume) {
+    $('volume-slider').value = vol;
+  }
+
+  const audioChip = $('chip-audio');
+  if (muted) {
+    audioChip.textContent = 'ปิดเสียงอยู่';
+    audioChip.className = 'chip off';
+  } else {
+    audioChip.textContent = isEdge ? 'Edge TTS' : 'Piper ONNX';
+    audioChip.className = 'chip plain';
+  }
+}
+
+function updateAudioState(isMuted) {
+  muted = isMuted;
+  const muteBtn = $('btn-mute');
+  if (muted) {
+    muteBtn.textContent = 'เปิดเสียง';
+    muteBtn.classList.add('primary');
+  } else {
+    muteBtn.textContent = 'ปิดเสียง';
+    muteBtn.classList.remove('primary');
+  }
+  updateAudioUI(audioConfig);
+}
+
+function openStream() {
+  const stream = $('stream');
+  const note = $('cam-note');
+  stream.hidden = false;
+  stream.src = '/stream.mjpg?' + Date.now();
+  if (note) note.hidden = true;
+}
+$('stream').onerror = () => {
+  const note = $('cam-note');
+  if (note && settings.camera && !DEMO) {
+    note.hidden = false;
+    note.textContent = 'กำลังเชื่อมต่อสัญญาณกล้อง…';
+  }
+  setTimeout(() => {
+    if (settings.camera && !DEMO && locked === false) openStream();
+  }, 1200);
+};
+
+const EMPTY = `<div class="empty">
+  <svg viewBox="0 0 64 64" aria-hidden="true">
+    <path d="M6 14c9-4 18-4 26 2v38c-8-6-17-6-26-2z" fill="var(--peach-soft)" stroke="var(--peach-ink)" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M58 14c-9-4-18-4-26 2v38c8-6 17-6 26-2z" fill="var(--lav-soft)" stroke="var(--lav-ink)" stroke-width="2.5" stroke-linejoin="round"/>
+    <g fill="var(--accent)"><circle cx="15" cy="24" r="2.2"/><circle cx="22" cy="24" r="2.2"/><circle cx="15" cy="31" r="2.2"/><circle cx="42" cy="24" r="2.2"/><circle cx="42" cy="31" r="2.2"/><circle cx="49" cy="38" r="2.2"/></g>
+  </svg>
+  <div><b>วางหนังสือใต้กล้องได้เลย</b>ให้เห็นมุมครบ 4 มุม แล้วยกมือออกสักครู่ ระบบจะจำหน้าให้เอง</div>
+</div>`;
+
+// เล่นแอนิเมชันซ้ำได้ทุกครั้ง: ถอด class แล้วใส่ใหม่หลังเบราว์เซอร์คำนวณหน้าใหม่
+function replay(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
+// จำหน้าเสร็จ: จุดสีกระจายจากหัวการ์ด และป้าย "พร้อมอ่านแล้ว"
+let lastStatus = null;
+function celebrate() {
+  const card = document.querySelector('.page');
+  const burst = document.createElement('span');
+  burst.className = 'burst';
+  const colors = ['var(--accent)', 'var(--mint-ink)', 'var(--lav-ink)', 'var(--peach-line)'];
+  for (let i = 0; i < 14; i++) {
+    const dot = document.createElement('i');
+    const angle = (i / 14) * Math.PI * 2;
+    dot.style.background = colors[i % colors.length];
+    dot.style.setProperty('--x', `${Math.cos(angle) * (50 + (i % 3) * 18)}px`);
+    dot.style.setProperty('--y', `${Math.sin(angle) * (40 + (i % 3) * 14)}px`);
+    burst.append(dot);
+  }
+  card.append(burst);
+  setTimeout(() => burst.remove(), 1000);
+  const note = document.createElement('span');
+  note.className = 'ready-note';
+  note.textContent = 'พร้อมอ่านแล้ว';
+  card.querySelector('.label').after(note);
+  setTimeout(() => note.remove(), 3000);
+}
+
+let shownLines = '';
+function render(s) {
+  chip('chip-markers', s.markers, s.markers ? 'พบ marker' : 'ไม่เห็น marker');
+  chip('chip-hand', s.hand, s.hand ? 'พบมือ' : 'ไม่เห็นมือ');
+  $('chip-status').textContent = STATUS[s.status] || s.status;
+  $('chip-fps').textContent = `${Number(s.fps || 0).toFixed(1)} fps`;
+
+  updateAudioState(Boolean(s.muted));
+  if (s.audio_config) updateAudioUI(s.audio_config);
+
+  const symbol = s.symbol || '—';
+  if ($('symbol').textContent !== symbol) {
+    $('symbol').textContent = symbol;
+    replay($('symbol'), 'pop');
+  }
+  $('word').textContent = s.word || '—';
+  const spoken = s.last_spoken || '—';
+  if ($('spoken').textContent !== spoken) {
+    $('spoken').textContent = spoken;
+    if (s.last_spoken) replay($('wave'), 'on');
+  }
+  if (lastStatus === 'learning' && s.status === 'reading') celebrate();
+  lastStatus = s.status;
+
+  updateDots(s.dots);
+  // Rebuild word spans only when the page layout changes
+  const key = JSON.stringify(s.lines);
+  if (key !== shownLines) {
+    shownLines = key;
+    const box = $('lines');
+    box.replaceChildren();
+    if (!s.lines.length) {
+      box.innerHTML = EMPTY;
+      $('page-stats').textContent = 'รอหน้าหนังสือ';
+    } else {
+      let totalWords = 0;
+      for (const line of s.lines) {
+        const p = document.createElement('p');
+        for (const w of line) {
+          totalWords++;
+          const span = document.createElement('span');
+          span.className = 'word-span';
+          span.textContent = w.text;
+          span.dataset.index = w.index;
+          span.dataset.text = w.text;
+          span.title = `แตะเพื่อให้อ่านคำว่า "${w.text}"`;
+          span.onclick = () => {
+            span.classList.add('flash');
+            setTimeout(() => span.classList.remove('flash'), 400);
+            if (DEMO) demo.jumpWord(w.index, w.text);
+            else postAction({action: 'speak', text: w.text});
+          };
+          p.append(span, ' ');
+        }
+        box.append(p);
+      }
+      $('page-stats').textContent = `${totalWords} คำ`;
+    }
+  }
+
+  // Highlight active word
+  for (const span of $('lines').querySelectorAll('.word-span')) {
+    span.classList.toggle('active', Number(span.dataset.index) === s.active_word);
+  }
+
+  if (!sending && JSON.stringify(s.settings) !== JSON.stringify(settings)) {
+    settings = s.settings;
+    showSettings();
+  }
+}
+
+async function poll() {
+  try {
+    const state = await getState();
+    setLocked(!state);
+    if (state) render(state);
+    const banner = $('offline');
+    if (banner.classList.contains('show') && !$('stream').hidden) openStream();
+    banner.classList.remove('show');
+  } catch {
+    $('offline').classList.add('show');
+  }
+  setTimeout(poll, 300);
+}
+
+// User Actions Wiring
+$('mode-spell').onclick = () => change({mode: 'spell'});
+$('mode-word').onclick = () => change({mode: 'word'});
+$('less').onclick = () => change({spell_max_cells: Math.max(1, settings.spell_max_cells - 1)});
+$('more').onclick = () => change({spell_max_cells: Math.min(5, settings.spell_max_cells + 1)});
+
+// Voice Engine Toggle
+$('engine-edge').onclick = async () => {
+  audioConfig.engine = 'edge';
+  updateAudioUI(audioConfig);
+  await postAction({action: 'set_audio', engine: 'edge', preview: true});
+};
+$('engine-piper').onclick = async () => {
+  audioConfig.engine = 'piper';
+  updateAudioUI(audioConfig);
+  await postAction({action: 'set_audio', engine: 'piper', preview: true});
+};
+
+// Volume Slider
+window.addEventListener('pointerup', () => { isDraggingVolume = false; });
+
+$('volume-slider').addEventListener('pointerdown', () => { isDraggingVolume = true; });
+
+$('volume-slider').oninput = e => {
+  isDraggingVolume = true;
+  const v = parseInt(e.target.value, 10);
+  $('volume-val').textContent = `${v}%`;
+  audioConfig.volume = v;
+  clearTimeout(volDebounce);
+  volDebounce = setTimeout(async () => {
+    await postAction({action: 'set_audio', volume: v});
+  }, 100);
+};
+$('volume-slider').onchange = async e => {
+  isDraggingVolume = false;
+  clearTimeout(volDebounce);
+  const v = parseInt(e.target.value, 10);
+  audioConfig.volume = v;
+  await postAction({action: 'set_audio', volume: v, preview: true});
+};
+
+$('btn-replay').onclick = async () => {
+  $('btn-replay').disabled = true;
+  try {
+    await postAction({action: 'replay'});
+  } finally {
+    setTimeout(() => { $('btn-replay').disabled = false; }, 300);
+  }
+};
+
+$('btn-mute').onclick = async () => {
+  await postAction({action: 'toggle_mute'});
+};
+
+// ปุ่มสลับธีม: ไอคอนบอกธีมที่จะเปลี่ยนไป
+const SUN = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+const MOON = '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
+function showTheme() {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  $('theme-icon').innerHTML = dark ? SUN : MOON;
+  $('theme-text').textContent = dark ? 'ธีมสว่าง' : 'ธีมมืด';
+  $('theme-toggle').setAttribute('aria-label', dark ? 'เปลี่ยนเป็นธีมสว่าง' : 'เปลี่ยนเป็นธีมมืด');
+}
+$('theme-toggle').onclick = () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('theme', next); } catch {}
+  showTheme();
+  $('theme-toggle').classList.toggle('spin');
+};
+showTheme();
+
+// การ์ดเชื่อมต่อ: ถามทุก 5 วินาที เพราะ hotspot อาจแจก IP ใหม่ เครื่องอื่นได้ 404 การ์ดจึงไม่ขึ้น
+let connectClosed = false;
+async function refreshConnect() {
+  let info = null;
+  if (DEMO) info = {network: true, url: 'http://192.168.1.20:8080', pin: '123456'};
+  else {
+    const r = await fetch('/api/connect', {cache: 'no-store'}).catch(() => null);
+    if (r && r.ok) info = await r.json();
+  }
+  $('connect').hidden = !info || connectClosed;
+  if (info) {
+    const on = Boolean(info.network && info.url);
+    $('connect-on').hidden = !on;
+    $('connect-off').hidden = on;
+    $('connect-url').textContent = info.url || '—';
+    $('connect-pin').textContent = info.pin || '—';
+    const qr = $('qr');
+    const showQr = on && !DEMO;
+    if (showQr && qr.dataset.url !== info.url) {
+      qr.dataset.url = info.url;
+      qr.src = '/qr.png?' + Date.now();
+    }
+    qr.hidden = !showQr;
+    $('qr-placeholder').hidden = showQr;
+  }
+  setTimeout(refreshConnect, 5000);
+}
+$('connect-close').onclick = () => { connectClosed = true; $('connect').hidden = true; };
+
+showSettings();
+refreshConnect();
+poll();
+</script>
+</body>
+</html>

@@ -3,8 +3,9 @@ import unittest
 
 import numpy as np
 
-from generate_test import text_to_braille_cells
+from text_to_braille import text_to_braille_cells
 from page_calibration import DEFAULT_FORMAT as FMT, calibrate, render_page
+from page_layout import PageMap
 from page_map import PageLearner, read_page
 from tests.test_page_calibration import camera_view, rotated_corners
 
@@ -49,6 +50,17 @@ def word_like_page(text, drift_mm=0.49):
 
 
 class ReadPageTests(unittest.TestCase):
+    def test_colored_specks_outside_the_marker_frame_are_ignored(self):
+        # ห่วงสันสมุดหรือเทปข้างหน้ากระดาษอยู่นอกกรอบ marker บางเฟรมดูเหมือนจุดสี
+        import cv2
+        page = render_page(FMT, px_per_mm=PX, lines=page_lines())
+        for y_mm in (43.0, 86.7, 120.4):
+            cv2.circle(page, (round(5.0 * PX), round(y_mm * PX)), round(FMT.dot_diameter_mm / 2 * PX), (255, 0, 0), -1)
+        frame, _ = camera_view(page, rotated_corners(0), size=(1280, 960), background=200)
+        calib = calibrate(frame, FMT)
+        self.assertEqual(read_page(frame, calib, FMT).words, read(page_lines()).words)
+        self.assertEqual(len(read_page(frame, calib, FMT).lines), len(TEXT))
+
     def test_two_cell_letter_names_both_of_its_cells(self):
         # The decoder adds a consumed '' token for the prefix cell; it must not replace the name.
         cells = read(page_lines(('ฃ ค',))).lines[0].cells
@@ -60,6 +72,25 @@ class ReadPageTests(unittest.TestCase):
         expected = [frozenset(c or ()) for c in text_to_braille_cells(text, 'thai')]
         self.assertEqual([c.dots for c in page.lines[0].cells], expected)
         self.assertNotIn('ไม่ทราบ', page.words)
+
+    def test_word_the_rules_get_wrong_is_read_from_the_dictionary(self):
+        # กฎอ่าน ะ ที่มีพยัญชนะตามเป็น ั และ ็ ในคำยาวทำให้กฎไม่แน่ใจ
+        page = read(page_lines(('พระองค์ เสด็จ', 'เป็นคดี', 'วิเคราะห์')))
+        self.assertEqual(page.words, ('พระองค์', 'เสด็จ', 'เป็นคดี', 'วิเคราะห์'))
+        self.assertEqual(page.lines[1].cells[0].name, 'สระเอ')  # ชื่อเซลล์ยังพูดได้แม้กฎไม่แน่ใจทั้งคำ
+
+    def test_word_outside_the_dictionary_keeps_the_rules_reading(self):
+        self.assertEqual(read(page_lines(('บาวอน',))).words, ('บาวอน',))
+
+    def test_cell_boxes_follow_the_measured_dots_when_a_line_drifts(self):
+        page = word_like_page('ก ข ฃ ค ฅ ฆ ง จ ฉ ช ซ')
+        cells = page.lines[0].cells
+        for x, _ in page.dots_mm:
+            cell = next(c for c in cells if c.x1_mm <= x < c.x2_mm)
+            self.assertTrue(cell.dots)
+            self.assertGreater(min(x - cell.x1_mm, cell.x2_mm - x), 1.0)  # จุดทั้งเม็ดอยู่ในกรอบ
+        for left, right in zip(cells, cells[1:]):
+            self.assertAlmostEqual(left.x2_mm, right.x1_mm, places=6)
 
     def test_drift_beyond_half_a_cell_keeps_every_space(self):
         # Seven 2-cell letters each 0.5 mm short (a 30 pt page without Replace): 3.5 mm over the line.
@@ -149,6 +180,11 @@ class PageLearnerTests(unittest.TestCase):
         results = [learner.update(m) for m in (a, a, b, a, a, a)]
         self.assertEqual(results[:5], [None] * 5)
         self.assertIs(results[5], a)
+
+    def test_learner_never_accepts_a_page_without_lines(self):
+        learner = PageLearner(required=2)
+        empty = PageMap((), ())
+        self.assertEqual([learner.update(empty) for _ in range(3)], [None] * 3)
 
     def test_learner_ignores_sub_millimetre_jitter(self):
         a = read(page_lines())

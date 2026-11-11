@@ -4,11 +4,10 @@ import unittest
 from unittest.mock import patch
 
 from decoder import decode_cells, decode_cells_verbose
-from thai_composer import compose_tokens
+from thai_parser import compose_tokens
 from thai_decoder import decode_thai_details
 from thai_parser import parse_braille
 from thai_renderer import render_thai
-from tts import TextToSpeech
 
 
 WORDS = {
@@ -84,6 +83,25 @@ class ThaiSyllableBoundaryTests(unittest.TestCase):
         self.assertEqual((sent['onset'], sent['vowel'], sent['tone'], sent['final']),
                          ('ส', 'โอะ', '่', 'ง'))
 
+    def test_consonant_carrying_a_tone_is_not_the_implicit_final(self):
+        for word, patterns in {'กล้วย': ['1245', '123', '256', '2456', '13456'],
+                               'ปล้น': ['12346', '123', '256', '1345'],
+                               'ถล่ม': ['2345', '123', '35', '134']}.items():
+            with self.subTest(word=word):
+                result = decode_thai_details(physical(patterns))
+                self.assertEqual(result['text'], word)
+                self.assertFalse(result['needs_review'])
+
+    def test_consonant_carrying_a_tone_is_not_the_final_of_an_explicit_vowel(self):
+        for word, patterns in {'มะม่วง': ['134', '1', '134', '35', '2456', '12456'],
+                               'สีม่วง': ['234', '23', '134', '35', '2456', '12456'],
+                               'ลาป่วย': ['123', '16', '12346', '35', '2456', '13456'],
+                               'มีส่วน': ['134', '23', '234', '35', '2456', '1345']}.items():
+            with self.subTest(word=word):
+                result = decode_thai_details(physical(patterns))
+                self.assertEqual(result['text'], word)
+                self.assertFalse(result['needs_review'])
+
     def test_parser_returns_segmentation_before_rendering_and_retains_raw_sources(self):
         source = physical(sentence(['จะ', 'จม']))
         original = deepcopy(source)
@@ -121,20 +139,6 @@ class ThaiSyllableBoundaryTests(unittest.TestCase):
                 parsed = parse_braille(source)
                 self.assertFalse(any(t['rule'] == 'IMPLICIT_O_CLOSED'
                                      for t in parsed['semantic_tokens']))
-
-    def test_text_token_adapter_overlay_and_tts_share_the_correct_result(self):
-        tokens = ['ข', 'อ', 'น', 'จ', 'ะ', 'จ', 'ม', 'น', '้', 'ำ']
-        self.assertEqual(compose_tokens(tokens)['text'], 'ขอนจะจมน้ำ')
-        source = physical(sentence(['ขอน', 'จะ', 'จม', 'น้ำ']))
-        verbose = decode_cells_verbose(source, 'thai')
-        self.assertEqual([t['char'] for t in verbose], tokens)
-        with patch.object(TextToSpeech, '_init_offline_engine'):
-            speaker = TextToSpeech()
-        with patch.object(speaker, '_speak_online', return_value=True) as backend:
-            speaker.speak(decode_cells(source, 'thai'), lang='thai', method='online')
-            backend.assert_called_once_with('ขอนจะจมน้ำ', lang='th', save_file=None)
-        self.assertEqual(decode_cells(physical(['6', '145', '3456', '1', '12']), 'english'), 'D12')
-
 
 if __name__ == '__main__':
     unittest.main()

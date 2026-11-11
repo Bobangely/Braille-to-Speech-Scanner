@@ -1,9 +1,8 @@
-"""Read Braille aloud under the fingertip, from a two-line book page.
+"""อ่านเบรลล์ใต้ปลายนิ้วออกเสียงจากหน้าหนังสือแบบสองบรรทัด
 
-Learning: with no hand in view, calibrate the page by its corner markers and
-read the colored Braille lines once. Reading: every frame maps the fingertip
-to page millimetres and speaks the symbol of each new raised cell, then the
-word when the finger leaves it to the right.
+ขั้นจำหน้า: เมื่อไม่มีมือในภาพ ปรับเทียบหน้าจาก marker ที่มุมและอ่านบรรทัดสีหนึ่งรอบ
+ขั้นอ่าน: ทุกเฟรมแปลงปลายนิ้วเป็นมิลลิเมตรบนหน้า พูดชื่อสัญลักษณ์เมื่อเข้าเซลล์นูนใหม่
+แล้วพูดคำเมื่อนิ้วออกจากคำไปทางขวา
 
 Usage: finger_reader.py --tts-thai-model voices/th.onnx [--camera 0] [--log-latency out.csv]
 """
@@ -12,47 +11,51 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
-import json
 import logging
-import subprocess
+import re
+import socket
 import sys
 import time
-import wave
 from pathlib import Path
 
+import panel_settings
+from colored_braille import UnreadableBrailleFrame
 from finger_state import EnterCell, FingerState
 from page_calibration import DEFAULT_FORMAT, CalibrationTracker, PageFormat, page_format
 from page_map import PageLearner, new_ink_dots, read_page as read_colored_page
+from speech_cache import WORD_RATE, CachedWavSpeaker, HybridSpeaker
 from speech_queue import UNKNOWN, SpeechQueue
-from thai_speech import EDGE_SPELLING, SYMBOL_NAMES, THAI_CONSONANT_NAMES, TTS_SPELLING, tts_spelling
+from thai_speech import SYMBOL_NAMES, THAI_CONSONANT_NAMES
 
 ROOT = Path(__file__).resolve().parent
 log = logging.getLogger(__name__)
-PLACE_PAGE = 'วางหน้าให้เห็นมุมครบ'
+PLACE_PAGE = 'วางหน้าให้เห็นมุมทั้งหมด'
 LIFT_HAND = 'ยกมือออกก่อน'
-RECHECK_S = 1.0  # re-read the colored lines this often while no hand is in view
-NEW_INK_DOTS = 3  # dots where the learned page had paper, before the page counts as changed
+RECHECK_S = 1.0  # อ่านบรรทัดสีซ้ำทุกช่วงเวลานี้ตอนไม่มีมืออยู่ในภาพ
+TIP_OFFSET_MM = 1.0  # shortcut: ค่าเดียวทุกคน ถ้าต่างกันตามขนาดนิ้วให้วัดจากภาพแทน
+NEW_INK_DOTS = 3  # จำนวนจุดที่อยู่ตรงกระดาษเปล่าของหน้าเดิม ก่อนจะถือว่าเปลี่ยนหน้า
 
 
 class FingerReader:
-    """One camera frame in, one status out: waiting_page, learning or reading."""
+    """รับภาพกล้องหนึ่งเฟรม คืนสถานะ: waiting_page, learning หรือ reading"""
 
     def __init__(self, tracker, calibrator, speech: SpeechQueue, fmt: PageFormat = DEFAULT_FORMAT,
-                 read_page=read_colored_page, required_maps: int = 3):
+                 read_page=read_colored_page, required_maps: int = 3, tip_offset_mm: float = 0.0):
         self.tracker, self.calibrator, self.speech, self.fmt = tracker, calibrator, speech, fmt
-        self.read_page, self.required_maps = read_page, required_maps
+        self.read_page, self.required_maps, self.tip_offset_mm = read_page, required_maps, tip_offset_mm
+        self.point_mm = None  # จุดอ่านบนหน้าของเฟรมล่าสุด
         self.status = 'waiting_page'
         self.last_events: list = []
         self._told: str | None = None
         self._learner = PageLearner(required_maps)
         self._finger: FingerState | None = None
-        self.calibration = self.tip = None  # last frame's, for the preview
+        self.calibration = self.tip = None  # ค่าของเฟรมล่าสุด ใช้วาดภาพตัวอย่าง
         self._hand_seen_s = float('-inf')
-        self._verify = False  # page moved: recheck every hand-free frame until sure
+        self._unreadable = False  # บันทึก log ครั้งเดียวต่อช่วงที่อ่านหน้าไม่ได้
+        self._verify = False  # หน้าถูกขยับ: ตรวจซ้ำทุกเฟรมที่ไม่มีมือจนกว่าจะแน่ใจ
 
     def step(self, frame, now_s: float) -> str:
-        self.last_events = []
+        self.last_events, self.point_mm = [], None
         calibration, changed = self.calibrator.update(frame, now_s)
         tip = self.tracker.update(frame, round(now_s * 1000))
         self.calibration, self.tip = calibration, tip
@@ -64,26 +67,31 @@ class FingerReader:
         elif self.status == 'waiting_page':
             self._set('learning', 'markers found')
         elif changed and self.status == 'reading':
-            # The hand dragged the sheet: the map is in page mm, so keep reading, but make sure
-            # it is still the same sheet before trusting it again.
+            # มือลากกระดาษ: แผนที่อยู่ในหน่วย mm ของหน้าจึงอ่านต่อได้ แต่ต้องตรวจ
+            # ว่ายังเป็นแผ่นเดิมก่อนจะเชื่อถืออีกครั้ง
             log.info('page moved; checking it is the same page')
             self._verify = True
         if self.status == 'learning':
             self._learn(frame, calibration, now_s)
         elif self.status == 'reading':
-            point = calibration.to_page([tip])[0] if tip is not None else None
-            self.last_events = self._finger.update(None if point is None else tuple(point), now_s)
+            # landmark ปลายนิ้วอยู่ค่อนไปทางซ้ายของนิ้วจริง จึงเลื่อนจุดอ่านไปทางที่นิ้วกำลังอ่าน
+            self.point_mm = calibration.to_page([tip])[0] + (self.tip_offset_mm, 0) if tip is not None else None
+            self.last_events = self._finger.update(None if self.point_mm is None else tuple(self.point_mm), now_s)
             self.speech.handle(self.last_events)
-            # MediaPipe misses a covering hand for a frame now and then: recheck only after a full hand-free second.
+            # MediaPipe พลาดมือที่บังหน้าเป็นบางเฟรม จึงตรวจซ้ำเมื่อไม่มีมือครบหนึ่งวินาทีเท่านั้น
             if now_s - self._hand_seen_s >= RECHECK_S and (self._verify or now_s - self._checked_s >= RECHECK_S):
                 self._recheck(frame, calibration, now_s)
         return self.status
 
     def _recheck(self, frame, calibration, now_s: float) -> None:
-        """A spiral-book page turned onto the same markers changes only its dots."""
+        """หน้าสมุดสันห่วงที่พลิกทับ marker เดิมจะเปลี่ยนแค่จุดเบรลล์"""
         self._checked_s = now_s
-        # Only new ink means a new page: a hand MediaPipe failed to see still only hides dots.
-        same = new_ink_dots(self.read_page(frame, calibration, self.fmt), self._finger.page, self.fmt) < NEW_INK_DOTS
+        # หมึกใหม่เท่านั้นที่แปลว่าหน้าใหม่ มือที่ MediaPipe มองไม่เห็นทำได้แค่บังจุด
+        try:
+            seen = self.read_page(frame, calibration, self.fmt)
+        except UnreadableBrailleFrame:
+            return  # เฟรมนี้บอกไม่ได้ว่าเป็นหน้าเดิมหรือไม่ รอตรวจรอบถัดไป
+        same = new_ink_dots(seen, self._finger.page, self.fmt) < NEW_INK_DOTS
         self._mismatches = 0 if same else self._mismatches + 1
         self._verify = self._verify and not same
         if self._mismatches >= self.required_maps:
@@ -99,14 +107,24 @@ class FingerReader:
 
     @property
     def entered_s(self) -> float | None:
-        """When the fingertip reached the last spoken cell (start of the speech latency)."""
+        """เวลาที่ปลายนิ้วถึงเซลล์ที่พูดล่าสุด (จุดเริ่มนับความหน่วงเสียง)"""
         return self._finger.entered_s if self._finger else None
 
     def _learn(self, frame, calibration, now_s: float) -> None:
         if self.tracker.hand_present:
             self._tell(LIFT_HAND)
             return
-        page = self._learner.update(self.read_page(frame, calibration, self.fmt))
+        try:
+            seen = self.read_page(frame, calibration, self.fmt)
+        except UnreadableBrailleFrame as error:
+            # แสงน้อยทำให้มีจุดรบกวนได้ทั้งเฟรม ต้องไม่ทำให้โปรแกรมดับ เริ่มนับการอ่านที่ตรงกันใหม่
+            if not self._unreadable:
+                log.warning('page unreadable, check the light: %s', error)
+            self._unreadable = True
+            self._learner = PageLearner(self.required_maps)
+            return
+        self._unreadable = False
+        page = self._learner.update(seen)
         if page is None:
             return
         self.speech.prepare_page(page)
@@ -122,130 +140,48 @@ class FingerReader:
             self._learner = PageLearner(self.required_maps)
 
     def _tell(self, text: str) -> None:
-        """Say a status message once per status."""
+        """พูดข้อความสถานะครั้งเดียวต่อหนึ่งสถานะ"""
         if self._told != text:
             self._told = text
             self.speech.say(text)
 
 
-class CachedWavSpeaker:
-    """Synthesize each text once to a WAV file on disk; play cached files at once.
-
-    Synthesis runs in the Piper/MMS Python environment (``python_executable``),
-    the same way ``piper_tts`` does; playback uses winsound.
-    """
-
-    def __init__(self, model: Path, cache_dir: Path, python_executable: str | None = None,
-                 backend: str = 'piper', synthesize=None, play=None):
-        if backend != 'edge' and not Path(model).exists():  # Edge is an online voice: no model file
-            raise FileNotFoundError(f'Thai speech model not found: {model}')
-        self.model, self.backend = Path(model or ''), backend
-        # Respellings are tuned per voice by ear.
-        table = {'piper': TTS_SPELLING, 'edge': EDGE_SPELLING}.get(backend, {})
-        self.spell = lambda text: tts_spelling(text, table)
-        self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.python = str(Path(python_executable).resolve()) if python_executable else sys.executable
-        self._synthesize = synthesize or self._synthesize_in_tts_env
-        self._play = play or _winsound_play
-
-    def _path(self, text: str) -> Path:
-        # Keyed by what is synthesized, so a new respelling makes new audio.
-        key = hashlib.sha1(f'{self.backend}|{self.model}|{self.spell(text)}'.encode('utf-8')).hexdigest()
-        return self.cache_dir / f'{key}.wav'
-
-    def prepare_many(self, texts, lang: str = 'thai') -> set[str]:
-        """Synthesize the uncached texts in one batch; return the texts ready to play."""
-        texts = [t for t in texts if t.strip()]  # Piper writes no audio for blank text
-        missing = [(t, self._path(t)) for t in dict.fromkeys(texts) if not self._path(t).is_file()]
-        if missing:
-            try:
-                self._synthesize(self.model, [(self.spell(t), path) for t, path in missing])
-            except Exception as error:
-                log.warning('speech synthesis failed: %s', error)
-            for _, path in missing:
-                if path.is_file():
-                    try:
-                        trim_leading_silence(path)
-                    except (OSError, EOFError, wave.Error) as error:  # not a PCM WAV: play it untrimmed
-                        log.warning('cannot trim %s: %s', path.name, error)
-        return {t for t in texts if self._path(t).is_file()}
-
-    def speak(self, text: str, lang: str = 'thai') -> bool:
-        path = self._path(text)
-        if not path.is_file():  # never synthesize inside the frame loop
-            log.warning('no prepared speech for %r', text)
-            return False
-        self._play(path)
-        return True
-
-    def stop(self) -> None:
-        self._play(None)
-
-    def _synthesize_in_tts_env(self, model: Path, jobs: list[tuple[str, Path]]) -> None:
-        # One process, one model load: synthesize_wav caches the loaded voice per model.
-        payload = json.dumps(dict(model=str(model), backend=self.backend,
-                                  jobs=[[text, str(path)] for text, path in jobs]))
-        done = subprocess.run([self.python, '-X', 'utf8', '-c', BATCH_SCRIPT % str(ROOT)],
-                              input=payload.encode('utf-8'), capture_output=True)
-        if done.returncode:
-            raise RuntimeError(done.stderr.decode('utf-8', 'replace')[-500:])
-        if done.stderr.strip():  # texts that failed one by one; the rest are cached
-            log.warning('speech synthesis skipped: %s', done.stderr.decode('utf-8', 'replace')[-500:])
-
-
-class HybridSpeaker:
-    """Texts in ``fixed`` (or every text when it is None) in a clear online voice, cached;
-    the rest in Piper. A text without online audio (offline, service down) falls back to Piper."""
-
-    def __init__(self, online, piper, fixed=None):
-        self.online, self.piper = online, piper
-        self.fixed = None if fixed is None else set(fixed)
-        self._online_ready: set[str] = set()
-
-    def prepare_many(self, texts, lang: str = 'thai') -> set[str]:
-        texts = list(texts)
-        wanted = [t for t in texts if self.fixed is None or t in self.fixed]
-        self._online_ready = self._online_ready | self.online.prepare_many(wanted, lang)
-        rest = [t for t in texts if t not in self._online_ready]
-        return {t for t in texts if t in self._online_ready} | self.piper.prepare_many(rest, lang)
-
-    def speak(self, text: str, lang: str = 'thai') -> bool:
-        return (self.online if text in self._online_ready else self.piper).speak(text, lang)
-
-    def stop(self) -> None:
-        self.piper.stop()  # one shared player: stopping either stops playback
-
-
-def trim_leading_silence(path: Path, keep_s: float = 0.02, threshold: float = 0.05) -> None:
-    """Cut the voice's silent lead-in (~0.25 s, up to 1 s) so playback starts with the sound."""
-    import numpy as np
-
-    with wave.open(str(path)) as source:
-        params, frames = source.getparams(), source.readframes(source.getnframes())
-    if params.sampwidth != 2:
-        return
-    samples = np.frombuffer(frames, np.int16).reshape(-1, params.nchannels)
-    level = np.abs(samples.astype(np.int32)).max(axis=1)
-    loud = np.nonzero(level > threshold * max(1, level.max()))[0]
-    start = max(0, int(loud[0]) - round(keep_s * params.framerate)) if len(loud) else 0
-    if start:
-        with wave.open(str(path), 'wb') as out:
-            out.setparams(params)
-            out.writeframes(samples[start:].tobytes())
-
-
 WORD_BGR = ((0, 140, 255), (255, 120, 0), (180, 0, 220), (0, 170, 0), (0, 0, 220), (200, 160, 0))
 CELL_BGR = (170, 170, 170)
 ACTIVE_BGR = (0, 200, 0)
-THAI_FONT = Path('C:/Windows/Fonts/tahoma.ttf')
+# ฟอนต์ที่มีตัวอักษรไทย ใช้ตัวแรกที่มีในเครื่อง: Windows แล้ว macOS
+THAI_FONTS = (Path('C:/Windows/Fonts/tahoma.ttf'), Path('/System/Library/Fonts/Supplemental/Tahoma.ttf'),
+              Path('/System/Library/Fonts/Supplemental/Thonburi.ttc'))
 
 
-def draw_overlay(image, page, calibration, tip, active) -> None:
-    """Outline every cell and word of the page, fill the finger's raised cell, label it.
+def upright_turns(calibration, fmt=DEFAULT_FORMAT) -> int:
+    """จำนวนรอบหมุน 90° ทวนเข็ม (แบบ ``np.rot90``) ที่ทำให้หัวกระดาษอยู่บนในภาพตัวอย่าง
 
-    Rectangles are in page mm and projected through the calibration, so they
-    follow the paper's tilt. The colored cell sits above its raised cell.
+    กล้องอาจมองหนังสือกลับหัวหรือตะแคง ระบบอ่านถูกอยู่แล้วเพราะใช้ marker
+    แต่คนที่ดูหน้าจอจะอ่านภาพได้ยาก ดูจากทิศ "ลงล่าง" ของหน้าเมื่อฉายลงภาพ
+    """
+    cx, cy = fmt.width_mm / 2, fmt.height_mm / 2
+    (x0, y0), (x1, y1) = calibration.to_image([[cx, cy], [cx, cy + 10.0]])
+    dx, dy = x1 - x0, y1 - y0
+    if abs(dy) >= abs(dx):
+        return 0 if dy > 0 else 2
+    return 3 if dx > 0 else 1  # ลงล่างของหน้าชี้ไปขวาของภาพ: หมุนตามเข็ม 90°
+
+
+def cell_caption(page, active) -> str | None:
+    """ข้อความแถบล่าง: เซลล์ใต้นิ้วและคำของมัน"""
+    if active is None:
+        return None
+    cell = active[1]
+    word = page.words[cell.word_index] if cell.word_index is not None else ''
+    return f'กำลังอ่าน: {cell.name or UNKNOWN}    คำ: {word}'
+
+
+def draw_overlay(image, page, calibration, tip, active, caption: bool = True) -> None:
+    """วาดกรอบทุกเซลล์และคำบนหน้า ระบายเซลล์นูนใต้นิ้ว และเขียนชื่อกำกับ
+
+    กรอบอยู่ในหน่วย mm ของหน้าและฉายผ่านค่าปรับเทียบ จึงเอียงตามกระดาษ
+    เซลล์สีอยู่เหนือเซลล์นูนของมัน ``caption=False`` เมื่อจะหมุนภาพก่อนเขียนข้อความ
     """
     import cv2
     import numpy as np
@@ -274,17 +210,20 @@ def draw_overlay(image, page, calibration, tip, active) -> None:
     if tip is not None:
         cv2.circle(image, tuple(map(int, tip)), 9, (0, 0, 0), -1)
         cv2.circle(image, tuple(map(int, tip)), 6, ACTIVE_BGR, -1)
-    if active is not None:
-        cell = active[1]
-        word = page.words[cell.word_index] if cell.word_index is not None else ''
-        _thai_bar(image, f'กำลังอ่าน: {cell.name or UNKNOWN}    คำ: {word}')
+    text = cell_caption(page, active)
+    if caption and text:
+        _thai_bar(image, text)
 
 
-ZONE_BGR = {'reading': (0, 200, 0), 'learning': (0, 200, 255)}  # no frame without markers
+ZONE_BGR = {'reading': (0, 200, 0), 'learning': (0, 200, 255)}  # ถ้าไม่เห็น marker จะไม่วาดกรอบ
 
 
-def draw_reading_zone(image, calibration, status: str, fmt=DEFAULT_FORMAT, dash_px: int = 14) -> None:
-    """Dashed frame through the markers' outer corners, labelled, coloured by reader status (dev view)."""
+def draw_reading_zone(image, calibration, status: str, fmt=DEFAULT_FORMAT, dash_px: int = 14,
+                      label: bool = True) -> None:
+    """กรอบเส้นประผ่านมุมนอกของ marker มีป้ายกำกับ และเปลี่ยนสีตามสถานะ (หน้าจอ dev)
+
+    ``label=False`` เมื่อภาพจะถูกหมุน ป้ายจะกลับหัวตามภาพ
+    """
     import cv2
     import numpy as np
 
@@ -298,66 +237,38 @@ def draw_reading_zone(image, calibration, status: str, fmt=DEFAULT_FORMAT, dash_
             a = start + (end - start) * t / length
             b = start + (end - start) * min(t + dash_px, length) / length
             cv2.line(image, tuple(np.round(a).astype(int)), tuple(np.round(b).astype(int)), colour, 2, cv2.LINE_AA)
+    if not label:
+        return
     x, y = np.round(corners[0]).astype(int)
     cv2.putText(image, f'READING ZONE: {status}', (int(x), max(15, int(y) - 8)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, colour, 2, cv2.LINE_AA)
 
 
 def _thai_bar(image, text: str) -> None:
-    """Dark bar with Thai text at the bottom (OpenCV fonts have no Thai glyphs)."""
+    """แถบเข้มพร้อมข้อความไทยด้านล่าง (ฟอนต์ของ OpenCV ไม่มีตัวอักษรไทย)"""
     import numpy as np
     from PIL import Image, ImageDraw, ImageFont
 
     height = max(24, image.shape[0] // 18)
     bar = Image.fromarray(np.full((height, image.shape[1], 3), 30, np.uint8))
-    try:
-        font = ImageFont.truetype(str(THAI_FONT), int(height * 0.7))
-    except OSError:
-        font = ImageFont.load_default()  # shortcut: no Thai glyphs without Tahoma; fine off Windows tests
+    path = next((f for f in THAI_FONTS if f.is_file()), None)
+    # ไม่มีฟอนต์ไทยในเครื่อง: ข้อความไทยจะเป็นสี่เหลี่ยม แต่ภาพตัวอย่างยังใช้งานได้
+    font = ImageFont.truetype(str(path), int(height * 0.7)) if path else ImageFont.load_default()
     ImageDraw.Draw(bar).text((10, height * 0.1), text, font=font, fill=(255, 255, 255))
     image[-height:] = np.asarray(bar)
 
 
-# Runs inside the Piper/MMS/Edge environment: one model load, one failed text never stops the rest.
-# Edge waits on the network, so its texts go 8 at a time (8 words: 1.1 s instead of ~7 s).
-BATCH_SCRIPT = '''import json, os, sys
-from concurrent.futures import ThreadPoolExecutor
-sys.path.insert(0, %r)
-from piper_tts import synthesize_wav
-job = json.load(sys.stdin)
-def one(item):
-    text, out = item
-    tmp = out + ".tmp.wav"
-    try:
-        synthesize_wav(job["model"], text, tmp, backend=job["backend"])
-        os.replace(tmp, out)
-    except Exception as error:
-        print(repr(text), error, file=sys.stderr)
-with ThreadPoolExecutor(8 if job["backend"] == "edge" else 1) as pool:
-    list(pool.map(one, job["jobs"]))
-'''
-
-
-def _winsound_play(path: Path | None) -> None:
-    # shortcut: Windows-only playback; add an aplay process for Linux boards when needed.
-    import winsound
-    if path is None:
-        winsound.PlaySound(None, winsound.SND_PURGE)
-    else:
-        winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
-
-
 def symbol_texts() -> list[str]:
-    """Every fixed phrase the reader may speak, to synthesize before the first page."""
+    """ทุกข้อความตายตัวที่ระบบอาจพูด เพื่อสร้างเสียงไว้ก่อนหน้าแรก"""
     return [UNKNOWN, PLACE_PAGE, LIFT_HAND, *SYMBOL_NAMES.values(), *THAI_CONSONANT_NAMES.values(),
             *(f'พร้อม {n} บรรทัด' for n in range(1, 11))]
 
 
 def main() -> int:
     import cv2
+    import numpy as np
 
-    from fingertip import FingertipTracker
-    from tools.diagnostics.hand_landmarker_spike import _open_camera, draw_hand_skeletons
+    from fingertip import PAD_FRACTION, FingertipTracker, draw_hand_skeletons, hand_size_px, open_camera
 
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, 'reconfigure'):
@@ -378,25 +289,82 @@ def main() -> int:
     parser.add_argument('--edge-python', help='Python executable of the edge-tts environment')
     parser.add_argument('--symbol-cache', type=Path, default=ROOT / 'output' / 'symbol_voice_edge')
     parser.add_argument('--log-latency', type=Path, help='CSV of per-event timings in seconds')
+    parser.add_argument('--log-finger', type=Path,
+                        help='CSV of the fingertip every frame, for tools/diagnostics/finger_lift.py')
+    parser.add_argument('--log-words', type=Path, help='file of each word read and whether the dictionary or parser rules gave it')
     parser.add_argument('--headless', action='store_true')
+    parser.add_argument('--resolution', default='1920x1080', metavar='WxH',
+                        help='camera size; 1280x720 on slow machines (e.g. ARM mini PC)')
     parser.add_argument('--marker-size-mm', type=float, help='printed marker side, as in the book template')
-    parser.add_argument('--pad-fraction', type=float, default=0.1,
+    parser.add_argument('--tip-offset-mm', type=float, default=TIP_OFFSET_MM,
+                        help='move the reading point this far right on the page, toward the middle of the finger')
+    parser.add_argument('--pad-fraction', type=float, default=PAD_FRACTION,
                         help='reading point from the fingertip toward the first joint: 0 = nail tip, 1 = joint')
     parser.add_argument('--debug-dir', type=Path, help='save the camera frame each time the status changes')
+    parser.add_argument('--speech-mode', choices=['spell', 'word'],
+                        help='spell: name every cell then the word; word: name cells of short words only')
+    parser.add_argument('--spell-max-cells', type=int, help='in word mode, words up to this many cells are spelled (1-5)')
+    parser.add_argument('--settings', type=Path, default=panel_settings.DEFAULT_PATH,
+                        help='teacher-panel settings file; the options above override it and are saved')
+    parser.add_argument('--web', type=int, metavar='PORT',
+                        help='serve the teacher panel on this port, this machine only unless --web-host (docs/web-api.md)')
+    parser.add_argument('--web-host', default='127.0.0.1',
+                        help='0.0.0.0 opens the panel to other devices on the network; needs --web-pin')
+    parser.add_argument('--web-pin', metavar='PIN', help='6 digits the teacher types once on each device')
+    parser.add_argument('--web-fps', type=int, default=5, metavar='N',
+                        help='camera frames per second sent to the panel (1-30); more is smoother but costs CPU')
     args = parser.parse_args()
+    if args.log_words:
+        args.log_words.parent.mkdir(parents=True, exist_ok=True)
+        words_file = logging.FileHandler(args.log_words, mode='w', encoding='utf-8')
+        words_file.setFormatter(logging.Formatter('%(asctime)s | %(message)s', '%H:%M:%S'))
+        logging.getLogger('word_source').addHandler(words_file)
+    if not 1 <= args.web_fps <= 30:
+        parser.error('--web-fps ต้องอยู่ระหว่าง 1–30')
+    # เครือข่ายร่วมเห็นภาพกล้องและสั่งเครื่องพูดได้ จึงห้ามเปิดโดยไม่มี PIN
+    needs_pin = args.web_host not in ('127.0.0.1', 'localhost')
+    if (needs_pin or args.web_pin is not None) and not re.fullmatch(r'\d{6}', args.web_pin or ''):
+        parser.error('--web-pin ต้องเป็นเลข 6 หลัก และต้องใส่เมื่อใช้ --web-host กับเครื่องอื่น')
+    if not re.fullmatch(r'[1-9]\d*x[1-9]\d*', args.resolution.lower()):
+        parser.error('--resolution ต้องเป็นรูปแบบ WxH เช่น 1280x720')
+    # ตรวจค่าตั้งก่อนเตรียมเสียงที่ใช้เวลานาน เพื่อให้พิมพ์ผิดแล้วหยุดทันที
+    cli_settings = {key: value for key, value in
+                    (('mode', args.speech_mode), ('spell_max_cells', args.spell_max_cells)) if value is not None}
+    try:
+        settings = panel_settings.validate(cli_settings, panel_settings.load(args.settings))
+    except ValueError as error:
+        parser.error(str(error))
     fmt = page_format(args.marker_size_mm)
 
     speaker = CachedWavSpeaker(args.tts_thai_model, args.cache, args.tts_python, args.tts_thai_backend)
     if args.symbol_voice == 'edge':
-        online = CachedWavSpeaker(None, args.symbol_cache, args.edge_python, 'edge')
-        speaker = HybridSpeaker(online, speaker, fixed=None if args.word_voice == 'edge' else symbol_texts())
+        fixed = set(symbol_texts())
+        online = CachedWavSpeaker(None, args.symbol_cache, args.edge_python, 'edge',
+                                  rate_of=lambda text: None if text in fixed else WORD_RATE)
+        speaker = HybridSpeaker(online, speaker, fixed=None if args.word_voice == 'edge' else fixed)
     print('preparing fixed phrases...')
     missing = [t for t in symbol_texts() if t not in speaker.prepare_many(symbol_texts())]
-    if missing:  # fail at startup, never silently while reading
+    if missing:  # ให้พังตั้งแต่เริ่มโปรแกรม ไม่ใช่เงียบไปตอนกำลังอ่าน
         raise RuntimeError(f'Thai voice cannot synthesize {len(missing)} phrases, e.g. {missing[:3]}')
-    reader = FingerReader(FingertipTracker(pad_fraction=args.pad_fraction), CalibrationTracker(fmt),
-                          SpeechQueue(speaker, background=True), fmt)
-    capture = _open_camera(args.camera, 1920, 1080, 30)
+    speech = SpeechQueue(speaker, background=True)
+    panel_settings.apply_to(speech, settings)
+    if cli_settings:
+        panel_settings.save(args.settings, settings)
+    reader = FingerReader(FingertipTracker(pad_fraction=args.pad_fraction), CalibrationTracker(fmt), speech, fmt,
+                          tip_offset_mm=args.tip_offset_mm)
+    panel = None
+    if args.web is not None:
+        import web_panel
+        panel = web_panel.PanelState(settings, stream_fps=args.web_fps)
+        server = web_panel.start(args.web, panel, speech, args.settings, host=args.web_host,
+                                 pin=args.web_pin)  # ถ้าพอร์ตถูกใช้อยู่จะเกิด OSError ทันที
+        port = server.server_address[1]
+        print(f'teacher panel: http://localhost:{port}')
+        if needs_pin:
+            print(f'phone or iPad on the same network: http://{web_panel.lan_ip() or "<this IP>"}:{port}'
+                  f'  or  http://{socket.gethostname()}.local:{port}')
+    width, height = map(int, args.resolution.lower().split('x'))
+    capture = open_camera(args.camera, width, height, 30)
     if not capture.isOpened():
         raise RuntimeError(f'Cannot open camera {args.camera}')
     latency = None
@@ -404,14 +372,23 @@ def main() -> int:
         args.log_latency.parent.mkdir(parents=True, exist_ok=True)
         log_file = args.log_latency.open('w', newline='', encoding='utf-8')
         latency = csv.writer(log_file)
-        # entered_s: frame where the fingertip first reached the cell; played_s: playback started.
+        # entered_s: เฟรมที่ปลายนิ้วถึงเซลล์ครั้งแรก, played_s: เวลาที่เริ่มเล่นเสียง
         latency.writerow(['event', 'entered_s', 'played_s', 'latency_s'])
+    finger_log = None
+    if args.log_finger:
+        args.log_finger.parent.mkdir(parents=True, exist_ok=True)
+        finger_file = args.log_finger.open('w', newline='', encoding='utf-8')
+        finger_log = csv.writer(finger_file)
+        finger_log.writerow(['t_s', 'x_mm', 'y_mm', 'hand_px', 'entered'])
     started = time.perf_counter()
+    fps, last_frame_s = 0.0, 0.0
+    turns = 0  # หมุนภาพตัวอย่างให้หัวกระดาษอยู่บน จำค่าเดิมไว้ตอนมือบัง marker
     try:
         while True:
             ok, frame = capture.read()
             if not ok or frame is None:
-                break
+                log.error('camera %s stopped returning frames (unplugged or used by another program?)', args.camera)
+                return 1
             frame_s = time.perf_counter() - started
             previous = reader.status
             status = reader.step(frame, frame_s)
@@ -422,14 +399,37 @@ def main() -> int:
             if latency is not None and reader.last_events and isinstance(reader.last_events[-1], EnterCell):
                 latency.writerow([repr(reader.last_events[-1]), f'{reader.entered_s:.4f}', f'{done_s:.4f}',
                                   f'{done_s - reader.entered_s:.4f}'])
-            if not args.headless:
-                draw_hand_skeletons(frame, reader.tracker.hand_landmarks)  # under the reading point
+            if finger_log is not None:
+                point = reader.point_mm if reader.point_mm is not None else ('', '')
+                size = hand_size_px(reader.tracker.hand_landmarks, reader.tip, frame.shape[1], frame.shape[0])
+                entered = next((e.name or UNKNOWN for e in reader.last_events if isinstance(e, EnterCell)), '')
+                finger_log.writerow([f'{frame_s:.4f}', *point, '' if size is None else f'{size:.1f}', entered])
+            if panel is not None:
+                fps = 0.9 * fps + 0.1 / max(frame_s - last_frame_s, 1e-3)
+                last_frame_s = frame_s
+                panel.update(reader, fps, speech.last_spoken)
+            to_panel = panel is not None and panel.wants_frame(frame_s)
+            if not args.headless or to_panel:
+                draw_hand_skeletons(frame, reader.tracker.hand_landmarks)  # วาดไว้ใต้จุดอ่าน
                 if reader.calibration is not None:
-                    draw_reading_zone(frame, reader.calibration, status, fmt)
+                    turns = upright_turns(reader.calibration, fmt)
+                    draw_reading_zone(frame, reader.calibration, status, fmt, label=turns == 0)
+                caption = None
                 if reader.page is not None and reader.calibration is not None:
-                    draw_overlay(frame, reader.page, reader.calibration, reader.tip, reader.active_cell)
+                    point = reader.point_mm
+                    tip = None if point is None else reader.calibration.to_image([point])[0]
+                    draw_overlay(frame, reader.page, reader.calibration, tip, reader.active_cell, caption=False)
+                    caption = cell_caption(reader.page, reader.active_cell)
+                # หมุนหลังวาดกรอบ ก่อนเขียนข้อความ ข้อความจึงไม่กลับหัว
+                frame = np.ascontiguousarray(np.rot90(frame, turns)) if turns else frame
+                if caption:
+                    _thai_bar(frame, caption)
                 cv2.putText(frame, status, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 200, 255), 3)
-                cv2.imshow('finger reader', cv2.resize(frame, (1280, 720)))
+            if to_panel:
+                panel.set_frame(frame, frame_s)
+            if not args.headless:
+                height, width = frame.shape[:2]
+                cv2.imshow('finger reader', cv2.resize(frame, (round(720 * width / height), 720)))
                 if cv2.waitKey(1) & 0xFF in (ord('q'), 27):
                     break
     finally:
@@ -437,6 +437,8 @@ def main() -> int:
         cv2.destroyAllWindows()
         if latency is not None:
             log_file.close()
+        if finger_log is not None:
+            finger_file.close()
     return 0
 
 

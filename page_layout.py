@@ -7,8 +7,8 @@ class CellSlot:
     x1_mm: float
     x2_mm: float
     dots: frozenset[int]
-    name: str | None  # None = unreadable
-    word_index: int | None  # None = empty cell
+    name: str | None  # None = อ่านไม่ได้
+    word_index: int | None  # None = เซลล์ว่าง
 
 
 @dataclass(frozen=True)
@@ -22,5 +22,5 @@ class LinePair:
 @dataclass(frozen=True)
 class PageMap:
     lines: tuple[LinePair, ...]
-    words: tuple[str, ...]  # words[word_index] is the word text
-    dots_mm: tuple[tuple[float, float], ...] = ()  # measured colored dots, to tell a covered page from a new one
+    words: tuple[str, ...]  # words[word_index] คือข้อความของคำ
+    dots_mm: tuple[tuple[float, float], ...] = ()  # จุดสีที่วัดได้ ใช้แยกหน้าที่ถูกบังออกจากหน้าใหม่

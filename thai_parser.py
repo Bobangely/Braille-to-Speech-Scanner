@@ -1,14 +1,13 @@
-"""Parse token sequences into Thai syllables before orthographic rendering."""
+"""แยกลำดับ token เป็นพยางค์ไทยก่อนแปลงเป็นตัวสะกด"""
 
 from collections import Counter
 from copy import deepcopy
 
 from thai_renderer import (CONSONANTS, TONES, LEADING, SHORT, INHERENT_FINAL,
-                           CODA_CHANGES_VOWEL, RULES, normalize_vowel)
+                           CODA_CHANGES_VOWEL, RULES, normalize_vowel, render_thai)
 from thai_braille import BRAILLE_STANDARD, RULES_SOURCE, lex_braille, match_post_onset_vowel
 from thai_raw_rules import RAW_STANDARD, RAW_RULES_SOURCE, candidate_validation
 
-MAX_SEGMENTATION_CANDIDATES = 128
 
 
 def _is_consonant(atom):
@@ -66,14 +65,14 @@ def _is_written_o(atoms, index):
 
 def _is_short_o_pair(atoms, index):
     """Recognize adjacent written อ + ะ; the caller must supply onset context."""
-    # Physical Braille uses the raw sequence table and its adjacency checks.
+    # เบรลล์จริงใช้ตารางลำดับเซลล์ดิบและการตรวจว่าเซลล์ติดกัน
     return (not atoms[index].get('patterns') and index+1 < len(atoms) and _is_consonant(atoms[index])
             and atoms[index]['value'] == 'อ' and atoms[index+1]['kind'] == 'vowel'
             and atoms[index+1]['value'] == 'ะ')
 
 
 def _starts_syllable(atoms, index, *, onset_context=False):
-    """A consonant with its own following vowel belongs to the next syllable."""
+    """พยัญชนะที่มีสระของตัวเองตามหลังเป็นของพยางค์ถัดไป"""
     end = index + 1
     if end < len(atoms) and _is_consonant(atoms[end]) and _cluster(atoms[index]['value'], atoms[end]['value']):
         end += 1
@@ -86,10 +85,10 @@ def _starts_syllable(atoms, index, *, onset_context=False):
         # preceding ณ in คุณแม่. Post-onset เ + ะ remains a short-vowel form.
         return end+1 >= len(atoms) or not _is_consonant(atoms[end+1])
     # อ can be a written vowel after an onset (กล + ่ + อ + ง).
-    # Its lexical token remains a consonant because it can also be an onset;
-    # identify its vowel role here before borrowing that onset as a coda.
+    # token นี้ยังเป็นพยัญชนะ เพราะเป็นพยัญชนะต้นได้ด้วย
+    # จึงระบุบทบาทสระตรงนี้ก่อนยืมพยัญชนะต้นนั้นมาเป็นตัวสะกด
     # In coda lookahead อ + ะ can be an independent อ onset (กินอะ).
-    # Compound-vowel evidence is safe while resolving the current onset cluster.
+    # หลักฐานสระประสมใช้ได้ปลอดภัยขณะหาพยัญชนะควบของต้นพยางค์ปัจจุบัน
     return (atoms[end]['kind'] in ('vowel', 'ambiguous_mark') or _is_written_o(atoms, end)
             or (onset_context and (_is_short_o_pair(atoms, end)
                                    or match_post_onset_vowel(atoms, end) is not None)))
@@ -119,8 +118,9 @@ def _implicit_closed_span(atoms, index):
             or _starts_syllable(atoms, final_index, onset_context=True)):
         return None
     end = final_index + 1
-    while end < len(atoms) and atoms[end]['kind'] == 'tone':
-        end += 1
+    # พยัญชนะที่มีวรรณยุกต์ตามหลังไม่ใช่ตัวสะกด เช่น กล้วย ไม่ใช่ ก้ล + วย
+    if end < len(atoms) and atoms[end]['kind'] == 'tone':
+        return None
     if end < len(atoms):
         preposed = (atoms[end]['kind'] == 'leading' and end+1 < len(atoms)
                     and _is_consonant(atoms[end+1]))
@@ -131,7 +131,7 @@ def _implicit_closed_span(atoms, index):
 
 
 def _structural_error(units, source_indices=None):
-    """Validate a complete structural parse, without rendering or a lexicon."""
+    """ตรวจโครงสร้างการแยกที่ครบ โดยไม่แปลงเป็นข้อความและไม่ใช้พจนานุกรม"""
     if source_indices is not None:
         expected = Counter(source_indices)
         actual = Counter(i for unit in units for i in unit['indices'])
@@ -148,8 +148,8 @@ def _structural_error(units, source_indices=None):
         if 'literal' in unit:
             if unit['literal'] == '�':
                 return 'UNKNOWN_TOKEN'
-            # Punctuation is a complete literal, but a detached linguistic
-            # fragment cannot make a competing *syllable* parse valid.
+            # เครื่องหมายวรรคตอนเป็นข้อความสมบูรณ์ แต่เศษภาษาที่หลุดมา
+            # ทำให้การแยก *พยางค์* ที่แข่งกันถูกต้องไม่ได้
             if (unit['literal'] in CONSONANTS or unit['literal'] in TONES or unit['literal'] in LEADING
                     or normalize_vowel(unit['literal']) is not None):
                 return 'INVALID_SYLLABLE'
@@ -179,10 +179,10 @@ def _segmentation_error(units, source_indices=None):
 
 
 def _compound_boundary(atoms, index, current):
-    """Compare coda + next onset against next onset + compound vowel.
+    """เทียบ ตัวสะกด + พยัญชนะต้นถัดไป กับ พยัญชนะต้นถัดไป + สระประสม
 
-    Both paths use the same parser with nested boundary comparisons disabled.
-    A display preference is not proof: equally viable paths remain review-only.
+    ทั้งสองเส้นทางใช้ parser เดียวกันโดยปิดการเทียบขอบซ้อน
+    ตัวเลือกการแสดงผลไม่ใช่หลักฐาน เส้นทางที่เป็นไปได้เท่ากันจึงอยู่ในสถานะรอตรวจ
     """
     if (_starts_syllable(atoms, index)
             or not _starts_syllable(atoms, index, onset_context=True)):
@@ -209,9 +209,9 @@ def _compound_boundary(atoms, index, current):
                                           raw_available=bool(atoms[index].get('patterns')))
         alternatives.append(dict(role=role, syllables=units, **validation))
     valid = [candidate for candidate in alternatives if candidate['valid']]
-    # Preserve an already selected compound-vowel state for display; other
-    # explicit short/written vowels keep their available coda display.
-    # This only ranks review candidates, never proves a syllable boundary.
+    # คงสถานะสระประสมที่เลือกแล้วไว้แสดงผล ส่วนสระสั้นหรือสระเขียนชัดอื่นๆ
+    # คงการแสดงตัวสะกดที่มีอยู่
+    # ใช้แค่จัดอันดับตัวเลือกที่รอตรวจ ไม่ได้พิสูจน์ขอบพยางค์
     prefer_open = current['semantic'] and (
         current['vowel'] not in SHORT.values() or current['vowel_has_onset_alternative'])
     preferred = alternatives[int(prefer_open)]
@@ -219,15 +219,15 @@ def _compound_boundary(atoms, index, current):
     standard = [candidate for candidate in valid if candidate['standard_valid']]
     eligible = standard or valid
     selected = (preferred if preferred in eligible else eligible[0]) if eligible else preferred
-    # An unresolved nucleus or lexicon-dependent path is not disproved.
-    # Only a concrete vowel/final/tone violation can eliminate a competitor.
+    # สระแกนที่ยังไม่ชัด หรือเส้นทางที่ต้องใช้พจนานุกรม ยังไม่ถือว่าผิด
+    # การละเมิดสระ ตัวสะกด หรือวรรณยุกต์ที่ชัดเจนเท่านั้นจึงตัดตัวเลือกออก
     hard_errors = {'INVALID_FINAL', 'INVALID_SYLLABLE', 'UNSUPPORTED_COMBINATION',
                    'INVALID_VOWEL', 'INVALID_SOURCE_CELLS', 'REUSED_SOURCE_CELL', 'INCOMPLETE_PARSE',
                    'NONSTANDARD_UA_CLOSED_FORM'}
     unique = len(valid) == 1 and all(candidate['validation_error'] in hard_errors
                                    for candidate in alternatives if not candidate['valid'])
-    # Incomplete evidence is not a second valid parse. Keep it review-only,
-    # but do not describe an unresolved path as proven segmentation ambiguity.
+    # หลักฐานไม่ครบไม่ใช่การแยกที่ถูกต้องอีกแบบ ให้คงไว้เพื่อรอตรวจ
+    # แต่อย่าเรียกเส้นทางที่ยังไม่จบว่าเป็นความกำกวมของการตัดพยางค์ที่พิสูจน์แล้ว
     status = (None if unique else 'AMBIGUOUS_SEGMENTATION' if len(valid) >= 2
               else 'UNRESOLVED_SEGMENTATION')
     return dict(role=selected['role'], review=not unique,
@@ -240,10 +240,13 @@ def _compound_boundary(atoms, index, current):
 
 
 def _final_role(atoms, index, vowel, *, current=None, compare_boundaries=True):
-    """Resolve the syllable boundary before a renderer can reduce its vowel."""
+    """ตัดสินขอบพยางค์ก่อนที่ renderer จะลดรูปสระ"""
     # Written ั needs a coda before the next onset can form a cluster.
     if vowel == 'ั':
         return dict(role='CODA_CONTEXT', review=False)
+    # พยัญชนะที่มีวรรณยุกต์ตามหลังเป็นต้นพยางค์ใหม่ เช่น ม ใน มะม่วง
+    if index+1 < len(atoms) and atoms[index+1]['kind'] == 'tone':
+        return dict(role='NEXT_EXPLICIT_ONSET', review=False)
     if compare_boundaries and current is not None:
         decision = _compound_boundary(atoms, index, current)
         if decision is not None:
@@ -251,9 +254,9 @@ def _final_role(atoms, index, vowel, *, current=None, compare_boundaries=True):
     if _starts_syllable(atoms, index, onset_context=not compare_boundaries):
         return dict(role='NEXT_EXPLICIT_ONSET', review=False)
     if _implicit_closed_span(atoms, index) is not None:
-        # A short-a ending supports the open syllable. Where the vowel's
-        # spelling is unchanged, prefer the complete following syllable too.
-        # Otherwise a boundary could change the recognized vowel spelling.
+        # การลงท้ายด้วย ะ สนับสนุนพยางค์เปิด เมื่อรูปสระ
+        # ไม่เปลี่ยน ให้เลือกพยางค์ถัดไปที่สมบูรณ์ด้วย
+        # ไม่อย่างนั้นขอบพยางค์อาจเปลี่ยนรูปสระที่อ่านได้
         if vowel == 'อะ' or vowel in SHORT.values() or vowel not in CODA_CHANGES_VOWEL:
             return dict(role='NEXT_IMPLICIT_ONSET', review=False)
         return dict(role='AMBIGUOUS_BOUNDARY', review=False)
@@ -261,7 +264,7 @@ def _final_role(atoms, index, vowel, *, current=None, compare_boundaries=True):
 
 
 def _parse_run(atoms, *, compare_boundaries=True):
-    """Parse a boundary-free run; preserve orthographic fragments as explicit units."""
+    """แยก run ที่ไม่มีขอบ และเก็บเศษตัวสะกดเป็นหน่วยชัดเจน"""
     index = 0
     while index < len(atoms):
         start = index
@@ -312,8 +315,8 @@ def _parse_run(atoms, *, compare_boundaries=True):
                 prefix = atom['value']
                 prefix_atoms.append(atom)
             elif vowel is None and not prefix and _is_short_o_pair(atoms, index):
-                # Consume both physical tokens as one semantic vowel, retaining
-                # their original indices/raw tokens for diagnostics.
+                # นับ token ทั้งสองเป็นสระเดียวเชิงความหมาย โดยเก็บ
+                # index และ token ดิบเดิมไว้วิเคราะห์
                 vowel, semantic = 'เอาะ', True
                 vowel_atoms.extend(atoms[index:index+2])
                 index += 1
@@ -337,7 +340,7 @@ def _parse_run(atoms, *, compare_boundaries=True):
             else:
                 break
             index += 1
-        # A written leading vowel plus short-a denotes a short vowel. Other
+        # สระหน้าที่เขียนไว้คู่กับ ะ หมายถึงสระเสียงสั้น ส่วนสระอื่น
         # fragments (เ + ก + ิ) remain already-written spelling, not semantic เออ.
         orthographic_prefix = ''
         if prefix:
@@ -385,8 +388,8 @@ def _parse_run(atoms, *, compare_boundaries=True):
                         and tail-index > 1 and tail == len(atoms)
                         and not _starts_syllable(atoms, index+1)
                         and _implicit_closed_span(atoms, index+1) is None):
-                    # Several bare consonants could be a coda, silent ending,
-                    # or another implicit-vowel syllable. No lexicon to decide.
+                    # พยัญชนะเปล่าหลายตัวอาจเป็นตัวสะกด ตัวการันต์
+                    # หรือพยางค์ที่สระไม่เขียนรูป ไม่มีพจนานุกรมมาตัดสิน
                     status = status or 'AMBIGUOUS_SYLLABLE'
                 final = atoms[index]['value']
                 components.append(_component('FINAL', final, [atoms[index]], 'CODA_CONTEXT'))
@@ -399,8 +402,8 @@ def _parse_run(atoms, *, compare_boundaries=True):
                     index += 1
         if ambiguous_mark:
             # A supplied mark in an open written Thai syllable (e.g. ก็) is
-            # not a generated short-vowel mark. Keep that existing reading;
-            # an incompatible closed form still needs additional context.
+            # ไม่ใช่เครื่องหมายสระสั้นที่สร้างขึ้น จึงคงการอ่านเดิมไว้
+            # รูปปิดที่เข้ากันไม่ได้ยังต้องใช้บริบทเพิ่ม
             explicit_open = not orthographic_prefix and final is None and tone is None
             explicit_closed = orthographic_prefix in ('เ', 'แ') and final is not None
             if not (explicit_open or explicit_closed):
@@ -428,103 +431,16 @@ def _parse_run(atoms, *, compare_boundaries=True):
         yield unit
 
 
-def _enumerate_run(atoms, original):
-    """Expand every competing boundary, including nested suffix alternatives.
-
-    The old local comparisons remain in the trace. Ranking instead consumes
-    complete paths, revalidated for source coverage and syllable structure.
-    A complexity limit fails closed: an incomplete search cannot be ranked.
-    """
-    if not any(unit.get('boundary_candidates') for unit in original):
-        return None
-    paths = {}
-
-    def expand():
-        plans, pending = {}, [0]
-        while pending:
-            start = pending[-1]
-            if start in paths:
-                pending.pop()
-                continue
-            if start not in plans:
-                units = original if start == 0 else list(_parse_run(atoms[start:]))
-                choice = next(((pos, unit['boundary_candidates']) for pos, unit in enumerate(units)
-                               if unit.get('boundary_candidates')), None)
-                if choice is None:
-                    paths[start] = [units]
-                    continue
-                position, alternatives = choice
-                branches = []
-                for alternative in alternatives:
-                    if alternative['validation_error'] in (
-                            'REUSED_SOURCE_CELL', 'INVALID_SOURCE_CELLS', 'INCOMPLETE_PARSE'):
-                        # Retain rejected provenance; never invent replacement
-                        # evidence by reparsing a corrupted source path.
-                        branches.append(dict(rejected=[*units[:position], *alternative['syllables']]))
-                        continue
-                    head = alternative['syllables'][0]
-                    used = set(head['indices'])
-                    following = max(i for i, atom in enumerate(atoms)
-                                    if used.intersection(atom.get('source_indices', [atom['index']]))) + 1
-                    branches.append(dict(prefix=units[:position], head=head, following=following))
-                plans[start] = branches
-            branches = plans[start]
-            missing = next((b['following'] for b in branches
-                            if 'following' in b and b['following'] not in paths), None)
-            if missing is not None:
-                pending.append(missing)
-                continue
-            results = []
-            for branch in branches:
-                if 'rejected' in branch:
-                    results.append(branch['rejected'])
-                else:
-                    for suffix in paths[branch['following']]:
-                        results.append([*branch['prefix'], branch['head'], *suffix])
-                        if len(results) > MAX_SEGMENTATION_CANDIDATES:
-                            raise OverflowError('segmentation_candidate_limit')
-                if len(results) > MAX_SEGMENTATION_CANDIDATES:
-                    raise OverflowError('segmentation_candidate_limit')
-            paths[start] = results
-        return paths[0]
-
-    indices = [i for atom in atoms for i in atom.get('source_indices', [atom['index']])]
-    try:
-        candidates = []
-        seen = set()
-        for units in expand():
-            signature = tuple((tuple(u['indices']), u.get('onset'), u.get('vowel'),
-                               u.get('tone'), u.get('final'), u.get('prefix'), u.get('literal'))
-                              for u in units)
-            if signature in seen:
-                continue
-            seen.add(signature)
-            error = _structural_error(units, indices)
-            validation = candidate_validation(units, error,
-                                              compatibility=atoms[0].get('compatibility_enabled', False),
-                                              raw_available=bool(atoms[0].get('patterns')))
-            candidates.append(dict(syllables=deepcopy(units), **validation))
-        return dict(indices=indices, candidates=candidates, generation_complete=True)
-    except OverflowError:
-        return dict(indices=indices, candidates=[], generation_complete=False,
-                    reason='segmentation_candidate_limit')
-
-
 def parse_tokens(tokens, *, atoms=None, compatibility=None):
-    """Keep source tokens and return ordered syllables/literals without rendering."""
+    """เก็บ token ต้นทาง และคืนพยางค์หรือข้อความตามลำดับโดยไม่แปลงเป็นข้อความ"""
     raw = deepcopy(list(tokens))
     records = [dict(token=t) if isinstance(t, str) else t for t in raw]
     # token adapter ไม่มี raw encoding จึงคง semantic compatibility ของเดิม
     compatibility = atoms is None if compatibility is None else bool(compatibility)
-    normalized, units, run, segmentation_runs = [], [], [], []
+    normalized, units, run = [], [], []
 
     def flush():
-        original = list(_parse_run(run))
-        candidates = _enumerate_run(run, original)
-        if candidates is not None:
-            candidates.update(unit_start=len(units), unit_count=len(original))
-            segmentation_runs.append(candidates)
-        units.extend(original)
+        units.extend(_parse_run(run))
         run.clear()
 
     def literal(value, indices, status=None):
@@ -541,8 +457,8 @@ def parse_tokens(tokens, *, atoms=None, compatibility=None):
         line_break = record.get('line_break_before') or (line is not None and last_line is not None and line != last_line)
         if line is not None:
             last_line = line
-        # Raw Braille must use the same adjacency boundary for lexical and
-        # contextual matches; the text-token compatibility path has no geometry.
+        # เบรลล์ดิบต้องใช้ขอบการติดกันเดียวกันทั้งการจับคู่คำ
+        # และบริบท ส่วนเส้นทาง token ข้อความไม่มีข้อมูลตำแหน่ง
         sequence_break = atoms is not None and not atom.get('adjacent_before', True)
         if line_break or record.get('break_before') or sequence_break:
             flush()
@@ -566,12 +482,11 @@ def parse_tokens(tokens, *, atoms=None, compatibility=None):
             run.append(atom)
     flush()
     return dict(raw_tokens=raw, normalized_tokens=normalized, syllables=units,
-                segmentation_runs=segmentation_runs, compatibility_enabled=compatibility,
-                parsing_precedence=['standard', 'compatibility', 'lexicon'])
+                compatibility_enabled=compatibility, parsing_precedence=['standard', 'compatibility'])
 
 
 def parse_braille(cells, *, compatibility=False):
-    """Raw patterns -> contextual semantic syllables, without producing Thai text."""
+    """รูปแบบดิบ -> พยางค์ตามบริบทเชิงความหมาย โดยยังไม่สร้างข้อความไทย"""
     raw, tokens, atoms = lex_braille(cells)
     parsed = parse_tokens(tokens, atoms=atoms, compatibility=compatibility)
     semantic, trace = [], []
@@ -594,13 +509,11 @@ def parse_braille(cells, *, compatibility=False):
             trace.append(dict(state_before=state, state_after='INVALID' if syllable.get('status') else 'COMPLETE',
                               rule=syllable.get('status') or 'SYLLABLE_END',
                               patterns=syllable['raw_patterns'], source_cells=syllable['source_cells']))
-    for run in parsed['segmentation_runs']:
-        for candidate in run['candidates']:
-            for unit in candidate['syllables']:
-                unit['raw_patterns'] = [raw[i]['pattern'] if 0 <= i < len(raw) else None
-                                        for i in unit['indices']]
-                unit['source_cells'] = [raw[i]['cell_id'] if 0 <= i < len(raw) else None
-                                        for i in unit['indices']]
     return dict(parsed, standard=RAW_STANDARD, rules_source=RAW_RULES_SOURCE, raw_cells=raw,
                 compatibility_standard=BRAILLE_STANDARD, compatibility_rules_source=RULES_SOURCE,
                 raw_patterns=[cell['pattern'] for cell in raw], semantic_tokens=semantic, parser_trace=trace)
+
+
+def compose_tokens(tokens, *, confidence_threshold=None):
+    """token เบรลล์เป็นข้อความไทย: แยกพยางค์ แล้วแปลงเป็นข้อความ"""
+    return render_thai(parse_tokens(tokens), confidence_threshold=confidence_threshold)

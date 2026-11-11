@@ -13,7 +13,7 @@ from pathlib import Path
 import cv2
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from generate_test import text_to_braille_cells  # noqa: E402
+from text_to_braille import text_to_braille_cells  # noqa: E402
 from page_calibration import calibrate, page_format  # noqa: E402
 from page_layout import PageMap  # noqa: E402
 from page_map import read_page  # noqa: E402

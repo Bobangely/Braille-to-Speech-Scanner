@@ -5,8 +5,6 @@ import cv2
 import numpy as np
 
 from decoder import decode_cells, decode_cells_verbose
-from thai_decoder import normalize_thai
-from generate_test import generate_braille_image
 
 
 CASES = [
@@ -66,9 +64,6 @@ class ThaiStandardTests(unittest.TestCase):
         for patterns in [['234', '256', '12345'], ['234', '12345', '256']]:
             self.assertEqual(decode_cells(logical_cells(patterns), lang='thai'), 'เสื้อ')
 
-    def test_normalization_does_not_guess_different_dots(self):
-        self.assertEqual(normalize_thai('ก้ิ'), 'กิ้')
-        self.assertEqual(normalize_thai('ขูาว แลืว'), 'ขูาว แลืว')
 
 
 

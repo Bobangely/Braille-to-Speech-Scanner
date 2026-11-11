@@ -2,7 +2,7 @@
 from copy import deepcopy
 import unittest
 
-from thai_composer import compose_tokens
+from thai_parser import compose_tokens
 from thai_decoder import decode_thai_details
 from thai_parser import parse_braille
 from thai_renderer import render_thai, render_syllable

@@ -90,6 +90,45 @@ class SpeechQueueTests(unittest.TestCase):
         queue.wait()
         self.assertTrue(queue.ready('ไก่'))
 
+    def test_switching_voice_prepares_the_page_again(self):
+        self.speaker.engine, self.speaker.volume = 'edge', 100
+        self.queue.prepare_page(page())
+        self.speaker.prepared.clear()
+        self.assertEqual(self.queue.set_audio_config(engine='piper', volume=150), {'engine': 'piper', 'volume': 100})
+        self.assertIn('ไก่', self.speaker.prepared)
+        with self.assertRaises(ValueError):
+            self.queue.set_audio_config(engine='auto')
+
+    def test_overlapping_preparations_never_synthesize_at_once(self):
+        # A page turn or voice switch mid-synthesis must not write the same cache files twice at once.
+        import threading
+        import time
+        running, overlaps = [0], []
+
+        class Slow(RecordingSpeaker):
+            def prepare_many(self, texts, lang):
+                running[0] += 1
+                overlaps.append(running[0])
+                time.sleep(0.05)
+                running[0] -= 1
+                return set(texts)
+
+        queue = SpeechQueue(Slow(), background=True)
+        started = time.perf_counter()
+        queue.prepare_page(page())
+        queue.prepare_page(page(words=('นก',)))
+        self.assertLess(time.perf_counter() - started, 0.04)  # the camera loop never waits
+        for worker in threading.enumerate():
+            if worker is not threading.current_thread() and worker.daemon:
+                worker.join(1)
+        self.assertEqual(max(overlaps), 1)
+
+    def test_a_single_voice_reports_itself_and_cannot_switch(self):
+        self.speaker.backend = 'piper'  # CachedWavSpeaker alone: no Edge at all
+        self.assertEqual(self.queue.engine, 'piper')
+        with self.assertRaises(ValueError):
+            self.queue.set_audio_config(engine='edge')
+
     def test_failed_preparation_is_not_ready(self):
         self.speaker.fail = True
         with self.assertLogs('speech_queue', 'WARNING'):

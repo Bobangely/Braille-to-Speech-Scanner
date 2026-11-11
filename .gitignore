@@ -20,8 +20,12 @@ build/
 # Output artifacts
 output/*.png
 output/*.mp3
+output/*.wav
+output/*.json
 output/thai_tts/
 output/edge_tts/
+output/finger_speech/
+output/symbol_voice_edge/
 output/*_stream/
 output/diagnostic_*/
 output/diag_*/
@@ -41,7 +45,14 @@ runs/
 yolov8n.pt
 models/*.task
 scratch/
+station_pin.txt
 *.cache
 
 # เก็บไฟล์ export ชุดข้อมูลเฉพาะเครื่องไว้ แต่ไม่รวมในการ merge
 /data.yaml
+.superpowers/
+
+# Debug frames from --debug-dir and a local MediaPipe checkout
+output/live_debug/
+third_party/
+.claude/handoff/
