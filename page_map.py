@@ -25,7 +25,7 @@ _logged_words = set()  # ระบบอ่านหน้าซ้ำทุก�
 
 
 def read_page(image, calibration: PageCalibration, fmt: PageFormat = DEFAULT_FORMAT) -> PageMap:
-    flat = warp_page(image, calibration, fmt, px_per_mm=PX_PER_MM)
+    flat = _blank_outside_zone(warp_page(image, calibration, fmt, px_per_mm=PX_PER_MM), fmt)
     dots, _ = ColoredCellStream().find_dots(flat)
     points = np.array([d['center'] for d in dots], dtype=float).reshape(-1, 2) / PX_PER_MM
     rows = _line_rows(points, fmt.dot_spacing_mm)
@@ -39,6 +39,18 @@ def read_page(image, calibration: PageCalibration, fmt: PageFormat = DEFAULT_FOR
                             trusted=top is not None)
         lines.append(LinePair(line_id, bottom, band_end, cells))
     return PageMap(tuple(lines), tuple(words), tuple(map(tuple, points.tolist())))
+
+
+def _blank_outside_zone(flat: np.ndarray, fmt: PageFormat) -> np.ndarray:
+    """ระบายขาวนอกกรอบที่ลากผ่านมุมนอกของ marker
+
+    ขอบหน้านอก marker ไม่มีอักษรเบรลล์ แต่กล้องเห็นห่วงสันสมุด เทป หรือโต๊ะตรงนั้น
+    ซึ่งบางเฟรมเป็นจุดสีปลอม ทำให้เกิดบรรทัดหรือเซลล์หลอกที่โผล่ ๆ หาย ๆ และการเรียนหน้าไม่นิ่ง
+    """
+    m = round(fmt.margin_mm * PX_PER_MM)
+    flat = flat.copy()
+    flat[:m], flat[-m:], flat[:, :m], flat[:, -m:] = 255, 255, 255, 255
+    return flat
 
 
 def _line_tops(points: np.ndarray, rows, spacing: float) -> list[float | None]:

@@ -50,6 +50,17 @@ def word_like_page(text, drift_mm=0.49):
 
 
 class ReadPageTests(unittest.TestCase):
+    def test_colored_specks_outside_the_marker_frame_are_ignored(self):
+        # ห่วงสันสมุดหรือเทปข้างหน้ากระดาษอยู่นอกกรอบ marker บางเฟรมดูเหมือนจุดสี
+        import cv2
+        page = render_page(FMT, px_per_mm=PX, lines=page_lines())
+        for y_mm in (43.0, 86.7, 120.4):
+            cv2.circle(page, (round(5.0 * PX), round(y_mm * PX)), round(FMT.dot_diameter_mm / 2 * PX), (255, 0, 0), -1)
+        frame, _ = camera_view(page, rotated_corners(0), size=(1280, 960), background=200)
+        calib = calibrate(frame, FMT)
+        self.assertEqual(read_page(frame, calib, FMT).words, read(page_lines()).words)
+        self.assertEqual(len(read_page(frame, calib, FMT).lines), len(TEXT))
+
     def test_two_cell_letter_names_both_of_its_cells(self):
         # The decoder adds a consumed '' token for the prefix cell; it must not replace the name.
         cells = read(page_lines(('ฃ ค',))).lines[0].cells
