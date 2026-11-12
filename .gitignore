@@ -21,6 +21,7 @@ build/
 output/*.png
 output/*.mp3
 output/*.wav
+voices/*_v[0-9]*.wav
 output/*.json
 output/thai_tts/
 output/edge_tts/

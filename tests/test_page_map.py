@@ -109,7 +109,7 @@ class ReadPageTests(unittest.TestCase):
         page = read(page_lines())
         self.assert_page(page, page_lines(), ('ไก่', 'มา', 'ไป', 'ดู', 'นก', 'บิน'))
         first = page.lines[0].cells
-        self.assertEqual([c.name for c in first[:3]], ['สระไอ', 'กอไก่', 'ไม้เอก'])
+        self.assertEqual([c.name for c in first[:3]], ['สระไอ ไม้มลาย', 'กอไก่', 'ไม้เอก'])
         self.assertEqual([c.word_index for c in first], [0, 0, 0, None, 1, 1])
         self.assertIsNone(first[3].name)
 

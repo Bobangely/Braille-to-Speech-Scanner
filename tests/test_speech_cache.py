@@ -6,7 +6,17 @@ from unittest import mock
 
 import numpy as np
 
+import speech_cache
 from speech_cache import CachedWavSpeaker
+
+
+def setUpModule():
+    # เทสต์ต้องไม่ขึ้นกับไฟล์เสียงที่อัดไว้ในโฟลเดอร์ voices/ จริง
+    empty = tempfile.TemporaryDirectory()
+    patch = mock.patch.object(speech_cache, 'VOICES', Path(empty.name))
+    patch.start()
+    unittest.addModuleCleanup(patch.stop)
+    unittest.addModuleCleanup(empty.cleanup)
 
 
 class HybridSpeakerTests(unittest.TestCase):
@@ -171,6 +181,18 @@ class CachedWavSpeakerTests(unittest.TestCase):
             with wave.open(str(quiet)) as half:
                 self.assertEqual(np.frombuffer(half.readframes(100), np.int16)[0], 5000)
 
+    def test_recorded_voice_is_played_instead_of_tts(self):
+        with tempfile.TemporaryDirectory() as cache, tempfile.TemporaryDirectory() as voices:
+            (Path(voices) / 'กอไก่.wav').write_bytes(b'RIFF')
+            sent, played = [], []
+            speaker = CachedWavSpeaker(None, Path(cache), backend='edge', play=played.append, voices_dir=Path(voices),
+                                       synthesize=lambda _, jobs: sent.extend(t for t, _, _ in jobs))
+            self.assertEqual(speaker.prepare_many(['กอไก่', 'ขอไข่']), {'กอไก่'})
+            self.assertEqual(sent, ['ขอไข่'])  # ไม่มีไฟล์อัด จึงใช้ TTS
+            self.assertTrue(speaker.speak('กอไก่'))
+            self.assertEqual(played, [Path(voices) / 'กอไก่.wav'])
+            self.assertFalse(speaker.ready('../กอไก่'))  # ห้ามเปิดไฟล์นอกโฟลเดอร์
+
     def test_failed_texts_are_not_reported_ready(self):
         with tempfile.TemporaryDirectory() as cache:
             batches, played = [], []
@@ -188,6 +210,21 @@ class CachedWavSpeakerTests(unittest.TestCase):
     def test_one_failing_text_does_not_stop_the_batch_in_the_voice_process(self):
         from speech_cache import BATCH_SCRIPT
         self.assertIn('except Exception', BATCH_SCRIPT)  # per text, inside the Piper/MMS process
+
+    def test_voice_process_retries_a_text_that_got_no_audio(self):
+        import json, subprocess, sys
+        from speech_cache import BATCH_SCRIPT
+        with tempfile.TemporaryDirectory() as root:
+            # เสียงปลอม: ครั้งแรกไม่มีเสียงเหมือน Edge ครั้งที่สองเขียนไฟล์ได้
+            Path(root, 'piper_tts.py').write_text(
+                'import os\ncalls = []\ndef synthesize_wav(model, text, out, backend, rate):\n'
+                '    calls.append(text)\n    if len(calls) == 1: raise RuntimeError("No audio")\n'
+                '    open(out, "wb").close()\n', encoding='utf-8')
+            out = str(Path(root) / 'a.wav')
+            job = json.dumps(dict(model='', backend='piper', jobs=[['ไก่', out, None]]))
+            done = subprocess.run([sys.executable, '-c', BATCH_SCRIPT % root], input=job.encode(), capture_output=True)
+            self.assertTrue(Path(out).is_file(), done.stderr)
+            self.assertEqual(done.stderr, b'')
 
 
 if __name__ == '__main__':

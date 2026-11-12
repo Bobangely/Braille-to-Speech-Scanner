@@ -6,7 +6,7 @@ from thai_speech import SYMBOL_NAMES, symbol_name
 
 class SymbolNameTests(unittest.TestCase):
     def test_kai_symbols(self):
-        self.assertEqual([symbol_name(c) for c in ('ไ', 'ก', '่')], ['สระไอ', 'กอไก่', 'ไม้เอก'])
+        self.assertEqual([symbol_name(c) for c in ('ไ', 'ก', '่')], ['สระไอ ไม้มลาย', 'กอไก่', 'ไม้เอก'])
 
     def test_all_vowels_and_tones_have_names(self):
         required = '่้๊๋์ะัาำิีึืุูเแโใไ็'

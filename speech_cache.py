@@ -15,10 +15,12 @@ import sys
 import wave
 from pathlib import Path
 
+from piper_tts import EDGE_VOICES
 from thai_speech import EDGE_SPELLING, TTS_SPELLING, tts_spelling
 
 ROOT = Path(__file__).resolve().parent
 log = logging.getLogger(__name__)
+VOICES = ROOT / 'voices'  # เสียงที่อัดเอง ชื่อไฟล์คือข้อความที่พูด เช่น กอไก่.wav
 WORD_RATE = '-25%'  # คำตอบให้ฟังชัด ส่วนชื่อเซลล์คงเดิมเพื่อให้ทันนิ้วที่เลื่อนต่อ
 
 
@@ -29,7 +31,8 @@ class CachedWavSpeaker:
     """
 
     def __init__(self, model: Path, cache_dir: Path, python_executable: str | None = None,
-                 backend: str = 'piper', synthesize=None, play=None, rate_of=lambda text: None):
+                 backend: str = 'piper', synthesize=None, play=None, rate_of=lambda text: None,
+                 voices_dir: Path | None = None):
         if backend != 'edge' and not Path(model).exists():  # Edge เป็นเสียงออนไลน์ จึงไม่มีไฟล์โมเดล
             raise FileNotFoundError(f'Thai speech model not found: {model}')
         self.model, self.backend = Path(model or ''), backend
@@ -37,6 +40,7 @@ class CachedWavSpeaker:
         table = {'piper': TTS_SPELLING, 'edge': EDGE_SPELLING}.get(backend, {})
         self.spell = lambda text: tts_spelling(text, table)
         self.cache_dir = Path(cache_dir)
+        self.voices_dir = Path(voices_dir or VOICES)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.python = str(Path(python_executable).absolute()) if python_executable else sys.executable
         self._synthesize = synthesize or self._synthesize_in_tts_env
@@ -48,9 +52,15 @@ class CachedWavSpeaker:
         return self._path(text).is_file()
 
     def _path(self, text: str) -> Path:
+        # เสียงคนอัดชัดกว่า TTS จึงใช้ก่อน ห้ามมี / หรือ \ เพื่อไม่ให้หลุดออกนอกโฟลเดอร์
+        recorded = self.voices_dir / f'{text}.wav'
+        if '/' not in text and '\\' not in text and recorded.is_file():
+            return recorded
         # ตั้งชื่อตามสิ่งที่สังเคราะห์จริง คำสะกดใหม่จึงได้เสียงใหม่
         rate = self.rate_of(text)
-        tag = f'{self.backend}|{self.model}|{self.spell(text)}' + (f'|{rate}' if rate else '')
+        # Edge ไม่มีไฟล์โมเดล ใช้ชื่อเสียงแทน เปลี่ยนเสียงแล้วจึงไม่เล่นเสียงเก่าจาก cache
+        voice = EDGE_VOICES['thai'] if self.backend == 'edge' else self.model
+        tag = f'{self.backend}|{voice}|{self.spell(text)}' + (f'|{rate}' if rate else '')
         return self.cache_dir / f'{hashlib.sha1(tag.encode("utf-8")).hexdigest()}.wav'
 
     def prepare_many(self, texts, lang: str = 'thai') -> set[str]:
@@ -153,7 +163,7 @@ def trim_leading_silence(path: Path, keep_s: float = 0.02, threshold: float = 0.
 
 # รันใน environment ของ Piper/MMS/Edge: โหลดโมเดลครั้งเดียว ข้อความเดียวที่พังไม่หยุดข้อความอื่น
 # Edge รอเครือข่าย จึงส่งครั้งละ 8 ข้อความ (8 คำ: 1.1 วินาที แทนที่จะเป็นราว 7 วินาที)
-BATCH_SCRIPT = '''import json, os, sys
+BATCH_SCRIPT = '''import json, os, sys, time
 from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, %r)
 from piper_tts import synthesize_wav
@@ -161,11 +171,16 @@ job = json.load(sys.stdin)
 def one(item):
     text, out, rate = item
     tmp = out + ".tmp.wav"
-    try:
-        synthesize_wav(job["model"], text, tmp, backend=job["backend"], rate=rate)
-        os.replace(tmp, out)
-    except Exception as error:
-        print(repr(text), error, file=sys.stderr)
+    for attempt in range(3):  # Edge บางครั้งตอบ No audio แบบสุ่ม ลองใหม่มักผ่าน
+        try:
+            synthesize_wav(job["model"], text, tmp, backend=job["backend"], rate=rate)
+            os.replace(tmp, out)
+            return
+        except Exception as error:
+            if attempt == 2:
+                print(repr(text), error, file=sys.stderr)
+            else:
+                time.sleep(1 + attempt)
 with ThreadPoolExecutor(8 if job["backend"] == "edge" else 1) as pool:
     list(pool.map(one, job["jobs"]))
 '''
