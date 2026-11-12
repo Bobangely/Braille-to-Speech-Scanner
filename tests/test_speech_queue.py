@@ -90,6 +90,19 @@ class SpeechQueueTests(unittest.TestCase):
         queue.wait()
         self.assertTrue(queue.ready('ไก่'))
 
+    def test_word_speaks_once_its_file_is_ready_before_the_page_finishes(self):
+        import threading
+        gate = threading.Event()
+        slow = RecordingSpeaker()
+        slow.prepare_many = lambda texts, lang: (gate.wait(5), set(texts))[1]
+        slow.ready = lambda text: text == 'ไก่'  # ไฟล์ของคำนี้เขียนเสร็จแล้ว
+        queue = SpeechQueue(slow, background=True)
+        queue.prepare_page(page())
+        queue.handle([FinishWord(0, 'ไก่')])
+        gate.set()
+        queue.wait()
+        self.assertEqual(slow.calls[-1], ('speak', 'ไก่'))
+
     def test_switching_voice_prepares_the_page_again(self):
         self.speaker.engine, self.speaker.volume = 'edge', 100
         self.queue.prepare_page(page())

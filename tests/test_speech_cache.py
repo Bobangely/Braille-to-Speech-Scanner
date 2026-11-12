@@ -25,6 +25,10 @@ class HybridSpeakerTests(unittest.TestCase):
     class Fake:
         def __init__(self, can):
             self.can, self.prepared, self.spoken, self.stopped = set(can), [], [], 0
+            self.files = set()  # ไฟล์ที่เขียนเสร็จแล้วระหว่างสังเคราะห์ชุดหนึ่ง
+
+        def ready(self, text):
+            return text in self.files
 
         def prepare_many(self, texts, lang='thai'):
             self.prepared.append(list(texts))
@@ -36,6 +40,16 @@ class HybridSpeakerTests(unittest.TestCase):
 
         def stop(self):
             self.stopped += 1
+
+    def test_online_file_written_mid_batch_is_spoken_by_the_online_voice(self):
+        from speech_cache import HybridSpeaker
+        online, piper = self.Fake([]), self.Fake([])
+        speaker = HybridSpeaker(online, piper)
+        self.assertFalse(speaker.ready('ไก่'))
+        online.files.add('ไก่')
+        self.assertTrue(speaker.ready('ไก่'))
+        speaker.speak('ไก่')
+        self.assertEqual((online.spoken, piper.spoken), (['ไก่'], []))
 
     def test_fixed_phrases_use_the_online_voice_and_words_use_piper(self):
         from speech_cache import HybridSpeaker

@@ -134,10 +134,20 @@ class HybridSpeaker:
         rest = [t for t in texts if t not in self._online_ready]
         return {t for t in texts if t in self._online_ready} | self.piper.prepare_many(rest, lang)
 
+    def _use_online(self, text: str) -> bool:
+        # ไฟล์ออนไลน์ที่เขียนเสร็จแล้วใช้ได้ทันที แม้ทั้งชุดยังไม่เสร็จ
+        return text in self._online_ready or (
+            (self.fixed is None or text in self.fixed) and self.online.ready(text))
+
+    def ready(self, text: str) -> bool:
+        if self.engine == 'piper':
+            return self.piper.ready(text) or text in self._online_ready
+        return self._use_online(text) or self.piper.ready(text)
+
     def speak(self, text: str, lang: str = 'thai') -> bool:
         if self.engine == 'piper':
             return self.piper.speak(text, lang) or self.online.speak(text, lang)
-        return (self.online if text in self._online_ready else self.piper).speak(text, lang)
+        return (self.online if self._use_online(text) else self.piper).speak(text, lang)
 
     def stop(self) -> None:
         self.piper.stop()  # ใช้ตัวเล่นร่วมกัน หยุดตัวใดตัวหนึ่งก็หยุดเสียงแล้ว

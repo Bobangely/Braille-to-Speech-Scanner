@@ -96,7 +96,9 @@ class SpeechQueue:
         self._prepared |= set(ready)
 
     def ready(self, text: str) -> bool:
-        return text in self._prepared
+        # คำที่เขียนไฟล์เสร็จแล้วพูดได้เลย ไม่ต้องรอทั้งหน้า (เสียง Edge บางเสียงช้า)
+        file_ready = getattr(self.speaker, 'ready', None)
+        return text in self._prepared or bool(file_ready and file_ready(text))
 
     def say(self, text: str) -> None:
         """พูดข้อความโดยตัดเสียงที่กำลังเล่น ข้อผิดพลาดตอนเล่นจะถูกบันทึก log"""

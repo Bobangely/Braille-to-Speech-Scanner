@@ -5,7 +5,7 @@ import wave
 
 from thai_speech import expand_thai_speech_units
 
-EDGE_VOICES = {'thai': 'th-TH-NiwatNeural', 'english': 'en-US-JennyNeural'}
+EDGE_VOICES = {'thai': 'th-TH-PremwadeeNeural', 'english': 'en-US-JennyNeural'}
 EDGE_RATE = '-20%'
 
 
