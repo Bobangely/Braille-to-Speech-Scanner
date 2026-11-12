@@ -94,6 +94,35 @@ class FingertipTrackerTests(unittest.TestCase):
         self.assertIsNone(tracker.update(FRAME, 333))
         self.assertEqual(tracker.update(FRAME, 366), (384, 120))
 
+    def test_teacher_can_choose_the_middle_finger(self):
+        tracker = FingertipTracker(detector=FakeDetector([hand(index_tip=(0.1, 0.1), middle_tip=(0.5, 0.25))]))
+        tracker.choose('middle', 'any')
+        tracker.update(FRAME, 1)
+        self.assertEqual(tracker.update(FRAME, 300), (320, 120))
+
+    def test_thumb_reads_from_landmark_4(self):
+        thumb = hand()
+        thumb[4] = SimpleNamespace(x=0.25, y=0.5)
+        self.assertEqual(fingertip_pixels([thumb], 640, 480, tips=(4,)), [(0, 4, 160, 240)])
+
+    def test_only_the_chosen_hand_reads(self):
+        left, right = hand(index_tip=(0.25, 0.5)), hand(index_tip=(0.75, 0.5))
+        detector = FakeDetector([left, right])
+        detector.detect_for_video = lambda image, ms: SimpleNamespace(
+            hand_landmarks=[left, right],
+            handedness=[[SimpleNamespace(category_name='Left')], [SimpleNamespace(category_name='Right')]])
+        tracker = FingertipTracker(detector=detector)
+        tracker.choose('index', 'left')
+        tracker.update(FRAME, 1)
+        self.assertEqual(tracker.update(FRAME, 300), (160, 240))
+
+    def test_changing_the_finger_drops_the_old_lock(self):
+        tracker = FingertipTracker(detector=FakeDetector([hand(middle_tip=(0.1, 0.1))]))
+        tracker.update(FRAME, 1)
+        self.assertIsNotNone(tracker.update(FRAME, 300))
+        tracker.choose('middle', 'any')
+        self.assertIsNone(tracker.update(FRAME, 333))  # นิ้วใหม่ต้องนิ่งครบเวลาก่อน
+
     def test_lock_waits_for_dwell(self):
         lock = ActiveFingertipLock(dwell_ms=250, radius_px=20)
         self.assertIsNone(lock.update([('Right', 8, 10, 10)], 0))

@@ -268,7 +268,7 @@ def main() -> int:
     import cv2
     import numpy as np
 
-    from fingertip import PAD_FRACTION, FingertipTracker, draw_hand_skeletons, hand_size_px, open_camera
+    from fingertip import FINGERS, PAD_FRACTION, FingertipTracker, draw_hand_skeletons, hand_size_px, open_camera
 
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, 'reconfigure'):
@@ -390,6 +390,9 @@ def main() -> int:
                 log.error('camera %s stopped returning frames (unplugged or used by another program?)', args.camera)
                 return 1
             frame_s = time.perf_counter() - started
+            # ครูเปลี่ยนนิ้วบนหน้าเว็บได้ระหว่างอ่าน จึงอ่านค่าทุกเฟรม
+            current = panel.settings if panel is not None else settings
+            reader.tracker.choose(current['finger'], current['hand'])
             previous = reader.status
             status = reader.step(frame, frame_s)
             done_s = time.perf_counter() - started
@@ -401,7 +404,8 @@ def main() -> int:
                                   f'{done_s - reader.entered_s:.4f}'])
             if finger_log is not None:
                 point = reader.point_mm if reader.point_mm is not None else ('', '')
-                size = hand_size_px(reader.tracker.hand_landmarks, reader.tip, frame.shape[1], frame.shape[0])
+                size = hand_size_px(reader.tracker.hand_landmarks, reader.tip, frame.shape[1], frame.shape[0],
+                                   FINGERS[reader.tracker.finger])
                 entered = next((e.name or UNKNOWN for e in reader.last_events if isinstance(e, EnterCell)), '')
                 finger_log.writerow([f'{frame_s:.4f}', *point, '' if size is None else f'{size:.1f}', entered])
             if panel is not None:

@@ -1,7 +1,7 @@
 """ติดตามปลายนิ้วสำหรับเครื่องอ่าน (MediaPipe Hand Landmarker)
 
-อ่านด้วยปลายนิ้วชี้เท่านั้น (landmark 8) เพราะเบรลล์อ่านด้วยนิ้วชี้
-และการตามนิ้วกลางด้วยทำให้การล็อกสลับไปมาระหว่างสองนิ้ว
+อ่านด้วยนิ้วเดียวที่ครูเลือกบนหน้าเว็บ (ค่าเริ่มต้นนิ้วชี้ landmark 8)
+เพราะการตามหลายนิ้วพร้อมกันทำให้การล็อกสลับไปมาระหว่างนิ้ว
 นิ้วแรกที่นิ่งครบเวลาจะเป็นนิ้วอ่าน และถูกตามจนกว่าจะหายไป
 """
 
@@ -14,6 +14,10 @@ import sys
 import cv2
 
 TIP_LANDMARKS = (8,)
+# landmark ปลายนิ้วของ MediaPipe แต่ละคนถนัดอ่านด้วยนิ้วต่างกัน
+FINGERS = {'thumb': 4, 'index': 8, 'middle': 12}
+# ชื่อมือที่ MediaPipe ตอบ; 'any' คือมือไหนก็ได้
+HANDS = {'any': None, 'left': 'Left', 'right': 'Right'}
 PAD_FRACTION = 0.0  # จุดอ่านจากปลายนิ้วไปทางข้อนิ้วแรก: ใช้สุดปลายนิ้ว เพราะค่า 0.5 ตกต่ำกว่าบรรทัดนูน
 DEFAULT_MODEL = Path(__file__).resolve().parent / "models" / "hand_landmarker.task"
 MODEL_URL = (
@@ -48,23 +52,24 @@ def draw_hand_skeletons(frame, hand_landmarks) -> None:
         )
 
 
-def hand_size_px(hand_landmarks, tip, width: int, height: int) -> float | None:
+def hand_size_px(hand_landmarks, tip, width: int, height: int, landmark: int = 8) -> float | None:
     """ระยะข้อมือถึงโคนนิ้วกลาง (px) ของมือที่อ่าน มือที่ยกเข้าหากล้องจะดูใหญ่ขึ้น"""
     if tip is None or not hand_landmarks:
         return None
-    hand = min(hand_landmarks, key=lambda h: math.hypot(h[8].x * width - tip[0], h[8].y * height - tip[1]))
+    hand = min(hand_landmarks, key=lambda h: math.hypot(h[landmark].x * width - tip[0],
+                                                        h[landmark].y * height - tip[1]))
     return math.hypot((hand[0].x - hand[9].x) * width, (hand[0].y - hand[9].y) * height)
 
 
 def fingertip_pixels(hand_landmarks, width: int, height: int,
-                     pad_fraction: float = PAD_FRACTION) -> list[tuple[int, int, int, int]]:
+                     pad_fraction: float = PAD_FRACTION, tips=TIP_LANDMARKS) -> list[tuple[int, int, int, int]]:
     """Map the reading point of each reading finger to clamped frame pixels.
 
     ``pad_fraction`` เลื่อนจุดอ่านจากปลายนิ้วเข้าหาข้อนิ้ว ค่าเริ่มต้น 0 คืออ่านที่สุดปลายนิ้ว
     """
     points = []
     for hand_index, landmarks in enumerate(hand_landmarks):
-        for landmark_index in TIP_LANDMARKS:
+        for landmark_index in tips:
             tip, joint = landmarks[landmark_index], landmarks[landmark_index - 1]
             x = min(width - 1, max(0, round((tip.x + pad_fraction * (joint.x - tip.x)) * width)))
             y = min(height - 1, max(0, round((tip.y + pad_fraction * (joint.y - tip.y)) * height)))
@@ -113,10 +118,10 @@ class ActiveFingertipLock:
 
 
 def labelled_fingertips(result, width: int, height: int,
-                        pad_fraction: float = PAD_FRACTION) -> list[tuple[str, int, int, int]]:
+                        pad_fraction: float = PAD_FRACTION, tips=TIP_LANDMARKS) -> list[tuple[str, int, int, int]]:
     """(ชื่อมือ, landmark, x, y) ของปลายนิ้วอ่านทุกนิ้วในผลตรวจจับ"""
     candidates = []
-    for hand_index, landmark_index, x, y in fingertip_pixels(result.hand_landmarks, width, height, pad_fraction):
+    for hand_index, landmark_index, x, y in fingertip_pixels(result.hand_landmarks, width, height, pad_fraction, tips):
         handedness = result.handedness[hand_index]
         hand = handedness[0].category_name if handedness else f"Hand {hand_index + 1}"
         candidates.append((hand, landmark_index, x, y))
@@ -134,6 +139,13 @@ class FingertipTracker:
         self.grace_ms = grace_ms  # คงการล็อกไว้ตอนตรวจจับหายไปชั่วครู่
         self._seen_ms = 0
         self.hand_present, self.hand_landmarks = False, []
+        self.finger, self.hand = 'index', 'any'
+
+    def choose(self, finger: str, hand: str) -> None:
+        """ตั้งนิ้วและมือที่ใช้อ่าน ถ้าเปลี่ยนต้องล็อกนิ้วใหม่"""
+        if (finger, hand) != (self.finger, self.hand):
+            self.finger, self.hand = finger, hand
+            self._lock.reset()
 
     def update(self, frame_bgr, now_ms: int) -> tuple[int, int] | None:
         import mediapipe as mp
@@ -144,7 +156,9 @@ class FingertipTracker:
         self.hand_landmarks = result.hand_landmarks  # ใช้วาดโครงมือในภาพตัวอย่าง
         self.hand_present = bool(result.hand_landmarks)
         height, width = frame_bgr.shape[:2]
-        candidates = labelled_fingertips(result, width, height, self.pad_fraction)
+        candidates = labelled_fingertips(result, width, height, self.pad_fraction, (FINGERS[self.finger],))
+        if HANDS[self.hand] is not None:  # มืออีกข้างวางบนหน้าได้โดยไม่ถูกอ่าน
+            candidates = [c for c in candidates if c[0] == HANDS[self.hand]]
         active = self._lock.update(candidates, now_ms)
         if active is None:
             return None

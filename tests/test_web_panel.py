@@ -232,7 +232,7 @@ class ServerTests(unittest.TestCase):
 
     def test_post_settings_applies_and_saves(self):
         status, body = self.post(b'{"mode": "word", "spell_max_cells": 3}')
-        self.assertEqual((status, body), (200, {'mode': 'word', 'spell_max_cells': 3, 'camera': True}))
+        self.assertEqual((status, body), (200, {**DEFAULTS, 'mode': 'word', 'spell_max_cells': 3}))
         self.assertEqual(self.speech.mode, 'word')
         self.assertEqual(json.loads(self.get('/api/state')[2])['settings']['mode'], 'word')
 

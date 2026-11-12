@@ -40,7 +40,7 @@ body: `{"pin": "123456"}`
     [{"index": 0, "text": "ช้าง"}, {"index": 1, "text": "กิน"}, {"index": 2, "text": "กล้วย"}],
     [{"index": 3, "text": "แมว"}, {"index": 4, "text": "นอน"}]
   ],
-  "settings": {"mode": "word", "spell_max_cells": 2, "camera": true}
+  "settings": {"mode": "word", "spell_max_cells": 2, "camera": true, "finger": "index", "hand": "any"}
 }
 ```
 
@@ -75,10 +75,12 @@ body เป็น JSON ส่งเฉพาะ field ที่จะเปล�
 | `mode` | `"spell"` \| `"word"` | `"spell"` | `spell`: สะกดทุกเซลล์แล้วพูดคำ · `word`: พูดเฉพาะคำ ยกเว้นคำสั้น |
 | `spell_max_cells` | int 1–5 | 2 | ในโหมด `word` คำที่มีเซลล์ไม่เกินค่านี้ยังสะกด |
 | `camera` | bool | true | false: server หยุดเข้ารหัส JPEG และ `/stream.mjpg` ตอบ 503 |
+| `finger` | `"thumb"` \| `"index"` \| `"middle"` | `"index"` | นิ้วที่ใช้อ่าน (landmark 4 / 8 / 12) ระบบอ่านทีละนิ้วเดียว เปลี่ยนแล้วต้องวางนิ้วนิ่งให้ล็อกใหม่ |
+| `hand` | `"any"` \| `"left"` \| `"right"` | `"any"` | มือที่ใช้อ่าน มืออีกข้างวางบนหน้าได้โดยไม่ถูกอ่าน |
 
 server เรียก `panel_settings.apply_settings(speech, path, body)` ฟังก์ชันนี้ตรวจค่า ตั้งค่าให้ `SpeechQueue` และบันทึกไฟล์
 
-- สำเร็จ: `200` พร้อม settings ทั้งหมดหลังเปลี่ยน เช่น `{"mode": "spell", "spell_max_cells": 2, "camera": true}`
+- สำเร็จ: `200` พร้อม settings ทั้งหมดหลังเปลี่ยน เช่น `{"mode": "spell", "spell_max_cells": 2, "camera": true, "finger": "index", "hand": "any"}`
 - บันทึกไฟล์ไม่ได้ (`OSError`): `500` พร้อม `{"error": "บันทึกค่าตั้งไม่ได้"}` ค่าในระบบเสียงไม่เปลี่ยน
 - ค่าผิดหรือ JSON ผิด: `400` พร้อม `{"error": "<ข้อความภาษาไทย>"}` และไม่เปลี่ยนค่าใดเลย (ถ้า field หนึ่งผิด field อื่นใน body เดียวกันก็ไม่ถูกใช้)
 

@@ -50,7 +50,7 @@ class PanelSettingsTests(unittest.TestCase):
         self.assertEqual(load(self.path), {**DEFAULTS, 'mode': 'word'})
 
     def test_save_then_load(self):
-        settings = {'mode': 'word', 'spell_max_cells': 4, 'camera': False}
+        settings = {**DEFAULTS, 'mode': 'word', 'spell_max_cells': 4, 'camera': False}
         save(self.path, settings)
         self.assertEqual(load(self.path), settings)
         self.assertEqual([p.name for p in self.path.parent.iterdir()], ['panel_settings.json'])
@@ -58,7 +58,7 @@ class PanelSettingsTests(unittest.TestCase):
     def test_apply_settings(self):
         speech = SimpleNamespace(mode='spell', spell_max_cells=2)
         result = apply_settings(speech, self.path, {'mode': 'word', 'spell_max_cells': 3})
-        self.assertEqual(result, {'mode': 'word', 'spell_max_cells': 3, 'camera': True})
+        self.assertEqual(result, {**DEFAULTS, 'mode': 'word', 'spell_max_cells': 3})
         self.assertEqual((speech.mode, speech.spell_max_cells), ('word', 3))
         self.assertEqual(json.loads(self.path.read_text(encoding='utf-8')), result)
 
@@ -77,7 +77,13 @@ class PanelSettingsTests(unittest.TestCase):
             t.start()
         for t in threads:
             t.join()
-        self.assertEqual(load(self.path), {'mode': 'word', 'spell_max_cells': 4, 'camera': False})
+        self.assertEqual(load(self.path), {**DEFAULTS, 'mode': 'word', 'spell_max_cells': 4, 'camera': False})
+
+    def test_finger_and_hand_choices(self):
+        self.assertEqual(validate({'finger': 'thumb', 'hand': 'left'}, DEFAULTS)['finger'], 'thumb')
+        for bad in ({'finger': 'ring'}, {'hand': 'both'}):
+            with self.assertRaises(ValueError):
+                validate(bad, DEFAULTS)
 
     def test_apply_invalid_changes_nothing(self):
         speech = SimpleNamespace(mode='spell', spell_max_cells=2)

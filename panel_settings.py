@@ -12,9 +12,11 @@ import os
 import threading
 from pathlib import Path
 
-DEFAULTS = {'mode': 'spell', 'spell_max_cells': 2, 'camera': True}
+DEFAULTS = {'mode': 'spell', 'spell_max_cells': 2, 'camera': True, 'finger': 'index', 'hand': 'any'}
 DEFAULT_PATH = Path(__file__).resolve().parent / 'output' / 'panel_settings.json'
 MODES = ('spell', 'word')
+FINGERS = ('thumb', 'index', 'middle')  # ตรงกับ fingertip.FINGERS
+HANDS = ('any', 'left', 'right')
 log = logging.getLogger(__name__)
 _lock = threading.Lock()
 
@@ -33,6 +35,10 @@ def validate(partial: dict, current: dict) -> dict:
         raise ValueError('spell_max_cells ต้องเป็นจำนวนเต็ม 1–5')
     if 'camera' in partial and type(partial['camera']) is not bool:
         raise ValueError('camera ต้องเป็น true หรือ false')
+    if 'finger' in partial and partial['finger'] not in FINGERS:
+        raise ValueError('finger ต้องเป็น "thumb", "index" หรือ "middle"')
+    if 'hand' in partial and partial['hand'] not in HANDS:
+        raise ValueError('hand ต้องเป็น "any", "left" หรือ "right"')
     return {**current, **partial}
 
 

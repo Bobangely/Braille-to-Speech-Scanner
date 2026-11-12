@@ -428,6 +428,21 @@
       <p id="error" role="status"></p>
     </section>
 
+    <!-- นิ้วที่ใช้อ่าน: แต่ละคนถนัดนิ้วและมือต่างกัน ระบบอ่านทีละนิ้วเดียว -->
+    <section class="card tone-mint">
+      <p class="label">นิ้วที่ใช้อ่าน</p>
+      <div class="seg" role="group" aria-label="นิ้วที่ใช้อ่าน">
+        <button data-finger="thumb" aria-pressed="false">นิ้วโป้ง</button>
+        <button data-finger="index" aria-pressed="true">นิ้วชี้</button>
+        <button data-finger="middle" aria-pressed="false">นิ้วกลาง</button>
+      </div>
+      <div class="seg" role="group" aria-label="มือที่ใช้อ่าน">
+        <button data-hand="left" aria-pressed="false">มือซ้าย</button>
+        <button data-hand="any" aria-pressed="true">มือไหนก็ได้</button>
+        <button data-hand="right" aria-pressed="false">มือขวา</button>
+      </div>
+    </section>
+
   </aside>
 
   <!-- Page Text Display with Click-to-Speak -->
@@ -449,7 +464,7 @@ const STATUS = {waiting_page: 'รอหน้าหนังสือ', learnin
 const $ = id => document.getElementById(id);
 
 let locked = null;  // null: ยังไม่รู้จนกว่าจะถาม server ครั้งแรก
-let settings = {mode: 'spell', spell_max_cells: 2, camera: true};
+let settings = {mode: 'spell', spell_max_cells: 2, camera: true, finger: 'index', hand: 'any'};
 let audioConfig = {engine: 'edge', volume: 100};
 let muted = false;
 let sending = false;
@@ -626,6 +641,8 @@ function showSettings() {
   $('stepper').classList.toggle('dim', spell);
   $('less').disabled = settings.spell_max_cells <= 1;
   $('more').disabled = settings.spell_max_cells >= 5;
+  document.querySelectorAll('[data-finger]').forEach(b => b.setAttribute('aria-pressed', b.dataset.finger === settings.finger));
+  document.querySelectorAll('[data-hand]').forEach(b => b.setAttribute('aria-pressed', b.dataset.hand === settings.hand));
   const img = $('stream');
   const live = Boolean(settings.camera && !DEMO && locked === false);
   if (live) {
@@ -827,6 +844,8 @@ $('mode-spell').onclick = () => change({mode: 'spell'});
 $('mode-word').onclick = () => change({mode: 'word'});
 $('less').onclick = () => change({spell_max_cells: Math.max(1, settings.spell_max_cells - 1)});
 $('more').onclick = () => change({spell_max_cells: Math.min(5, settings.spell_max_cells + 1)});
+document.querySelectorAll('[data-finger]').forEach(b => b.onclick = () => change({finger: b.dataset.finger}));
+document.querySelectorAll('[data-hand]').forEach(b => b.onclick = () => change({hand: b.dataset.hand}));
 
 // Voice Engine Toggle
 $('engine-edge').onclick = async () => {
