@@ -227,11 +227,9 @@ def lex_braille(cells):
                            if key in descriptor}
         for offset in range(span):
             origin = raw[index+offset]
-            codepoint = (chr(0x2800 + sum(1 << (d-1) for d in origin['dots']))
-                         if origin['warning'] != 'invalid_raw_pattern' else '')
             tokens.append(dict(dots=deepcopy(origin['dots']), pattern=origin['pattern'],
                                cell_id=origin['cell_id'], confidence=origin['confidence'],
-                               char=char if offset == 0 else '', braille_unicode=codepoint, unicode=codepoint,
+                               char=char if offset == 0 else '',
                                center=origin['center'], cell_start=index, cell_end=index+span-1,
                                consumed=offset > 0, break_before=cell['break_before'] if offset == 0 else False,
                                line_break_before=cell['line_break_before'] if offset == 0 else False,

@@ -9,10 +9,6 @@ _NUMBER = frozenset({3, 4, 5, 6}) #สัญลักษณ์ตัวเลข
 _LETTER_TO_DIGIT = dict(zip('abcdefghij', '1234567890'))
 
 
-def dots_to_braille_unicode(dots):
-    return chr(0x2800 + sum(1 << (dot - 1) for dot in set(dots) if 1 <= dot <= 6)) #แสดงเซลล์ให้คนดู
-
-
 def _english_tokens(cells):
     capitalize_next = number_mode = False # สถานะตัวนำหน้า 
     tokens = [] 
@@ -51,7 +47,6 @@ def _english_tokens(cells):
                     char = char.upper()
             capitalize_next = False
         tokens.append(dict(dots=sorted(dots), char=char,
-                           braille_unicode=dots_to_braille_unicode(dots),
                            center=cell.get('center', (0, 0)), warning=warning,
                            break_before=boundary, line_break_before=line_break))
     return tokens
@@ -60,12 +55,12 @@ def _english_tokens(cells):
 def decode_cells_english(cells):
     output = []
     for token in _english_tokens(cells):
-        if token['line_break_before'] and output: # ขึ้นบรรทัดใหม่
+        if token['line_break_before'] and output: #ขึ้นบรรทัดใหม่
             while output and output[-1] == ' ':
-                output.pop() #ลบช่องว่างท้าย 
-            output.append('\n') # ขึ้นบรรทัดใหม่
-        elif token['break_before'] and output and output[-1] not in (' ', '\n'):
-            output.append(' ')  
+                output.pop() #ลบช่องว่างท้าย
+            output.append('\n') #ขึ้นบรรทัดใหม่
+        elif token['break_before'] and output and output[-1] not in (' ', '\n'): #ขึ้นคำใหม่ 
+            output.append(' ') #เติมช่องว่าง
         char = token['char']
         if char and not (char == ' ' and (not output or output[-1] in (' ', '\n'))): # ไม่ใส่ช่องว่างซ้ำ
             output.append(char)
