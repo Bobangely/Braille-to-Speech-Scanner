@@ -4,9 +4,9 @@ from config import BRAILLE_TO_CHAR
 from thai_decoder import _break_before, cell_read_warning, decode_thai, thai_verbose
 
 
-_CAPITAL = frozenset({6}) #สัญลักษณ์ตัวพิมพ์ใหญ่ ตัวอักษรอังกฤษ 
+_CAPITAL = frozenset({6}) #สัญลักษณ์ตัวพิมพ์ใหญ่ สำหรับตัวอักษรอังกฤษ 
 _NUMBER = frozenset({3, 4, 5, 6}) #สัญลักษณ์ตัวเลข 
-_LETTER_TO_DIGIT = dict(zip('abcdefghij', '1234567890')) 
+_LETTER_TO_DIGIT = dict(zip('abcdefghij', '1234567890'))
 
 
 def dots_to_braille_unicode(dots):
@@ -15,10 +15,10 @@ def dots_to_braille_unicode(dots):
 
 def _english_tokens(cells):
     capitalize_next = number_mode = False # สถานะตัวนำหน้า 
-    tokens = []
+    tokens = [] 
     for index, cell in enumerate(cells):
         dots = frozenset(cell['dots'])
-        boundary = _break_before(cells, index) # ดูว่ามีช่องว่างคำก่อนเซลล์นี้ไหม
+        boundary = _break_before(cells, index) # ดูว่ามีช่องว่างคำก่อนเซลล์นี้
         previous = cells[index - 1] if index else {}
         line_break = (index > 0 and 'line_id' in previous and 'line_id' in cell
                       and previous['line_id'] != cell['line_id']) # ขึ้นบรรทัดใหม่
@@ -62,10 +62,10 @@ def decode_cells_english(cells):
     for token in _english_tokens(cells):
         if token['line_break_before'] and output: # ขึ้นบรรทัดใหม่
             while output and output[-1] == ' ':
-                output.pop()
-            output.append('\n') #ลบช่องว่างท้าย 
+                output.pop() #ลบช่องว่างท้าย 
+            output.append('\n') # ขึ้นบรรทัดใหม่
         elif token['break_before'] and output and output[-1] not in (' ', '\n'):
-            output.append(' ')  # ขึ้นคำใหม่
+            output.append(' ')  
         char = token['char']
         if char and not (char == ' ' and (not output or output[-1] in (' ', '\n'))): # ไม่ใส่ช่องว่างซ้ำ
             output.append(char)

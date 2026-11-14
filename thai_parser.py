@@ -11,7 +11,7 @@ from thai_raw_rules import RAW_STANDARD, RAW_RULES_SOURCE, candidate_validation
 
 
 def _is_consonant(atom):
-    return atom['kind'] in ('consonant', 'ambiguous_o')
+    return atom['kind'] in ('consonant', 'ambiguous_o') 
 
 
 def _component(kind, value, atoms, rule):

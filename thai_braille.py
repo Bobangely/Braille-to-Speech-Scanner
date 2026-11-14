@@ -93,7 +93,7 @@ def cell_read_warning(cell):
     if is_unread_cell(cell):
         return 'empty_crop'
     if cell.get('row_ambiguous'):
-        return 'ambiguous_row_grid'
+        return 'ambiguous_row_grid' 
     return None
 
 
