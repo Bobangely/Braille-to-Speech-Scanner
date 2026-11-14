@@ -14,9 +14,9 @@ def _english_tokens(cells):
     tokens = [] 
     for index, cell in enumerate(cells):
         dots = frozenset(cell['dots'])
-        boundary = _break_before(cells, index) # ดูว่ามีช่องว่างคำก่อนเซลล์นี้
+        boundary = _break_before(cells, index) # ดูว่ามีเว้นคำก่อนเซลล์นี้
         previous = cells[index - 1] if index else {}
-        line_break = (index > 0 and 'line_id' in previous and 'line_id' in cell
+        line_break = ('line_id' in previous and 'line_id' in cell
                       and previous['line_id'] != cell['line_id']) # ขึ้นบรรทัดใหม่
         if boundary:
             capitalize_next = number_mode = False # ขึ้นคำใหม่ 
