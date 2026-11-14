@@ -125,7 +125,6 @@ IP เปลี่ยนเมื่อเปลี่ยนเครือข�
 - PIN กันคนทั่วไปในวงเดียวกัน แต่เป็น HTTP จึงไม่กันคนที่ดักข้อมูลในเครือข่าย
 - เสียง Edge TTS ใช้เน็ตตอนเตรียมเสียงครั้งแรกเท่านั้น ไฟล์ละราว 70 KB แล้วเก็บ cache ถ้าไม่มีเน็ตจะใช้เสียง Piper แทน
 - ดูหน้าเว็บโดยไม่ต่อกล้อง: `.\.venv\Scripts\python.exe -m http.server 8765 --directory web` แล้วเปิด http://localhost:8765/?demo
-- API สำหรับพัฒนาต่อ: [docs/web-api.md](docs/web-api.md)
 
 ## โครงสร้าง
 
@@ -137,17 +136,7 @@ IP เปลี่ยนเมื่อเปลี่ยนเครือข�
 | `fingertip.py`, `finger_state.py` | ตามนิ้ว และตัดสินว่าเข้าเซลล์หรือจบคำ |
 | `web_panel.py`, `web/index.html`, `panel_settings.py` | หน้าเว็บครู web server และค่าตั้งโหมดเสียง |
 | `speech_queue.py`, `thai_speech.py` | เลือกข้อความที่จะพูด และคำสะกดสำหรับเสียงแต่ละแบบ |
-| `decoder.py`, `thai_parser.py` | ถอดรหัสเบรลล์ไทย |
-| `tools/make_book_template.py`, `text_to_braille.py` | สร้างไฟล์ Word ต้นแบบพร้อม marker |
-| `tools/diagnostics/symbol_speech_page.py` | หน้าฟังเสียงชื่อสัญลักษณ์ทั้งหมดเทียบ Piper กับ Edge |
-| `tools/diagnostics/page_map_accuracy.py` | วัดความแม่นการอ่านจากภาพถ่ายเทียบข้อความเฉลย |
-| `archive/legacy_scanner/` | ระบบสแกนรุ่นก่อน (ถือกล้องสแกน + YOLO) เก็บไว้อ้างอิง |
-
-## ทดสอบ
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests
-```
+| `decoder.py`, `thai_*.py`, `config_thai.py`, `text_to_braille.py` | ถอดรหัสเบรลล์ไทย |
 
 ## เทคโนโลยี
 

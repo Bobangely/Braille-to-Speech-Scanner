@@ -1,5 +1,0 @@
-names:
-  0: braille_dot
-nc: 1
-train: images/train
-val: images/val
