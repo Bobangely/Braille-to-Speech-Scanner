@@ -1,17 +1,18 @@
 """ถอดเซลล์เบรลล์ไทยและอังกฤษตามลำดับ โดยเก็บข้อมูลเซลล์ที่อ่านไม่ได้ไว้"""
 
 from config import BRAILLE_TO_CHAR
-from thai_decoder import _break_before, cell_read_warning, decode_thai, thai_verbose
+from thai_braille import _break_before, cell_read_warning
+from thai_decoder import decode_thai, thai_verbose
 
 
-_CAPITAL = frozenset({6}) #สัญลักษณ์ตัวพิมพ์ใหญ่ สำหรับตัวอักษรอังกฤษ 
-_NUMBER = frozenset({3, 4, 5, 6}) #สัญลักษณ์ตัวเลข 
+_CAPITAL = frozenset({6}) #สัญลักษณ์ตัวพิมพ์ใหญ่ สำหรับตัวอักษรอังกฤษ
+_NUMBER = frozenset({3, 4, 5, 6}) #สัญลักษณ์ตัวเลข
 _LETTER_TO_DIGIT = dict(zip('abcdefghij', '1234567890'))
 
 
 def _english_tokens(cells):
-    capitalize_next = number_mode = False # สถานะตัวนำหน้า 
-    tokens = [] 
+    capitalize_next = number_mode = False # สถานะตัวนำหน้า
+    tokens = []
     for index, cell in enumerate(cells):
         dots = frozenset(cell['dots'])
         boundary = _break_before(cells, index) # ดูว่ามีเว้นคำก่อนเซลล์นี้
@@ -67,19 +68,19 @@ def decode_cells_english(cells):
     return ''.join(output).strip()
 
 
-def decode_cells(cells, lang='english', *, compatibility=False):
+def decode_cells(cells, lang='english'):
     language = lang.lower()
     if language in ('thai', 'th'):
-        return decode_thai(cells, compatibility=compatibility)
+        return decode_thai(cells)
     if language in ('english', 'en'):
         return decode_cells_english(cells)
     raise ValueError(f'Unsupported Braille language: {lang}')
 
 
-def decode_cells_verbose(cells, lang='english', *, compatibility=False): # 'Thai' กับ 'thai'
+def decode_cells_verbose(cells, lang='english'): # 'Thai' กับ 'thai'
     language = lang.lower()
-    if language in ('thai', 'th'): 
-        return thai_verbose(cells, compatibility=compatibility)
+    if language in ('thai', 'th'):
+        return thai_verbose(cells)
     if language in ('english', 'en'):
         return _english_tokens(cells)
     raise ValueError(f'Unsupported Braille language: {lang}')

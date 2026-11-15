@@ -1,4 +1,4 @@
-"""แปลงข้อความเป็นเซลล์เบรลล์ ใช้สร้างหนังสือและข้อมูลทดสอบ"""
+"""แปลงข้อความเป็นเซลล์เบรลล์ ใช้สร้างหนังสือ"""
 
 from config import CHAR_TO_BRAILLE
 from config_thai import THAI_CHAR_TO_BRAILLE
@@ -16,11 +16,11 @@ def text_to_braille_cells(text, lang='english'):
             elif char in THAI_CHAR_TO_BRAILLE:
                 pattern = THAI_CHAR_TO_BRAILLE[char]
                 if isinstance(pattern, tuple):
-                    # หลายเซลล์ (เช่น ตัวนำ 6 + ตัวหลัก)
+                    # หลายเซลล์ (ตัวนำ + ตัวหลัก)
                     cells.extend(pattern)
                 else:
                     cells.append(pattern)
-    else:
+    else: # ภาษาอังกฤษ
         for char in text.lower():
             if char == ' ':
                 cells.append(None)
