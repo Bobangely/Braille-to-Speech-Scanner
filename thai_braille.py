@@ -46,18 +46,18 @@ def match_post_onset_vowel(atoms, index):
     for sequence in sorted(POST_ONSET_VOWELS, key=len, reverse=True):
         following = atoms[index:index+len(sequence)]
         if (len(following) == len(sequence)
-                and all(a.get('patterns') == [p] for a, p in zip(following, sequence))#จุดตรง
-                and all(a.get('adjacent_before', True) for a in following[1:])):#ติดกัน
+                and all(a.get('patterns') == [p] for a, p in zip(following, sequence)) #จุดตรง
+                and all(a.get('adjacent_before', True) for a in following[1:])): #ติดกัน
             return POST_ONSET_VOWELS[sequence], len(sequence) # (สระ, จำนวนเซลล์)
     return None
 
 
 def is_unread_cell(cell): #กล้องเห็นเซลล์ แต่อ่านจุดไม่ได้
-    return not cell.get('dots') and cell.get('crop_status') in ('empty', 'invalid_grid')
+    return not cell.get('dots') and cell.get('crop_status') in ('empty', 'invalid_grid') #แยกเซลล์ที่อ่านไม่ได้ออกจากช่องว่าง
 
 
 def cell_read_warning(cell):
-    """คำเตือนการอ่านภาพ หรือ None ถ้าเซลล์อ่านได้ปกติ"""
+    """คำเตือนอ่านภาพ  None ถ้าเซลล์อ่านได้ปกติ"""
     if cell.get('geometry_status') == 'invalid' or cell.get('crop_status') == 'invalid_grid':
         return 'invalid_cell_grid' #ตารางไม่ถูก
     if is_unread_cell(cell):
@@ -111,7 +111,7 @@ def lex_braille(cells):
     """เซลล์ -> (raw, tokens, atoms)
 
     raw = ข้อมูลเซลล์, tokens = ตัวอักษรรายเซลล์ -> page_map,
-    atoms = หน่วยพร้อมชนิดตัวอักษรให้ parser 
+    atoms = หน่วยพร้อมชนิดตัวอักษรสำหรับจัดพยางค์
     """
     raw = snapshot_cells(cells)
     tokens, atoms = [], []
@@ -122,7 +122,7 @@ def lex_braille(cells):
         if cell['break_before'] or not pattern: #คำใหม่หรือช่องว่าง
             numeric = False
         span, char, warning, descriptor = 1, '', cell['warning'], None
-        if warning:
+        if warning: #เซลเสีย
             char, numeric = '�', False
         elif not pattern:
             char = ' '

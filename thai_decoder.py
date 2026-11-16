@@ -12,7 +12,7 @@ def decode_thai_details(cells):
     """ถอดเซลล์ : ข้อความ พยางค์ และ token รายเซลล์"""
     parsed = parse_braille(cells)  #จัดพยางค์
     result = render_thai(parsed)
-    if result['needs_review']:
+    if result['needs_review']: #มีพยางค์ที่ต้องตรวจ
         logger.debug('[THAI_COMPOSITION_REVIEW] cells=%r syllables=%r text=%r',
                      result['raw_cells'], result['syllables'], result['text'])
     return result
@@ -26,7 +26,7 @@ def thai_verbose(cells): #คืน token รายเซลล์
     result = decode_thai_details(cells) #ถอดทั้งคำ
     tokens = result['raw_tokens']
     for syllable in result['syllables']:
-        if not syllable['needs_review']:
+        if not syllable['needs_review']: #ปกติ
             continue
         # ปัญหาตัดคำ ไม่ใช่เซลล์อ่านผิด 
         if syllable['status'] == syllable.get('boundary_status') and syllable.get('boundary_indices'):

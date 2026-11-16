@@ -3,7 +3,7 @@
 # อ้างอิงตารางที่ตรวจสอบแล้ว: liblouis tables/th-g1.uti
 # https://github.com/liblouis/liblouis/blob/ebae95b51d88e0bcaf8d37718d59b65b2d175116/tables/th-g1.uti
 
-# ตรวจเฉพาะกฎ raw ที่มีแล้ว กฎแบ่งพยางค์อื่นยังใช้ parser
+# ตรวจเฉพาะกฎ raw ที่มีแล้ว 
 # ตารางบรรทัด 62 และ 233–235: ว = 2456, รูปเขียน ัว = 15
 WRITTEN_VOWEL_FORMS = {'อัว': {'full': ('15',), 'reduced': ('2456',)}}
 

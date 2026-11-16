@@ -9,50 +9,29 @@ from thai_braille import lex_braille, match_post_onset_vowel
 from thai_raw_rules import raw_encoding_error
 
 
-def _is_consonant(atom):
+def _is_consonant(atom): #นับ อ ที่กำกวมเป็นพยัญชนะด้วย
     return atom['kind'] in ('consonant', 'ambiguous_o')
 
 
 def _source_indices(atom):
-    """ตำแหน่งเซลล์ต้นทางของ atom (atom หลายเซลล์ เช่น ฆ มีหลายตำแหน่ง)"""
+    """ตำแหน่งเซลล์ต้นทางของ atom """
     return atom.get('source_indices', [atom['index']])
 
 
 def _component(kind, value, atoms, rule):
-    """ส่วนของพยางค์ (ONSET VOWEL TONE FINAL) พร้อมเซลล์ที่ใช้ thai_raw_rules ตรวจรูปเซลล์"""
+    """บันทึกส่วนพยางค์ พร้อมเซลล์ที่ใช้ตรวจรูปเซลล์"""
     return dict(type=kind, value=value, rule=rule,
                 indices=[i for atom in atoms for i in _source_indices(atom)],
                 patterns=[p for atom in atoms for p in atom.get('patterns', [])])
 
 
-def _cluster(left, right):
+def _cluster(left, right): #พยัญชนะควบกล้ำ
     return ((left == 'ห' and right in 'งญนมยรลว') or (left == 'อ' and right == 'ย')
-            or (left in 'กขคตปผพทศส' and right in 'รลว'))
-
-
-def _atom(record, index):
-    value = record.get('char', record.get('token', ''))
-    canonical = normalize_vowel(value)
-    if record.get('warning') or value == '�':
-        kind = 'error'
-    elif canonical is not None and len(value) > 1:
-        kind = 'vowel'
-    elif value in CONSONANTS or (len(value) > 1 and all(c in CONSONANTS for c in value)):
-        kind = 'consonant'
-    elif value in LEADING:
-        kind = 'leading'
-    elif value in TONES:
-        kind = 'tone'
-    elif canonical is not None:
-        kind = 'vowel'
-    else:
-        kind = 'literal'
-    return dict(value=value, vowel=canonical, kind=kind, index=index,
-                semantic=kind == 'vowel' and len(value) > 1)
+            or (left in 'กขคตปผพทศส' and right in 'รลว')) #พยัญชนะควบแท้
 
 
 def _is_written_o(atoms, index):
-    """อ เป็นสระ ออ ได้ก็ต่อเมื่อไม่มีสระของตัวเองตามหลัง"""
+    """อ เป็นสระ ออ เมื่อไม่มีสระตามหลัง"""
     if not _is_consonant(atoms[index]) or atoms[index]['value'] != 'อ':
         return False
     end = index + 1
@@ -67,16 +46,8 @@ def _is_written_o(atoms, index):
     return True
 
 
-def _is_short_o_pair(atoms, index):
-    """อ + ะ ติดกัน (ผู้เรียกต้องรู้ว่ามีพยัญชนะต้นแล้ว)"""
-    # เบรลล์จริงใช้ตารางลำดับเซลล์ดิบและการตรวจว่าเซลล์ติดกัน
-    return (not atoms[index].get('patterns') and index+1 < len(atoms) and _is_consonant(atoms[index])
-            and atoms[index]['value'] == 'อ' and atoms[index+1]['kind'] == 'vowel'
-            and atoms[index+1]['value'] == 'ะ')
-
-
 def _starts_syllable(atoms, index, *, onset_context=False):
-    """พยัญชนะที่มีสระของตัวเองตามหลังเป็นของพยางค์ถัดไป"""
+    """พยัญชนะที่มีสระของตัวเองตามหลังเป็น ต้นพยางค์ใหม่"""
     end = index + 1
     if end < len(atoms) and _is_consonant(atoms[end]) and _cluster(atoms[index]['value'], atoms[end]['value']):
         end += 1
@@ -84,20 +55,16 @@ def _starts_syllable(atoms, index, *, onset_context=False):
         end += 1
     if end >= len(atoms):
         return False
-    if atoms[end]['kind'] == 'leading':
-        # แ + ม เริ่มพยางค์ใหม่ ไม่ใช่สระของ ณ ใน คุณแม่
+    if atoms[end]['kind'] == 'leading': # แ + ม เริ่มพยางค์ใหม่ ไม่ใช่สระของ ณ > คุณแม่
         return end+1 >= len(atoms) or not _is_consonant(atoms[end+1])
     # อ เป็นสระหลังพยัญชนะต้นได้ (กล + ่ + อ + ง)
-    # ตอนดูตัวสะกด อ + ะ อาจเป็นพยางค์ อะ ใหม่ (กินอะ) จึงเช็คสระประสมเฉพาะตอนหาพยัญชนะต้น
     return (atoms[end]['kind'] in ('vowel', 'ambiguous_mark') or _is_written_o(atoms, end)
-            or (onset_context and (_is_short_o_pair(atoms, end)
-                                   or match_post_onset_vowel(atoms, end) is not None)))
+            or (onset_context and match_post_onset_vowel(atoms, end) is not None))
 
 
-def _implicit_closed_span(atoms, index):
-    """พยางค์ลดรูป โอะ (พยัญชนะต้น + ตัวสะกด เช่น คน) คืน (จบต้น, ตำแหน่งตัวสะกด, จบพยางค์) หรือ None
-
-    หลังตัวสะกดต้องจบคำหรือเป็นพยางค์สมบูรณ์ ไม่อย่างนั้นพยัญชนะที่ติดกันทุกตัวจะกลายเป็นตัวสะกดหมด
+def _implicit_closed_span(atoms, index): 
+    """พยัญชนะ 2 ตัวไม่มีสระ เป็น โอะลดรูป พยัญชนะต้น + ตัวสะกด return (จบต้น, ตำแหน่งตัวสะกด, จบพยางค์) 
+    หรือ None หลังตัวสะกดต้องจบคำหรือเป็นพยางค์สมบูรณ์ 
     """
     if (index >= len(atoms) or not _is_consonant(atoms[index])
             or _starts_syllable(atoms, index, onset_context=True)):
@@ -116,7 +83,7 @@ def _implicit_closed_span(atoms, index):
             or _starts_syllable(atoms, final_index, onset_context=True)):
         return None
     end = final_index + 1
-    # พยัญชนะที่มีวรรณยุกต์ตามหลังไม่ใช่ตัวสะกด เช่น กล้วย ไม่ใช่ ก้ล + วย
+    # พยัญชนะที่มีวรรณยุกต์ตามหลังไม่ใช่ตัวสะกด กล้วย ไม่ใช่ ก้ล + วย
     if end < len(atoms) and atoms[end]['kind'] == 'tone':
         return None
     if end < len(atoms):
@@ -143,11 +110,9 @@ def _structural_error(units, source_indices=None):
         structural_status = unit.get('structural_status', unit.get('status'))
         if structural_status:
             return structural_status
-        if 'literal' in unit:
-            if unit['literal'] == '�':
+        if 'literal' in unit: #เซลล์ซ้ำกับ สระมีตัวสะกดไม่ได้	
+            if unit['literal'] == '�':# เครื่องหมายวรรคตอนเป็นข้อความ
                 return 'UNKNOWN_TOKEN'
-            # เครื่องหมายวรรคตอนเป็นข้อความสมบูรณ์ แต่เศษภาษาที่หลุดมา
-            # ทำให้การแยก *พยางค์* ที่แข่งกันถูกต้องไม่ได้
             if (unit['literal'] in CONSONANTS or unit['literal'] in TONES or unit['literal'] in LEADING
                     or normalize_vowel(unit['literal']) is not None):
                 return 'INVALID_SYLLABLE'
@@ -174,9 +139,7 @@ def _structural_error(units, source_indices=None):
 
 def _compound_boundary(atoms, index, current):
     """เทียบ ตัวสะกด + พยัญชนะต้นถัดไป กับ พยัญชนะต้นถัดไป + สระประสม
-
-    ทั้งสองเส้นทางใช้ parser เดียวกันโดยปิดการเทียบขอบซ้อน
-    ตัวเลือกการแสดงผลไม่ใช่หลักฐาน เส้นทางที่เป็นไปได้เท่ากันจึงอยู่ในสถานะรอตรวจ
+    ไม่แน่ใจ ให้ ลองตัด 2 ทาง แล้วตรวจ ถ้าถูกทั้งคู่ให้ทำเครื่องหมายให้ตรวจ
     """
     if (_starts_syllable(atoms, index)
             or not _starts_syllable(atoms, index, onset_context=True)):
@@ -198,22 +161,22 @@ def _compound_boundary(atoms, index, current):
         error = _structural_error(units, source_indices) or raw_encoding_error(units)
         alternatives.append(dict(role=role, syllables=units, error=error))
     valid = [candidate for candidate in alternatives if candidate['error'] is None]
-    # คงสถานะสระประสมที่เลือกแล้วไว้แสดงผล ส่วนสระสั้นหรือสระเขียนชัดอื่นๆ
+    # คงสถานะสระประสมที่เลือกแล้วไว้แสดงผล 
     # คงการแสดงตัวสะกดที่มีอยู่
-    # ใช้แค่จัดอันดับตัวเลือกที่รอตรวจ ไม่ได้พิสูจน์ขอบพยางค์
+    # ใช้จัดอันดับตัวเลือกที่รอตรวจ 
     prefer_open = current['semantic'] and (
         current['vowel'] not in SHORT.values() or current['vowel_has_onset_alternative'])
     preferred = alternatives[int(prefer_open)]
     selected = (preferred if preferred in valid else valid[0]) if valid else preferred
-    # สระแกนที่ยังไม่ชัด หรือเส้นทางที่ต้องใช้พจนานุกรม ยังไม่ถือว่าผิด
-    # การละเมิดสระ ตัวสะกด หรือวรรณยุกต์ที่ชัดเจนเท่านั้นจึงตัดตัวเลือกออก
+    # สระแกนที่ยังไม่ชัด หรือเส้นทางที่ต้องใช้พจนานุกรม 
+    # ถ้าใส่ผิดสระ ตัวสะกด หรือวรรณยุกต์ที่ชัด ถึงตัดตัวเลือกออก
     hard_errors = {'INVALID_FINAL', 'INVALID_SYLLABLE', 'UNSUPPORTED_COMBINATION',
                    'INVALID_VOWEL', 'INVALID_SOURCE_CELLS', 'REUSED_SOURCE_CELL', 'INCOMPLETE_PARSE',
                    'NONSTANDARD_UA_CLOSED_FORM'}
     unique = len(valid) == 1 and all(candidate['error'] in hard_errors
                                    for candidate in alternatives if candidate['error'])
-    # หลักฐานไม่ครบไม่ใช่การแยกที่ถูกต้องอีกแบบ ให้คงไว้เพื่อรอตรวจ
-    # แต่อย่าเรียกเส้นทางที่ยังไม่จบว่าเป็นความกำกวมของการตัดพยางค์ที่พิสูจน์แล้ว
+    # พยางค์ไม่ครบ ให้คงไว้เพื่อรอตรวจ
+    # ไม่เรียกพยางค์กำกวมของการตัดพยางค์ที่พิสูจน์แล้ว
     status = (None if unique else 'AMBIGUOUS_SEGMENTATION' if len(valid) >= 2
               else 'UNRESOLVED_SEGMENTATION')
     return dict(role=selected['role'], review=not unique, status=status,
@@ -221,7 +184,7 @@ def _compound_boundary(atoms, index, current):
 
 
 def _final_role(atoms, index, vowel, *, current=None, compare_boundaries=True):
-    """ตัดสินขอบพยางค์ก่อนที่ renderer จะลดรูปสระ"""
+    """ตัดสินขอบพยางค์ก่อนที่ renderer ลดรูป"""
     # ไม้หันอากาศ ั ต้องมีตัวสะกดเสมอ
     if vowel == 'ั':
         return dict(role='CODA_CONTEXT', review=False)
@@ -244,27 +207,27 @@ def _final_role(atoms, index, vowel, *, current=None, compare_boundaries=True):
     return dict(role='CODA_CONTEXT', review=False)
 
 
-def _parse_run(atoms, *, compare_boundaries=True):
-    """แยก run ที่ไม่มีขอบ และเก็บเศษตัวสะกดเป็นหน่วยชัดเจน"""
+def _parse_run(atoms, *, compare_boundaries=True): #ตัดท่อนเป็นพยางค์: สระหน้า, ต้น, สระ, ตัวสะกด
+    """atom หนึ่งช่วง แล้วตัดเป็นพยางค์ทีละพยางค์ ใช้ yield ส่งพยางค์ออกไปทีละตัว"""
     index = 0
-    while index < len(atoms):
-        start = index
-        prefix = ''
+    while index < len(atoms): #1รอบ  1 พยางค์
+        start = index # จำจุดเริ่มพยางค์
+        prefix = '' # สระหน้า (เ แ โ ไ) 
         components, prefix_atoms, vowel_atoms = [], [], []
-        vowel_rule, ambiguous_mark = 'VOWEL', False
+        vowel_rule, ambiguous_mark = 'VOWEL', False # กฎสระเริ่มต้น, ไม้ไต่คู้
         if atoms[index]['kind'] == 'leading' and index+1 < len(atoms) and _is_consonant(atoms[index+1]):
-            prefix = atoms[index]['value']
-            prefix_atoms.append(atoms[index])
-            index += 1
-        if not _is_consonant(atoms[index]):
+            prefix = atoms[index]['value'] # เป็นสระหน้า ตัวถัดไปเป็นพยัญชนะ
+            prefix_atoms.append(atoms[index]) # เก็บ เ แ โ ไ ไว้ก่อน
+            index += 1 # เลื่อนไปที่พยัญชนะ
+        if not _is_consonant(atoms[index]): #ไม่ใช่พยัญชนะ
             atom = atoms[index]
             status = ('AMBIGUOUS_SEQUENCE' if atom['kind'] == 'ambiguous_mark' else
                       'AMBIGUOUS_SYLLABLE' if atom['semantic'] else None)
-            yield dict(indices=_source_indices(atom), literal=atom['value'], status=status)
+            yield dict(indices=_source_indices(atom), literal=atom['value'], status=status) #ส่งออกแบบไม่ใช่พยางค์
             index += 1
             continue
         onset_start = index
-        implicit = _implicit_closed_span(atoms, index) if not prefix else None
+        implicit = _implicit_closed_span(atoms, index) if not prefix else None #พยัญชนะต้นและควบกล้ำ
         onset = atoms[index]['value']
         index += 1
         if (index < len(atoms) and _is_consonant(atoms[index])
@@ -275,12 +238,12 @@ def _parse_run(atoms, *, compare_boundaries=True):
             index += 1
         components.append(_component('ONSET', onset, atoms[onset_start:index], 'ONSET_CONTEXT'))
         vowel, tone, semantic, status = None, None, False, None
-        while index < len(atoms):
+        while index < len(atoms): #วนเก็บสระและวรรณยุกต์
             atom = atoms[index]
             matched = match_post_onset_vowel(atoms, index) if vowel is None and not prefix else None
-            if atom['kind'] == 'tone':
+            if atom['kind'] == 'tone': #เก็บวรรณยุกต์
                 if tone:
-                    status = 'UNSUPPORTED_COMBINATION'
+                    status = 'UNSUPPORTED_COMBINATION' #ถ้าซ้ำ
                 tone = atom['value']
                 components.append(_component('TONE', tone, [atom], 'SYLLABLE_TONE'))
             elif matched:
@@ -294,12 +257,6 @@ def _parse_run(atoms, *, compare_boundaries=True):
                     break
                 prefix = atom['value']
                 prefix_atoms.append(atom)
-            elif vowel is None and not prefix and _is_short_o_pair(atoms, index):
-                # นับ token ทั้งสองเป็นสระเดียวเชิงความหมาย โดยเก็บ
-                # index และ token ดิบเดิมไว้วิเคราะห์
-                vowel, semantic = 'เอาะ', True
-                vowel_atoms.extend(atoms[index:index+2])
-                index += 1
             elif vowel is None and _is_written_o(atoms, index):
                 # อ ที่เขียนหลังพยัญชนะต้น อ่านเป็นสระ ออ
                 vowel = 'ออ'
@@ -397,32 +354,29 @@ def _parse_run(atoms, *, compare_boundaries=True):
         yield unit
 
 
-def parse_tokens(tokens, *, atoms=None):
+def parse_tokens(tokens, atoms): #เก็บตัวอักษรที่ติดกัน เจอ ' ',ขึ้นบรรทัด หรือเซลล์เสีย ส่งตัด
     """เก็บ token ต้นทาง และคืนพยางค์หรือข้อความตามลำดับโดยไม่แปลงเป็นข้อความ"""
     raw = deepcopy(list(tokens))
-    records = [dict(token=t) if isinstance(t, str) else t for t in raw]
     units, run = [], []  # run = atom ที่ติดกันรอแยกพยางค์
 
-    def flush():
-        units.extend(_parse_run(run))
+    def flush(): 
+        units.extend(_parse_run(run)) #ส่งท่อนที่เก็บไป
         run.clear()
 
-    def literal(value, indices, status=None):
+    def literal(value, indices, status=None): #เติมหน่วยที่ไม่ใช่พยางค์ 
         if value:
             units.append(dict(literal=value, indices=indices, status=status, trace=bool(status)))
 
     last_line = None
-    for index, record in enumerate(records):
+    for index, record in enumerate(raw):
         if record.get('consumed'):
             continue
-        atom = deepcopy(atoms[index]) if atoms is not None else _atom(record, index)
+        atom = deepcopy(atoms[index])
         line = record.get('line_id')
         line_break = record.get('line_break_before') or (line is not None and last_line is not None and line != last_line)
         if line is not None:
             last_line = line
-        # เบรลล์ดิบต้องใช้ขอบการติดกันเดียวกันทั้งการจับคู่คำ
-        # และบริบท ส่วนเส้นทาง token ข้อความไม่มีข้อมูลตำแหน่ง
-        sequence_break = atoms is not None and not atom.get('adjacent_before', True)
+        sequence_break = not atom.get('adjacent_before', True)  # ไม่ติดตัวก่อนหน้า = แยกช่วงใหม่
         if line_break or record.get('break_before') or sequence_break:
             flush()
             if units:
@@ -449,8 +403,4 @@ def parse_tokens(tokens, *, atoms=None):
 def parse_braille(cells):
     """เซลล์ดิบ -> พยางค์ (ยังไม่สร้างข้อความไทย ให้ thai_renderer ทำต่อ)"""
     raw, tokens, atoms = lex_braille(cells)
-    parsed = parse_tokens(tokens, atoms=atoms)
-    for syllable in parsed['syllables']:
-        # renderer ใช้ดูว่าเขียนไม้ไต่คู้ (จุด 3) เองหรือไม่
-        syllable['raw_patterns'] = [raw[i]['pattern'] for i in syllable['indices']]
-    return dict(parsed, raw_cells=raw)
+    return dict(parse_tokens(tokens, atoms), raw_cells=raw)

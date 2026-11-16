@@ -9,8 +9,8 @@ import unicodedata
 CONSONANTS = set('กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ')
 TONES = set('่้๊๋')
 LEADING = {'เ': 'เอ', 'แ': 'แอ', 'โ': 'โอ', 'ไ': 'ไอ', 'ใ': 'ใอ'}
-# ทุกกฎวางวรรณยุกต์ชัดเจน หลังสระที่ประกอบกับพยัญชนะและก่อน
-# สระหลังหรือตัวสะกด O รวมพยัญชนะต้นทั้งหมด ตัวสุดท้ายเป็นที่วาง T
+# สระ (รูปไม่มีตัวสะกด, รูปมีตัวสะกด) None = มีตัวสะกดไม่ได้
+# O พยัญชนะต้น  T วรรณยุกต์  F ตัวสะกด
 RULES = {
     'อะ': ('{O}{T}ะ', '{O}ั{T}{F}'),
     'อา': ('{O}{T}า', '{O}{T}า{F}'),
@@ -47,22 +47,15 @@ RULES = {
     'ํ': ('{O}ํ{T}', '{O}ํ{T}{F}'),
 }
 ALIASES = {name: name for name in RULES}
-ALIASES.update({
-    'ะ': 'อะ', '-ะ': 'อะ', 'า': 'อา', '-า': 'อา',
-    'ิ': 'อิ', '-ิ': 'อิ', 'ี': 'อี', '-ี': 'อี',
-    'ึ': 'อึ', '-ึ': 'อึ', '-ือ': 'อือ', 'ุ': 'อุ', '-ุ': 'อุ',
-    'ู': 'อู', '-ู': 'อู', 'เ-': 'เอ', 'แ-': 'แอ', 'โ-': 'โอ',
-    'เ-ะ': 'เอะ', 'แ-ะ': 'แอะ', 'โ-ะ': 'โอะ', 'เ-าะ': 'เอาะ',
-    '-อ': 'ออ', 'เ-อ': 'เออ', 'เ-อะ': 'เออะ',
-    'เ-ีย': 'เอีย', 'เ-ือ': 'เอือ', '-ัว': 'อัว',
-    'เ-ียะ': 'เอียะ', 'เ-ือะ': 'เอือะ', '-ัวะ': 'อัวะ',
-    'ำ': 'อำ', '-ำ': 'อำ', 'ไ-': 'ไอ', 'ใ-': 'ใอ', 'เ-า': 'เอา',
+ALIASES.update({  #ค่าสระจาก config_thai -> ชื่อสระใน RULES
+    'ะ': 'อะ', 'า': 'อา', 'ิ': 'อิ', 'ี': 'อี', 'ึ': 'อึ', 'ุ': 'อุ', 'ู': 'อู', 'ำ': 'อำ',
+    'เ-า': 'เอา', 'เ-อ': 'เออ', 'เ-ีย': 'เอีย', 'เ-ือ': 'เอือ', '-ัว': 'อัว',
 })
-SHORT = {'เอ': 'เอะ', 'แอ': 'แอะ', 'โอ': 'โอะ', 'เออ': 'เออะ',
+SHORT = {'เอ': 'เอะ', 'แอ': 'แอะ', 'โอ': 'โอะ', 'เออ': 'เออะ',#สระยาว สระสั้น
          'เอา': 'เอาะ', 'เอีย': 'เอียะ', 'เอือ': 'เอือะ', 'อัว': 'อัวะ'}
-INHERENT_FINAL = {'อำ', 'ไอ', 'ใอ', 'เอา'}
-SHORT_COMPOUNDS = {'เอียะ', 'เอือะ', 'อัวะ'}
-CODA_CHANGES_VOWEL = {vowel for vowel, (opened, closed) in RULES.items()
+INHERENT_FINAL = {'อำ', 'ไอ', 'ใอ', 'เอา'} #สระที่มีเสียงตัวสะกดในตัว
+SHORT_COMPOUNDS = {'เอียะ', 'เอือะ', 'อัวะ'} #สระสั้นประสม มีตัวสะกด
+CODA_CHANGES_VOWEL = {vowel for vowel, (opened, closed) in RULES.items() #สระที่เปลี่ยนรูปเมื่อมีตัวสะกด
                       if closed is not None and opened != closed.replace('{F}', '')}
 
 
@@ -72,32 +65,31 @@ class CompositionError(ValueError):
         super().__init__(status)
 
 
-def normalize_vowel(value):
-    """ปรับชื่อและสัญลักษณ์แทนที่ให้เป็นมาตรฐาน โดยไม่เขียนข้อความที่ตรวจพบใหม่"""
-    return ALIASES.get(value.removeprefix('สระ').replace('◌', '-'))
+def normalize_vowel(value):#แปลงรูปสระเป็นชื่อสระ
+    return ALIASES.get(value.replace('◌', '-'))
 
 
 @lru_cache(maxsize=1)
 def _exceptions():
-    path = Path(__file__).with_name('thai_word_exceptions.json')
+    path = Path(__file__).with_name('thai_word_exceptions.json') #ท + เออ + ม
     with path.open(encoding='utf-8') as source:
         return {(r['onset'], r['vowel'], r.get('final'), r.get('tone')): r['text']
                 for r in json.load(source)}
 
 
 def compose_syllable(onset, vowel, final=None, tone=None):
-    """แปลงพยางค์ที่แยกชัดแล้ว การประกอบที่ผิดจะเกิดสถานะแจ้ง"""
+    """แปลงพยางค์ที่แยกแล้ว การประกอบที่ผิดจะเกิดสถานะแจ้ง"""
     vowel = normalize_vowel(vowel)
     if vowel is None:
         raise CompositionError('UNKNOWN_VOWEL')
     if not onset or any(c not in CONSONANTS for c in onset):
-        raise CompositionError('AMBIGUOUS_SYLLABLE')
+        raise CompositionError('AMBIGUOUS_SYLLABLE') #พยัญชนะต้น
     if final and (len(final) != 1 or final not in CONSONANTS):
-        raise CompositionError('INVALID_FINAL')
+        raise CompositionError('INVALID_FINAL') #ตัวสะกด
     if tone and tone not in TONES:
-        raise CompositionError('UNSUPPORTED_COMBINATION')
+        raise CompositionError('UNSUPPORTED_COMBINATION') #วรรณยุกต์
     exception = _exceptions().get((onset, vowel, final or None, tone or None))
-    if exception is not None:
+    if exception is not None: #คำยกเว้น
         return exception
     if vowel == 'เออ' and final == 'ย':
         template = 'เ{O}{T}ย'
@@ -105,14 +97,14 @@ def compose_syllable(onset, vowel, final=None, tone=None):
         template = RULES[vowel][bool(final)]
     if template is None:
         raise CompositionError('NEEDS_LEXICON' if vowel in SHORT_COMPOUNDS else 'INVALID_FINAL')
-    # ไม้ไต่คู้กับวรรณยุกต์ต้องใช้หลักฐานจากพจนานุกรม อย่าใส่สองเครื่องหมายที่แข่งกัน
+    # ไม้ไต่คู้กับวรรณยุกต์ต้องใช้ค่าจากพจนานุกรม 
     if tone and '็' in template:
         raise CompositionError('UNSUPPORTED_COMBINATION')
     return unicodedata.normalize('NFC', template.format(O=onset, T=tone or '', F=final or ''))
 
 
-def render_syllable(syllable):
-    """แปลงพยางค์เชิงความหมายหนึ่งพยางค์ รวมส่วนนำที่เขียนไว้แล้ว"""
+def render_syllable(syllable): 
+    #เช็คพยางค์ สัญลักษณ์ กับ สระ 
     if 'literal' in syllable:
         return syllable['literal']
     if syllable.get('vowel'):
@@ -121,9 +113,8 @@ def render_syllable(syllable):
     return syllable['onset'] + (syllable.get('tone') or '')
 
 
-def render_thai(parsed, *, confidence_threshold=None):
-    """แปลงและตรวจหน่วยที่แยกแล้ว โดยเก็บตัวเลือกที่ถูกปฏิเสธไว้ใน trace"""
-    records = [dict(token=t) if isinstance(t, str) else t for t in parsed['raw_tokens']]
+def render_thai(parsed):
+    """แปลงทุกพยางค์เป็นข้อความ พยางค์ที่ผิดแสดงเป็น �"""
     pieces, traces = [], []
     for unit in parsed['syllables']:
         syllable = dict(unit)
@@ -135,31 +126,12 @@ def render_thai(parsed, *, confidence_threshold=None):
                 status = status or 'NEEDS_LEXICON'
         except CompositionError as exc:
             candidate, status = None, status or exc.status
-        if status and syllable.get('literal') == '�':
-            candidate = None
-        confidence = [records[i]['confidence'] for i in syllable['indices']
-                      if records[i].get('confidence') is not None]
-        minimum = min(confidence) if confidence else None
-        if confidence_threshold is not None and minimum is not None and minimum < confidence_threshold:
-            status = status or 'LOW_CONFIDENCE'
         text = '�' if status else candidate
         pieces.append(text)
-        # การตัดพยางค์ที่กำกวมเก็บไว้เป็นตัวเลือกแสดงผล ไม่ใช่การยืนยัน
-        # กรณีผิดหรือความมั่นใจต่ำอื่นๆ ยังแสดง � เหมือนเดิม
+        # ตัดพยางค์กำกวม: ยังแสดงข้อความ แต่ส่งให้ตรวจ
         if syllable.get('boundary_review'):
             status = status or syllable['boundary_status']
-        if traced or status:
-            events = []
-            if candidate and '็' in candidate:
-                explicit = '3' in syllable.get('raw_patterns', []) or syllable.get('vowel') == '็'
-                reasons = {'เอะ': 'VOWEL_E_SHORT_CLOSED', 'แอะ': 'VOWEL_AE_SHORT_CLOSED',
-                           'เอาะ': 'VOWEL_O_SHORT_CLOSED'}
-                reason = 'EXPLICIT_MAITAIKHU' if explicit else reasons.get(syllable.get('vowel'))
-                if reason:
-                    events.append(dict(mark='็', inserted_mark=None if explicit else '็',
-                                       reason=reason, source=syllable.get('raw_patterns', [])))
-            traces.append(dict(syllable, candidate=candidate, text=text, status=status or 'OK',
-                               needs_review=bool(status), min_confidence=minimum, render_events=events))
+        if traced or status: #เก็บรายละเอียด: text, status, needs_review
+            traces.append(dict(syllable, text=text, status=status or 'OK', needs_review=bool(status)))
     return dict(parsed, text=unicodedata.normalize('NFC', ''.join(pieces).strip()),
-                syllables=traces, needs_review=any(t['needs_review'] for t in traces),
-                status='NEEDS_REVIEW' if any(t['needs_review'] for t in traces) else 'VALID')
+                syllables=traces, needs_review=any(t['needs_review'] for t in traces))
